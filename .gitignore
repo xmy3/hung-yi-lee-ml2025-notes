@@ -1,0 +1,27 @@
+# LaTeX 编译中间产物
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.nav
+*.snm
+*.vrb
+*.idx
+*.ilg
+*.ind
+
+# 编辑器 / 系统文件
+.DS_Store
+Thumbs.db
+*~
+.vscode/
+.idea/

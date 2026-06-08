@@ -1,0 +1,476 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}
+
+% ===== Highlight boxes =====
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+% ===== Code listings =====
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+% ===== Front-page metadata =====
+\newcommand{\notetitle}{自动调整学习率（Adaptive Learning Rate）}
+\newcommand{\notesubtitle}{李宏毅《机器学习》2025 · 类神经网络训练不起来怎么办（三）}
+\newcommand{\noteauthors}{基于李宏毅老师课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili 搬运）}
+\newcommand{\videoduration}{约 38 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=6}
+
+\begin{document}
+
+\pagestyle{empty}
+
+% ===== Cover page =====
+\begin{center}
+    \vspace*{1.5cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.4cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.8\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+
+% ===== TOC =====
+\tableofcontents
+\newpage
+
+\pagestyle{plain}
+
+% =====================================================================
+\section{引言：Loss 不再下降，真的是卡在 critical point 吗？}
+% =====================================================================
+
+上一节我们得到一个安慰人的结论：训练停滞时，多半不是卡在 local minima，而是卡在 saddle point，而高维空间里 saddle point 周围几乎总有路可走。听起来只要有耐心，loss 终究能继续往下掉。
+
+但这一节老师要先泼一盆冷水：\textbf{当你的 training loss 卡住、不再下降时，很多时候它根本没有走到 critical point 附近}。也就是说，``gradient 趋近于零''常常\textbf{不是}训练失败的真凶。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig01_stuck_not_small_grad.jpg}
+    \caption{Loss 卡在高处不动，人们直觉以为是走到了 gradient 为零的 critical point。但把 gradient 的大小（norm）画出来看，会发现\textbf{当 loss 不再下降时，gradient 的 norm 并没有真的变小}——它仍然很大，只是在某处反复``弹来弹去''。可见训练停滞与``gradient $=0$''往往是两回事。\protect\footnotemark}
+    \label{fig:stuck_not_small_grad}
+\end{figure}
+\footnotetext{视频画面时间区间：00:02:17--00:02:54。}
+
+\begin{warningbox}{一个常见的误判：``train 不下去''$\ne$``走到 critical point''}
+    很多人一看到 loss 平在那里不动，就断定``一定是卡在 local minima 或 saddle point''，于是急着去算 Hessian、找逃生方向。但实测告诉我们：\textbf{loss 卡住时，gradient 的大小常常还很可观}。真正发生的，往往是参数在 error surface 的``峡谷两壁''之间\textbf{来回横跳}，每一步 gradient 都不小，loss 却始终下不去。问题的根源不在 critical point，而在\textbf{步伐（learning rate）没调好}。
+\end{warningbox}
+
+\begin{knowledgebox}{在``山谷''两壁之间反复震荡}
+    想象一条狭长的山谷（error surface 在某个方向很陡、另一个方向很平）。如果 learning rate 偏大，参数沿陡峭方向一步就冲过谷底、撞上对面山壁，下一步又被弹回来——如此\textbf{左右横跳，loss 始终降不下去，而 gradient 一直很大}。这类停滞，靠``逃离 critical point''的思路是治不好的，只能从\textbf{学习率本身}下手。这正是本节的主题：\textbf{把固定的 learning rate 换成会自动调整的 learning rate}。
+\end{knowledgebox}
+
+% =====================================================================
+\section{固定学习率的两难：凸面上的震荡与停滞}
+% =====================================================================
+
+为了把问题看得最清楚，老师特意构造了一个\textbf{极简、而且没有任何 critical point} 的 error surface——一个\textbf{凸函数（convex）}误差曲面，等高线是一组又窄又长的椭圆。它在某个方向非常陡峭，在与之垂直的方向却非常平缓。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/fig02_convex_setup.jpg}
+    \caption{实验设定：一个凸的 error surface，只有两个参数（横轴 $b$、纵轴 $w$）。等高线呈狭长椭圆——\textbf{纵向（$w$ 方向）很陡，横向（$b$ 方向）很平}。叉号 $\times$ 标出的是 loss 最低点（终点），黑点是参数的起点。这个曲面\textbf{没有 local minima、也没有 saddle point}，照理说梯度下降``闭着眼''都该走到终点。\protect\footnotemark}
+    \label{fig:convex_setup}
+\end{figure}
+\footnotetext{视频画面时间区间：00:05:07--00:06:30。}
+
+可即便在这么``友善''的曲面上，固定 learning rate 的梯度下降也会陷入两难。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig03_convex_eta_experiment.jpg}
+    \caption{两种固定学习率的实验对比。\textbf{左（$\eta=10^{-2}$，较大）}：参数沿陡峭的 $w$ 方向一步冲过头、撞上对面山壁，于是在两壁之间\textbf{剧烈上下震荡}，始终无法转入平缓的 $b$ 方向走向终点。\textbf{右（$\eta=10^{-7}$，极小）}：纵向终于不震荡了，乖乖滑到谷底；可一旦要沿平缓的 $b$ 方向前进，因步子太小\textbf{走得无比缓慢，几十万步也到不了叉号终点}。结论一句话：\emph{Learning rate cannot be one-size-fits-all}（学习率不能一视同仁）。\protect\footnotemark}
+    \label{fig:convex_eta_experiment}
+\end{figure}
+\footnotetext{视频画面时间区间：00:07:03--00:08:35。}
+
+\begin{importantbox}{固定 $\eta$ 的两难：大也不行，小也不行}
+    在这个``一边陡、一边平''的曲面上，\textbf{单一的学习率无论取多大都顾此失彼}：
+    \begin{itemize}
+        \item $\eta$ \textbf{偏大}：能推动平缓方向，却让陡峭方向\textbf{剧烈震荡}（在山壁间横跳，loss 降不下去）。
+        \item $\eta$ \textbf{偏小}：陡峭方向稳了，平缓方向却\textbf{慢到几乎不动}，永远走不到终点。
+    \end{itemize}
+    根本症结在于：\textbf{陡峭的方向需要小步、平缓的方向需要大步}，而固定学习率对所有方向一律同步长。\textbf{我们需要给不同的参数（方向）、甚至不同的时刻，配上不同的学习率。}
+\end{importantbox}
+
+% =====================================================================
+\section{客制化学习率与 Adagrad}
+% =====================================================================
+
+既然``一个 $\eta$ 走天下''行不通，自然的想法就是：\textbf{为每一个参数 $\theta_i$ 量身定做一个属于它自己的学习率}，而且这个学习率还要能随训练\textbf{动态调整}。
+
+\subsection{把固定步长换成``参数专属''步长}
+
+先回忆最朴素（vanilla）的梯度下降，对第 $i$ 个参数：
+
+$$\theta_i^{t+1} \;\leftarrow\; \theta_i^{t} - \eta\, g_i^{t},\qquad g_i^{t} = \left.\frac{\partial L}{\partial \theta_i}\right|_{\boldsymbol{\theta}=\boldsymbol{\theta}^{t}}$$
+
+\begin{itemize}
+    \item $\theta_i^{t}$：第 $i$ 个参数在第 $t$ 次迭代时的值（上标 $t$ 是\textbf{迭代时刻}，不是次方）。
+    \item $g_i^{t}$：第 $t$ 步时 loss 对该参数的偏微分，即 gradient 的第 $i$ 个分量。
+    \item $\eta$：learning rate，对所有参数\textbf{完全相同、且不随时间变}——这正是问题所在。
+\end{itemize}
+
+改造的办法，是把分母里塞进一个\textbf{随参数、随时刻而变}的量 $\sigma_i^{t}$：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig04_different_params_formula.jpg}
+    \caption{客制化学习率的核心写法：把更新式改成 $\theta_i^{t+1} \leftarrow \theta_i^{t} - \dfrac{\eta}{\sigma_i^{t}}\, g_i^{t}$。原来对所有参数共用的 $\eta$，现在被替换成\textbf{每个参数各自专属、且逐步变化}的有效步长 $\eta/\sigma_i^{t}$。问题就归结为：\textbf{这个 parameter-dependent 的 $\sigma_i^{t}$ 该怎么算？}\protect\footnotemark}
+    \label{fig:different_params_formula}
+\end{figure}
+\footnotetext{视频画面时间区间：00:10:16--00:12:12。}
+
+\begin{importantbox}{客制化学习率的设计原则}
+    新的更新式为
+    $$\theta_i^{t+1} \;\leftarrow\; \theta_i^{t} - \frac{\eta}{\sigma_i^{t}}\, g_i^{t}.$$
+    其中 $\sigma_i^{t}$ 带有下标 $i$（\textbf{因参数而异}）和上标 $t$（\textbf{因时刻而异}）。我们希望它满足：
+    \begin{itemize}
+        \item 某方向\textbf{一向平缓}（gradient 小）$\Rightarrow$ 让 $\sigma_i^{t}$ \textbf{小} $\Rightarrow$ 有效步长 $\eta/\sigma_i^{t}$ \textbf{变大}，大胆迈步。
+        \item 某方向\textbf{一向陡峭}（gradient 大）$\Rightarrow$ 让 $\sigma_i^{t}$ \textbf{大} $\Rightarrow$ 有效步长 \textbf{变小}，小心慢行。
+    \end{itemize}
+    一句话：\textbf{用 gradient 自身的大小来反向调节步长}。
+\end{importantbox}
+
+\subsection{Root Mean Square：最经典的 $\sigma$ 算法（Adagrad）}
+
+最常见的 $\sigma_i^{t}$ 取法，是\textbf{历来所有 gradient 的``均方根''（Root Mean Square, RMS）}：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig05_root_mean_square.jpg}
+    \caption{Root Mean Square 的定义与逐步展开。$\sigma_i^{t}$ 取为``从第 $0$ 步到第 $t$ 步、该参数所有 gradient 的平方平均，再开根号''。这个用 RMS 当分母的方法，搭配梯度下降就是经典的 \textbf{Adagrad}。\protect\footnotemark}
+    \label{fig:root_mean_square}
+\end{figure}
+\footnotetext{视频画面时间区间：00:12:21--00:15:45。}
+
+写成公式，对第 $i$ 个参数：
+
+$$\sigma_i^{t} \;=\; \sqrt{\frac{1}{t+1}\sum_{j=0}^{t}\left(g_i^{\,j}\right)^{2}}$$
+
+逐步展开，便于看清它如何``累积''历史信息：
+
+\begin{align*}
+    \sigma_i^{0} &= \sqrt{\left(g_i^{0}\right)^2} \;=\; \left|\,g_i^{0}\,\right| \\[2pt]
+    \sigma_i^{1} &= \sqrt{\tfrac{1}{2}\left[\left(g_i^{0}\right)^2+\left(g_i^{1}\right)^2\right]} \\[2pt]
+    \sigma_i^{2} &= \sqrt{\tfrac{1}{3}\left[\left(g_i^{0}\right)^2+\left(g_i^{1}\right)^2+\left(g_i^{2}\right)^2\right]} \\
+    &\;\;\vdots \\
+    \sigma_i^{t} &= \sqrt{\tfrac{1}{t+1}\textstyle\sum_{j=0}^{t}\left(g_i^{\,j}\right)^2}
+\end{align*}
+
+各符号含义：
+\begin{itemize}
+    \item 求和指标 $j$ 跑遍\textbf{从开始到当前的每一个迭代时刻}；$g_i^{\,j}$ 是参数 $i$ 在第 $j$ 步的 gradient 分量。
+    \item 取平方再平均，是为了\textbf{只看 gradient 的大小、不管正负方向}（正负平方后都为正，不会相互抵消）。
+    \item 开根号让 $\sigma_i^{t}$ 与 gradient 量纲一致，从而 $\eta/\sigma_i^{t}$ 是一个合理的步长缩放。
+\end{itemize}
+
+\begin{knowledgebox}{为什么 Adagrad 真的有效}
+    把这套机制放回那个``一边陡、一边平''的曲面看（见下图）：
+    \begin{itemize}
+        \item \textbf{陡峭方向}：历来 gradient 都大 $\Rightarrow$ RMS $\sigma_i^{t}$ 大 $\Rightarrow$ 有效步长 $\eta/\sigma_i^{t}$ 自动\textbf{缩小}，不再冲过头震荡。
+        \item \textbf{平缓方向}：历来 gradient 都小 $\Rightarrow$ $\sigma_i^{t}$ 小 $\Rightarrow$ 有效步长自动\textbf{放大}，不再龟速爬行。
+    \end{itemize}
+    于是同一个 $\eta$，经过 $\sigma_i^{t}$ 的``因地制宜''，就能让陡峭方向小步、平缓方向大步，化解上一节的两难。
+\end{knowledgebox}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig06_rms_why_works.jpg}
+    \caption{Adagrad 何以奏效的图解。左侧``坡度小（small gradient）''的参数，因历史梯度都小、$\sigma$ 小，得到\textbf{较大的学习率}；右侧``坡度大（large gradient）''的参数，因历史梯度都大、$\sigma$ 大，得到\textbf{较小的学习率}。学习率就这样\textbf{随每个参数的陡缓自动配置}。\protect\footnotemark}
+    \label{fig:rms_why_works}
+\end{figure}
+\footnotetext{视频画面时间区间：00:15:45--00:17:41。}
+
+\begin{warningbox}{Adagrad 的盲点：只能``因方向制宜''，不能``因时制宜''}
+    Adagrad 把整段历史的 gradient 一视同仁地平均，因此它假设\textbf{同一个参数的陡缓是``一成不变''的}。可现实中，\textbf{同一个参数、同一个方向，在 error surface 的不同区段也可能时陡时缓}。这时把远古的、早已不合时宜的 gradient 还一直算进平均里，反应就会迟钝。这正是下一节 RMSProp 要解决的问题。
+\end{warningbox}
+
+% =====================================================================
+\section{RMSProp：让 $\sigma$ 跟得上 error surface 的变化}
+% =====================================================================
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig07_lr_adapts_dynamically.jpg}
+    \caption{即便是\textbf{同一个参数、同一个方向}，也可能需要\textbf{随时间变化}的学习率。图中``新月形（crescent）''的 error surface：参数沿同一个方向前进时，会\textbf{先经过平缓段、再进入陡峭段}。理想的做法是平缓时步子大、陡峭时步子小——可 Adagrad 用整段历史的平均 $\sigma$，对这种``中途变陡''的反应太慢。\protect\footnotemark}
+    \label{fig:lr_adapts_dynamically}
+\end{figure}
+\footnotetext{视频画面时间区间：00:17:41--00:19:07。}
+
+RMSProp 的改动很小却很关键：\textbf{不再对历史 gradient 一视同仁，而是给``最近的'' gradient 更大的话语权}。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig08_rmsprop_recursion.jpg}
+    \caption{RMSProp 的递归定义与逐步展开。第一步同样取 $\sigma_i^{0}=|g_i^{0}|$；此后每一步的 $\sigma_i^{t}$ 都是``\textbf{上一刻的 $\sigma$}''与``\textbf{当前 gradient}''的加权平方平均，权重由一个旋钮 $\alpha$ 控制。\protect\footnotemark}
+    \label{fig:rmsprop_recursion}
+\end{figure}
+\footnotetext{视频画面时间区间：00:19:07--00:21:21。}
+
+逐步展开 RMSProp 的递推（$0<\alpha<1$）：
+
+\begin{align*}
+    \sigma_i^{0} &= \left|\,g_i^{0}\,\right| \\[2pt]
+    \sigma_i^{1} &= \sqrt{\,\alpha\left(\sigma_i^{0}\right)^2 + (1-\alpha)\left(g_i^{1}\right)^2\,} \\[2pt]
+    \sigma_i^{2} &= \sqrt{\,\alpha\left(\sigma_i^{1}\right)^2 + (1-\alpha)\left(g_i^{2}\right)^2\,} \\
+    &\;\;\vdots \\
+    \sigma_i^{t} &= \sqrt{\,\alpha\left(\sigma_i^{t-1}\right)^2 + (1-\alpha)\left(g_i^{t}\right)^2\,}
+\end{align*}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig09_rmsprop_general_brake.jpg}
+    \caption{RMSProp 的一般式与直觉。$\sigma_i^{t}=\sqrt{\alpha(\sigma_i^{t-1})^2+(1-\alpha)(g_i^{t})^2}$ 把``过去累积''与``当前梯度''按 $\alpha:(1-\alpha)$ 调和。由于当前 gradient 占了 $(1-\alpha)$ 的即时权重，\textbf{一旦走进陡峭区段，$\sigma$ 会迅速增大、有效步长立刻``踩刹车''}；反之进入平缓区段，$\sigma$ 又能较快回落、``加大油门''。学习率因此能\textbf{灵敏地跟随 error surface 的陡缓变化}。\protect\footnotemark}
+    \label{fig:rmsprop_general_brake}
+\end{figure}
+\footnotetext{视频画面时间区间：00:21:21--00:23:15。}
+
+\begin{importantbox}{RMSProp：用 $\alpha$ 调节``记忆''与``灵敏''}
+    递归式
+    $$\sigma_i^{t} \;=\; \sqrt{\,\alpha\left(\sigma_i^{t-1}\right)^2 + (1-\alpha)\left(g_i^{t}\right)^2\,},\qquad 0<\alpha<1.$$
+    旋钮 $\alpha$（自己调的 hyperparameter）决定了``听过去''还是``听现在''：
+    \begin{itemize}
+        \item $\alpha$ 越\textbf{接近 1}：越倚重历史累积 $\sigma_i^{t-1}$，$\sigma$ 变化\textbf{迟缓而平稳}（更像 Adagrad）。
+        \item $\alpha$ 越\textbf{接近 0}：越倚重当前 gradient $g_i^{t}$，$\sigma$ 对陡缓变化\textbf{反应灵敏}，能快速``踩刹车/加油门''。
+    \end{itemize}
+    与 Adagrad 的死板平均相比，RMSProp 让 $\sigma$ \textbf{能动态跟随同一方向上的陡缓变化}。
+\end{importantbox}
+
+\begin{knowledgebox}{RMSProp 的``身世''：没有论文的名方法}
+    RMSProp 是个有趣的特例——它\textbf{没有正式的论文出处}。它最早出现在 Geoffrey Hinton 在 Coursera 开设的深度学习课程里，作为课堂内容被提出。要在文献里引用它，大家通常就引那门 Coursera 课程。尽管来历``草根'',它却是极其常用、效果稳健的自适应学习率方法。
+\end{knowledgebox}
+
+% =====================================================================
+\section{Adam：RMSProp + Momentum}
+% =====================================================================
+
+到目前为止我们有了两条独立的改进线索：上一节的 \textbf{Momentum}（用过去所有 gradient 的方向累积出``惯性'',帮助冲过 critical point），和这一节的 \textbf{RMSProp}（用过去所有 gradient 的大小算出 $\sigma$，自适应地缩放步长）。把两者\textbf{合在一起}，就是当今最常用的优化器——\textbf{Adam}。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig10_adam.jpg}
+    \caption{Adam $=$ RMSProp $+$ Momentum。投影片直接贴出原始论文（\emph{Adam: A Method for Stochastic Optimization}，arXiv:1412.6980）的 Algorithm 1 伪代码：其中 $m_t$ 这一路是\textbf{Momentum}（累积梯度方向），$v_t$ 这一路就是\textbf{RMSProp} 式的梯度平方累积（对应 $\sigma$），再各自做偏差校正后组合更新。\textbf{Adam 是 PyTorch 里的预设优化器之一}，多数情况下直接拿来用、连超参数都用预设值，效果就已经很好。\protect\footnotemark}
+    \label{fig:adam}
+\end{figure}
+\footnotetext{视频画面时间区间：00:23:15--00:24:32。}
+
+\begin{importantbox}{Adam 的一句话理解}
+    \textbf{Adam $=$ Momentum（决定``往哪个方向走''）$+$ RMSProp（决定``这个方向上步子该多大''）。}
+    它同时吸收了两条改进：用 momentum 平滑出更可靠的前进方向、对抗 critical point；用 RMSProp 式的 $\sigma$ 为每个参数自适应缩放步长、化解陡缓两难。论文里另含偏差校正等细节，但工程上你几乎不必操心——\textbf{PyTorch 一行 \texttt{torch.optim.Adam} 配预设超参数，就是绝大多数任务的稳妥起点}。
+\end{importantbox}
+
+% =====================================================================
+\section{学习率调度：Decay 与 Warm Up}
+% =====================================================================
+
+自适应的 $\sigma$ 已经解决了``不同方向''的步长问题。但还有一个维度没动过：分子上的 $\eta$ 始终是个\textbf{固定常数}。把 Adagrad 放回最初那个凸面实验，就会暴露出只调 $\sigma$ 仍不够的现象。
+
+\subsection{动机：Adagrad 会``喷出去''再自我修正}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig11_adagrad_effect.jpg}
+    \caption{回到凸面实验。上方两小图重述固定学习率的失败（左 $\eta=10^{-2}$ 纵向剧烈震荡；右 $\eta=10^{-7}$ 走一小段便几乎停住）。下方大图（红椭圆圈出关键现象）是\textbf{用了 Adagrad 之后}的轨迹：参数先顺利沿陡峭方向滑到谷底、再沿平缓方向左行；但平缓方向走久了、历史梯度的平方累积使 $\sigma$ 变得很小，有效步长骤然暴增，于是\textbf{猛地``喷''出几道纵向尖峰}；一``喷''进陡峭区，gradient 立刻变大、$\sigma$ 随之回升，步长又被\textbf{拉回}——如此自我修正，最终仍能抵达终点，只是过程颇为``抖动''。\protect\footnotemark}
+    \label{fig:adagrad_effect}
+\end{figure}
+\footnotetext{视频画面时间区间：00:24:32--00:27:21。}
+
+这个``喷出去''说明：光让 $\sigma$ 自适应还不够稳，我们最好再让\textbf{分子上的 $\eta$ 也随时间变化}，记作 $\eta^{t}$。这就是 \textbf{Learning Rate Scheduling（学习率调度）}：
+
+$$\theta_i^{t+1} \;\leftarrow\; \theta_i^{t} - \frac{\eta^{t}}{\sigma_i^{t}}\, g_i^{t}.$$
+
+\subsection{Learning Rate Decay：越接近终点，步子越小}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig12_lr_decay.jpg}
+    \caption{最常见的调度是 \textbf{Learning Rate Decay（学习率衰减）}：让 $\eta^{t}$ \textbf{随训练进行而逐渐减小}（曲线单调下降）。直觉是——\emph{As the training goes, we are closer to the destination, so we reduce the learning rate}（训练越久、离终点越近，就该把步子收小，以免在终点附近冲过头）。把 $\eta^{t}$ 这样递减，能直接缓解上图 Adagrad ``喷出去''的抖动。\protect\footnotemark}
+    \label{fig:lr_decay}
+\end{figure}
+\footnotetext{视频画面时间区间：00:27:21--00:28:49。}
+
+\subsection{Warm Up：先升后降的反直觉技巧}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig13_warmup.jpg}
+    \caption{另一种著名调度是 \textbf{Warm Up}：$\eta^{t}$ 的曲线\textbf{先由小变大、到达峰值后再慢慢变小}（\emph{Increase and then decrease?}）。它看似反直觉，却在许多知名模型里都是标配。投影片下方点明了\textbf{为什么需要 warm up}：\emph{At the beginning, the estimate of $\sigma_i^{t}$ has large variance}——训练初期 $\sigma$ 是用很少的 gradient 统计出来的，\textbf{估计很不准（方差大）}，所以先用较小的学习率``探路''、等 $\sigma$ 的统计逐渐可靠后再把学习率拉上来。\protect\footnotemark}
+    \label{fig:warmup}
+\end{figure}
+\footnotetext{视频画面时间区间：00:28:49--00:34:09。}
+
+\begin{importantbox}{为什么 Warm Up 有道理：$\sigma$ 是个``需要时间才准''的统计量}
+    回想 $\sigma_i^{t}$ 是对历来 gradient 大小的统计估计。\textbf{训练刚开始时，手头只有寥寥几个 gradient，$\sigma$ 的估计方差很大、很不可靠}。此时若直接放开大学习率，很容易被一个失真的 $\sigma$ 带偏、走到 error surface 上奇怪的地方。Warm Up 的做法是：\textbf{先用小学习率走一阵，一边收集 gradient、让 $\sigma$ 的统计变准，再逐步升到正常学习率}，之后才转入常规的 decay。
+\end{importantbox}
+
+\begin{knowledgebox}{Warm Up 的``江湖地位''：从 ResNet 到 Transformer}
+    Warm Up 绝非偏方，而是诸多里程碑模型的标准配置：残差网络 \textbf{Residual Network（ResNet，arXiv:1512.03385）}的训练用到它，\textbf{Transformer} 原始论文里也明确使用了 warm up。后来更有专门改进自适应学习率初期不稳定的工作，如 \textbf{RAdam（Rectified Adam）}，本质上也是在处理``初期 $\sigma$ 估计不准''这个同源问题。换句话说，warm up 是工程界反复验证过的有效技巧。
+\end{knowledgebox}
+
+% =====================================================================
+\section{优化的全景总结（Summary of Optimization）}
+% =====================================================================
+
+把这一节（自适应学习率、调度）与上一节（momentum）的所有改进收拢到一起，就得到现代优化器的``全家福''更新式。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig14_summary_optimization.jpg}
+    \caption{优化方法的全景总结。最朴素的 (Vanilla) Gradient Descent 是 $\theta_i^{t+1}\leftarrow\theta_i^{t}-\eta\,g_i^{t}$；各项改进汇合后变成 $\theta_i^{t+1}\leftarrow\theta_i^{t}-\dfrac{\eta^{t}}{\sigma_i^{t}}\,m_i^{t}$。三个部件各司其职：\textbf{$m_i^{t}$ 是 Momentum}（过去所有 gradient 的加权和，\emph{consider direction}，决定方向）；\textbf{$\sigma_i^{t}$ 是 Root Mean Square}（过去所有 gradient 大小的均方根，\emph{only magnitude}，决定步长缩放）；\textbf{$\eta^{t}$ 是 Learning Rate Scheduling}（随时间安排的整体步长）。\protect\footnotemark}
+    \label{fig:summary_optimization}
+\end{figure}
+\footnotetext{视频画面时间区间：00:34:09--00:36:42。}
+
+\begin{importantbox}{现代优化器的统一更新式}
+    $$\boxed{\;\theta_i^{t+1} \;\leftarrow\; \theta_i^{t} - \frac{\eta^{t}}{\sigma_i^{t}}\, m_i^{t}\;}$$
+    \begin{itemize}
+        \item $m_i^{t}$（\textbf{Momentum}，方向）：过去所有 gradient 的\textbf{加权和}，是个\textbf{向量}，决定``往哪个方向走''。
+        \item $\sigma_i^{t}$（\textbf{Root Mean Square}，大小）：过去所有 gradient 的\textbf{均方根}，是个\textbf{正的标量}，决定``这个方向的步子该缩放多少''。
+        \item $\eta^{t}$（\textbf{Scheduling}）：随训练时刻 $t$ 安排的整体学习率（如 decay、warm up）。
+    \end{itemize}
+\end{importantbox}
+
+\begin{warningbox}{$m_i^{t}$ 与 $\sigma_i^{t}$ 都用了过去的 gradient，会不会互相抵消？}
+    课堂上有同学问：分子的 momentum $m_i^{t}$ 和分母的 $\sigma_i^{t}$ 都来自``过去所有 gradient'',岂不是会约掉、白忙一场？\textbf{答案是不会}，因为二者用 gradient 的方式根本不同：
+    \begin{itemize}
+        \item $m_i^{t}$ 是\textbf{向量和，看方向}——方向相反的 gradient 会\textbf{相互抵消}（一上一下相加趋于零）。
+        \item $\sigma_i^{t}$ 是\textbf{平方和开根，只看大小}——gradient 先平方，正负都变正，\textbf{绝不会抵消}，只会越累越大。
+    \end{itemize}
+    所以即便分子分母都``装了''同一批 gradient，一个算方向、一个算大小，处理逻辑互不干涉，\textbf{不会相消}。这正是投影片上 \emph{consider direction} 与 \emph{only magnitude} 两个注解的用意。
+\end{warningbox}
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本节从一个被忽视的事实出发——\textbf{loss 卡住时往往 gradient 并不小、根本没到 critical point}——一步步推出了``自动调整学习率''这条完整的改进链：从客制化 $\sigma$、到 Adagrad、RMSProp、Adam，再到 $\eta^{t}$ 的 Decay 与 Warm Up，最终汇成现代优化器的统一更新式。
+
+\subsection{核心要点提炼}
+
+\begin{importantbox}{自适应学习率：四个关键认知}
+    \begin{enumerate}
+        \item \textbf{停滞 $\ne$ critical point}：loss 不降时 gradient 常常还很大，真凶多是``步伐没调好''——在峡谷两壁间反复横跳。
+        \item \textbf{固定 $\eta$ 顾此失彼}：陡峭方向要小步、平缓方向要大步，单一学习率做不到，必须\textbf{因参数、因时刻}定制。
+        \item \textbf{用 $\sigma$ 缩放步长}：以 gradient 大小的统计量 $\sigma_i^{t}$ 当分母——梯度大则步小、梯度小则步大。Adagrad 用整段历史的 RMS；RMSProp 用带 $\alpha$ 的递归式，能\textbf{动态跟随陡缓变化}；\textbf{Adam $=$ RMSProp $+$ Momentum}。
+        \item \textbf{再调度 $\eta^{t}$}：Learning Rate Decay 让步子随训练收小；Warm Up 先升后降，化解\textbf{初期 $\sigma$ 估计方差大}的不稳。
+    \end{enumerate}
+\end{importantbox}
+
+\begin{importantbox}{从 Vanilla 到现代优化器的演化}
+    \begin{align*}
+        \text{Vanilla GD：}&\quad \theta_i^{t+1} \leftarrow \theta_i^{t} - \eta\, g_i^{t} \\
+        \text{＋客制化 / Adagrad：}&\quad \theta_i^{t+1} \leftarrow \theta_i^{t} - \frac{\eta}{\sigma_i^{t}}\, g_i^{t}\quad(\sigma\text{ 取历史 RMS}) \\
+        \text{＋RMSProp：}&\quad \sigma_i^{t} = \sqrt{\alpha(\sigma_i^{t-1})^2+(1-\alpha)(g_i^{t})^2}\ \text{（$\sigma$ 可动态跟随）} \\
+        \text{＋Momentum＝Adam：}&\quad \text{分子 } g_i^{t}\ \text{换成方向累积 } m_i^{t} \\
+        \text{＋Scheduling：}&\quad \theta_i^{t+1} \leftarrow \theta_i^{t} - \frac{\eta^{t}}{\sigma_i^{t}}\, m_i^{t}\quad(\eta^{t}\text{：decay／warm up})
+    \end{align*}
+\end{importantbox}
+
+\subsection{本节关键概念清单}
+
+\begin{knowledgebox}{术语对照表}
+    \begin{center}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{概念} & \textbf{英文} & \textbf{说明} \\
+        \midrule
+        自适应学习率 & Adaptive Learning Rate & 让每个参数、每个时刻有专属步长 \\
+        凸误差曲面 & Convex Error Surface & 无 local minima／saddle 的碗状曲面 \\
+        客制化步长 & Parameter-dependent $\eta$ & 把 $\eta$ 换成 $\eta/\sigma_i^{t}$ \\
+        均方根 & Root Mean Square (RMS) & 历史 gradient 平方平均再开根，即 $\sigma$ \\
+        Adagrad & Adagrad & $\sigma$ 取整段历史 RMS 的方法 \\
+        & RMSProp & $\sigma$ 用带 $\alpha$ 的递归式，可动态跟随 \\
+        平滑系数 & $\alpha$ & 调和``历史累积''与``当前梯度''的权重 \\
+        Adam & Adam & RMSProp $+$ Momentum；PyTorch 预设 \\
+        学习率衰减 & Learning Rate Decay & $\eta^{t}$ 随训练逐渐减小 \\
+        预热 & Warm Up & $\eta^{t}$ 先升后降，缓解初期 $\sigma$ 不准 \\
+        学习率调度 & LR Scheduling & 让 $\eta$ 随时刻 $t$ 变化为 $\eta^{t}$ \\
+        动量 & Momentum $m_i^{t}$ & 过去梯度的方向加权和（向量） \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+\end{knowledgebox}
+
+\subsection{承上启下}
+
+\begin{itemize}
+    \item \textbf{承上}：上一节用 small batch 的噪声与 momentum 的惯性对抗 critical point；本节进一步指出，很多停滞\textbf{压根不是 critical point}，而是学习率不当——于是给出了自适应学习率这一整套``治本''方案。至此，\textbf{所有改进都集中在``怎么在固定的 error surface 上走得更好''}。
+    \item \textbf{启下}：但还有一条更釜底抽薪的思路——\textbf{与其想办法在崎岖的 error surface 上跋涉，不如直接把 error surface 改造得平坦好走}。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig15_next_time.jpg}
+    \caption{下回预告（图片出处：arXiv:1712.09913）。左侧是崎岖陡峭、沟壑纵横的 error surface，右侧是被``抚平''成的平滑碗状曲面。老师用两句话点题：\emph{If the mountain won't move, build a road around it}（山不过来，就修条路绕过去）与 \emph{Can we change the error surface? Directly move the mountain!}（能不能干脆改造 error surface？直接把山移走！）——下一讲将讨论\textbf{如何主动改造 error surface}（如 Batch Normalization 等），让训练从源头变得容易。\protect\footnotemark}
+    \label{fig:next_time}
+\end{figure}
+\footnotetext{视频画面时间区间：00:36:42--00:37:39。}
+
+\vspace{0.6cm}
+
+\begin{center}
+    \rule{0.5\textwidth}{0.5pt}
+    \vspace{0.3cm}
+
+    \textbf{本节完 · 下一节：如何改造 error surface —— 让训练从源头变容易}
+
+    课程视频：\href{\videourl}{\videourl}
+
+    \vspace{0.3cm}
+    \rule{0.5\textwidth}{0.5pt}
+\end{center}
+
+\end{document}

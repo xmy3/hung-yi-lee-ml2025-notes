@@ -1,0 +1,344 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自监督式学习（一）}
+\newcommand{\notesubtitle}{芝麻街命名谱系、BERT 与大模型时代}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 7 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=22}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.4cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{进入自监督式学习}
+% =====================================================================
+
+GAN 系列结束后，课程转入下一个主题：self-supervised learning，自监督式学习。这个短片段主要是导论，正式的训练目标和模型机制会在后续课程展开。本讲的作用是先建立背景：为什么自然语言处理中的自监督模型有一串奇妙的名字，为什么 BERT 被视为一个很大的模型，以及为什么后续模型会一路变得更大。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{figures/fig01_self_supervised_title.jpg}
+    \caption{课程进入 self-supervised learning 单元，并用芝麻街人物引出一系列 NLP 自监督模型名称。\protect\footnotemark}
+    \label{fig:ss-title}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:02--00:44；字幕说明接下来主题是 self-supervised learning，并引出芝麻街命名传统。}
+
+\subsection{什么叫自监督}
+
+虽然本讲还没有正式定义训练方法，但可以先给出概念框架。自监督学习的核心是：不依赖人工标注标签，而是从资料本身构造监督信号。例如在语言模型中，可以遮住一句话中的某些词，让模型根据上下文预测它们；也可以让模型根据前文预测下一个词。标签不是人工写出来的，而是原始文本中本来就存在的部分。
+
+这个思想介于 supervised learning 与 unsupervised learning 之间：
+
+\begin{itemize}
+    \item 它不需要人工为每个样本标注类别或答案，因此不像传统监督学习那样依赖昂贵标签。
+    \item 它又不是完全没有目标，而是从数据内部设计预测任务，因此训练时仍有明确 loss。
+    \item 它尤其适合文字、语音、图像等可以大量收集但难以精细标注的数据。
+\end{itemize}
+
+\begin{importantbox}{自监督学习的一句话}
+    自监督学习不是没有监督，而是把监督信号藏在资料本身里。模型通过预测被遮住、被打乱、未来出现或跨模态对应的内容，学到可迁移的表示。
+\end{importantbox}
+
+\subsection{为什么这件事重要}
+
+深度学习系统常常受限于标签。图像分类需要人工标图，语音辨识需要转写，翻译需要平行语料。可是互联网文本、图片、影片和音频的原始资料量巨大。自监督学习的价值在于，它把这些未标注资料变成可训练资源，让模型先通过大规模预训练学到通用表示，再用少量标注资料做下游任务。
+
+这也是后续 BERT、GPT 等模型会成为关键基础模型的原因：它们不是只为某个小任务训练，而是在大量文本上学习语言结构，然后迁移到问答、分类、生成、检索、翻译等任务。
+
+\subsection{本章小结}
+
+本讲开场还没有进入公式和训练细节，而是先解释自监督学习单元的背景。自监督学习的基本精神是从资料本身产生训练目标，降低人工标注依赖。它之所以重要，是因为它让大规模无标注资料成为模型能力的主要来源。
+
+% =====================================================================
+\section{芝麻街模型命名谱系}
+% =====================================================================
+
+课程用芝麻街人物串起一批 NLP 自监督模型名称。这个段落表面上是趣味介绍，实际上也给出了模型发展的一条时间线：ELMo 较早，BERT 成为代表，随后出现 ERNIE、BigBird 等变体。
+
+\subsection{ELMo 与 BERT}
+
+ELMo 的全称是 Embeddings from Language Models，是早期重要的 contextual word embedding 模型。它的重点在于：词的表示不再是固定向量，而是会随上下文变化。例如 ``bank'' 在河岸与银行语境中应有不同表示。
+
+BERT 的全称是 Bidirectional Encoder Representations from Transformers，是后续更具代表性的自监督模型。BERT 使用 Transformer encoder，并通过双向上下文学习 token 表示。课程此处只是介绍名字，后续会再讲它到底如何训练。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_elmo_bert_names.jpg}
+    \caption{ELMo 与 BERT 都借用了芝麻街人物名称；课程用名字梗引出 NLP 自监督模型的发展脉络。\protect\footnotemark}
+    \label{fig:elmo-bert}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:55--01:31；字幕说明 ELMo 是较早的 self-supervised model，BERT 是更广为人知的模型。}
+
+\subsection{ERNIE 与 BigBird}
+
+BERT 之后出现了多个 ERNIE。课程调侃这些名称有时像是为了凑出芝麻街人物名而设计全称，例如 Enhanced Representation through Knowledge Integration。BigBird 则更直接，名称来自处理长序列的 Transformer 变体，课程指出它甚至已经不太努力凑缩写。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig03_bert_ernie_bigbird.jpg}
+    \caption{BERT 之后出现 ERNIE 与 BigBird 等模型；BigBird 代表面向长序列处理的 Transformer 方向。\protect\footnotemark}
+    \label{fig:bert-ernie-bigbird}
+\end{figure}
+\footnotetext{视频画面时间区间：约 01:23--02:30；字幕介绍 ERNIE、BigBird，并说明 self-supervised learning model 中有许多芝麻街命名。}
+
+\subsection{名字之外真正要关注什么}
+
+这些名字容易让人记住，但学习时更应该关注模型背后的问题：
+
+\begin{itemize}
+    \item \textbf{输入表示。} 模型如何把 token、位置和上下文编码成向量？
+    \item \textbf{训练目标。} 模型预测被遮住的词、下一词，还是句子关系？
+    \item \textbf{上下文方向。} 模型使用双向上下文，还是只看左侧历史？
+    \item \textbf{可处理长度。} 模型能处理多长的序列，注意力复杂度如何扩展？
+    \item \textbf{迁移方式。} 预训练后的表示如何用于下游任务？
+\end{itemize}
+
+后续课程会集中回答这些问题。本讲的名字谱系只是入口：它提示我们，BERT 不是孤立模型，而是一条自监督预训练路线中的节点。
+
+\subsection{本章小结}
+
+ELMo、BERT、ERNIE、BigBird 的命名很有趣，但更重要的是它们代表了 NLP 预训练模型的发展：从上下文化词向量，到 Transformer encoder 表示，再到知识整合与长序列处理。理解这些模型，需要把名字背后的训练目标、结构和迁移方式拆开来看。
+
+% =====================================================================
+\section{BERT 为什么被说成巨大模型}
+% =====================================================================
+
+课程接着用《进击的巨人》的比喻说明 BERT 的规模。BERT 有 340M 参数。单看这个数字可能没有直觉，于是课程把它与作业四中的 Transformer baseline 对比：作业模型约 0.1M 参数，BERT 约是它的三千倍。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig04_bert_340m_parameters.jpg}
+    \caption{BERT 有约 340M 参数，课程用超大体型比喻帮助建立规模直觉。\protect\footnotemark}
+    \label{fig:bert-340m}
+\end{figure}
+\footnotetext{视频画面时间区间：约 02:47--03:18；字幕说明 BERT 有 340M 参数，是作业四 0.1M Transformer baseline 的约三千倍。}
+
+\subsection{参数量代表什么}
+
+参数量不是模型能力的唯一来源，但它反映模型容量。更多参数通常意味着模型可以存储更复杂的模式、学习更丰富的特征组合，并在大规模资料上形成更强表示。但参数多也会带来成本：
+
+\begin{itemize}
+    \item 训练需要更多算力、显存和时间。
+    \item 推理更慢，部署成本更高。
+    \item 若资料或正则化不足，可能过拟合或学习到偏差。
+    \item 模型行为更难解释和调试。
+\end{itemize}
+
+因此，``大'' 不是自动等于 ``好''。大模型真正有效，通常依赖三件事同时成立：足够大的资料、合适的训练目标、以及能支撑训练的计算资源。
+
+\subsection{BERT 的历史位置}
+
+在 2018 年左右，BERT 的规模和效果都非常醒目。它推动了 NLP 从 ``为每个任务单独设计模型'' 转向 ``先大规模预训练，再针对任务微调'' 的范式。BERT 之后，许多模型继续沿着更大数据、更大参数、更通用预训练目标的方向发展。
+
+\begin{knowledgebox}{从 feature engineering 到 pretraining}
+    早期 NLP 常常为不同任务设计特征和模型；BERT 之后，通用预训练表示成为基础。模型先在大量无标注文本上学语言，再通过 fine-tuning 或 prompting 适配具体任务。这种范式后来扩展成更广义的 foundation model 思路。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+BERT 的 340M 参数在当时已经相当巨大，远大于课程作业中的模型。课程用形象比喻建立规模感，但真正值得记住的是：BERT 的重要性不只是参数多，而是它把大规模自监督预训练变成 NLP 任务的核心范式。
+
+% =====================================================================
+\section{模型规模快速增长}
+% =====================================================================
+
+课程随后指出，BERT 虽然大，但很快就不是最大的。自监督语言模型进入了模型规模迅速膨胀的阶段：ELMo、BERT、GPT-2、Megatron、T5、Turing NLG、GPT-3、Switch Transformer 等模型相继出现，参数量从千万级、亿级走向千亿级、万亿级。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig05_model_scale_giants.jpg}
+    \caption{课程用身高比喻模型参数量：ELMo、BERT、GPT-2、T5、GPT-3 等模型规模不断增长。\protect\footnotemark}
+    \label{fig:model-giants}
+\end{figure}
+\footnotetext{视频画面时间区间：约 04:22--05:03；字幕说明 ELMo 约 94M，BERT 约 340M，GPT-2 约 1.5B 参数。}
+
+\subsection{从亿级到十亿级}
+
+课程列出的几个数字可以形成直观表格：
+
+\begin{center}
+\begin{tabular}{L{0.35\textwidth}L{0.35\textwidth}}
+\toprule
+\textbf{模型} & \textbf{课程中提到的参数量} \\
+\midrule
+ELMo & 约 94M \\
+BERT & 约 340M \\
+GPT-2 & 约 1.5B \\
+Megatron & 约 8B \\
+T5 & 约 11B \\
+Turing NLG & 约 17B \\
+GPT-3 & 约 175B \\
+Switch Transformer & 约 1.6T \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_gpt2_megatron_t5_scale.jpg}
+    \caption{GPT-2、Megatron、T5 等模型进一步扩大参数量，十亿级参数开始成为常见比较尺度。\protect\footnotemark}
+    \label{fig:gpt2-t5}
+\end{figure}
+\footnotetext{视频画面时间区间：约 04:55--05:33；字幕依次说明 GPT-2、Megatron、T5、Turing NLG 与 GPT-3 的参数规模。}
+
+\subsection{GPT-3 与 Switch Transformer}
+
+为了让 GPT-3 的 175B 参数更有直觉，课程把 BERT 比作一公尺高的人，再把 GPT-3 比作台北 101。随后又提到 Switch Transformer 约 1.6T 参数，比 GPT-3 又大约十倍。这里的重点不是记住每个数字，而是意识到：自监督预训练与模型规模增长紧密绑定，现代 NLP 的进展很大程度上来自 ``更大模型 + 更多资料 + 更强算力'' 的组合。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig07_gpt3_switch_transformer_scale.jpg}
+    \caption{从 BERT 到 GPT-3，再到 Switch Transformer，参数量从亿级、千亿级迈向万亿级。\protect\footnotemark}
+    \label{fig:gpt3-switch}
+\end{figure}
+\footnotetext{视频画面时间区间：约 05:40--06:34；字幕用台北 101 比喻 GPT-3，并提到 Switch Transformer 约 1.6T 参数。}
+
+\subsection{规模化背后的风险}
+
+规模化带来强大能力，也带来新的问题。课程此处只是用幽默方式引入规模，但学习时应同时记住几个现实限制：
+
+\begin{itemize}
+    \item \textbf{资料偏差会被放大。} 大模型从大规模资料学习，资料中的偏见、错误和噪声也可能被吸收。
+    \item \textbf{成本集中。} 训练超大模型需要高昂算力，使研究和部署门槛提高。
+    \item \textbf{评估更困难。} 大模型能力广泛，单一 benchmark 难以覆盖其行为。
+    \item \textbf{可解释性下降。} 参数量越大，越难追踪具体知识和推理过程来自哪里。
+\end{itemize}
+
+\begin{warningbox}{不要把参数量当成唯一指标}
+    参数量是理解大模型时代的重要坐标，但不是唯一坐标。训练数据、架构、目标函数、优化稳定性、推理方式和任务对齐都会影响最终能力。更大的模型若没有合适训练与评估，也可能只是更昂贵。
+\end{warningbox}
+
+\subsection{本章小结}
+
+自监督模型的发展很快进入规模化阶段。从 ELMo 到 BERT，再到 GPT-3 与 Switch Transformer，参数量增长了数个数量级。规模化是现代语言模型成功的重要因素，但它必须与数据、训练目标和计算资源一起理解。
+
+% =====================================================================
+\section{BERT 系列与 GPT 系列}
+% =====================================================================
+
+本讲最后给出后续课程大纲：接下来会讲两个系列，BERT series 与 GPT series。它们都是自监督语言模型，但关注点不同。课程此处尚未展开细节，可以先建立一个预备理解。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{figures/fig08_bert_gpt_outline.jpg}
+    \caption{后续课程将围绕 BERT series 与 GPT series 展开，分别介绍这些 self-supervised learning models 在做什么。\protect\footnotemark}
+    \label{fig:outline}
+\end{figure}
+\footnotetext{视频画面时间区间：约 06:43--07:05；字幕说明接下来会介绍 BERT 与 GPT 两类 self-supervised learning model。}
+
+\subsection{预先理解两条路线}
+
+在正式进入后续课程前，可以先用一张概念表区分它们：
+
+\begin{center}
+\begin{tabular}{L{0.28\textwidth}L{0.28\textwidth}L{0.28\textwidth}}
+\toprule
+\textbf{路线} & \textbf{典型结构} & \textbf{常见用途直觉} \\
+\midrule
+BERT series & Transformer encoder & 学上下文表示，适合理解、分类、抽取等任务 \\
+GPT series & Transformer decoder & 学下一个 token 预测，适合生成、续写、对话等任务 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+这个表只是导读。真正的差异要看训练目标：BERT 如何利用双向上下文，GPT 如何自回归生成，以及两者如何转移到下游任务。
+
+\subsection{为什么这两条线都会重要}
+
+BERT 与 GPT 代表自监督学习的两个核心方向。BERT 强调理解式表示：把一句话编码成含上下文信息的向量，供下游任务使用。GPT 强调生成式建模：根据历史 token 预测未来 token，逐步产生文本。一个更像 ``读懂文本'' 的基础编码器，一个更像 ``继续写下去'' 的生成器。
+
+现代模型的发展已经让这两条线互相影响，但在学习基础时，把 BERT/GPT 分清楚仍然很有帮助：它们对应不同的 attention mask、训练目标和任务适配方式。
+
+\subsection{本章小结}
+
+本讲作为自监督学习单元开场，先建立名称、规模和路线图。后续要真正理解 BERT 与 GPT，需要进入它们的训练目标、架构细节和下游迁移方式。本讲的任务是让我们知道：这些模型为什么叫这些名字，为什么会变得巨大，以及接下来要分别学习哪两类模型。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+这段短讲义真正传达的是一个时代转折：机器学习从依赖人工标注的小模型，逐渐转向利用海量未标注资料训练的大型自监督模型。ELMo、BERT、ERNIE、BigBird、GPT-2、GPT-3、Switch Transformer 这些名字背后，是同一条主线：让模型从资料本身学习语言结构，再迁移到各种任务。
+
+本讲可以压缩成三点：
+
+\begin{enumerate}
+    \item 自监督学习从资料本身构造监督信号，不等于没有目标。
+    \item BERT 等模型让大规模预训练成为 NLP 的核心范式。
+    \item 模型规模迅速膨胀，从亿级参数走向千亿级、万亿级参数，也带来成本、偏差和评估问题。
+\end{enumerate}
+
+后续学习时，建议把注意力放在两个问题上。第一，模型到底被要求预测什么？这决定它学到什么表示。第二，预训练后的模型如何用于下游任务？这决定自监督学习如何真正转化为应用能力。名字和规模只是入口，训练目标和迁移机制才是理解 BERT/GPT 的关键。
+
+\end{document}

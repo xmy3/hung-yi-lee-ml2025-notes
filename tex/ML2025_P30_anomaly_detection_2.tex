@@ -1,0 +1,337 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（二）：分类器信心分数}
+\newcommand{\notesubtitle}{Using Classifier Confidence for Open-set Anomaly Detection}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 14 分 09 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=30}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{有标签设定：从普通分类器出发}
+% =====================================================================
+
+上一讲把异常检测按资料设定分成几类。本讲先处理“有标签”的情况：训练资料属于若干已知类别，模型可以训练一个普通分类器；测试时，输入可能来自已知类别，也可能来自训练时没有见过的未知类别。目标不是只判断它属于哪个已知类，而是还要判断它是否应该被拒绝为 unknown 或 anomaly。
+
+\framefig{0.88}{figures/fig01_simpsons_classifier_example.jpg}
+{有标签设定示例：先训练一个已知类别分类器，再思考如何用它判断输入是否来自已知分布}
+{00:01:45--00:02:00}
+
+\subsection{为什么分类器能提供线索}
+
+普通分类器输入 $x$，输出类别 $\hat{y}$。若分类器看到的是训练分布内的样本，它通常应该对某个类别很有把握；若看到训练时没有见过的类型，它可能会犹豫，输出分布比较平均。这个直觉让我们想到：也许可以把分类器的信心分数当作异常检测分数。
+
+在 open-set recognition 中，分类器不只需要回答“这是哪一个已知类别”，还要回答“它是否属于任何已知类别”。若它不属于已知类别，就应该输出 unknown 或 anomaly。
+
+\begin{importantbox}{本讲 baseline}
+    已有一个分类器时，最简单的异常检测 baseline 是：用分类器对最可能类别的信心分数 $c(x)$ 判断输入是否正常。信心高，认为是 normal；信心低，认为是 anomaly。
+\end{importantbox}
+
+\subsection{从 closed-set 到 open-set}
+
+Closed-set classification 假设测试样本一定来自训练类别之一。因此 softmax 分类器无论看到什么输入，都会在已知类别中选一个答案。Open-set anomaly detection 则放宽这个假设：测试样本可能不属于任何已知类别，模型必须有能力拒绝。
+
+这正是本讲的重点：若普通分类器只能输出类别，怎样把它改造成能拒绝未知输入的检测器？课程采用的方法是附加一个 confidence score。
+
+\subsection{本章小结}
+
+有标签异常检测可以从普通分类器开始，但不能停在普通分类器。分类器给出的类别 $\hat{y}$ 只回答“最像哪个已知类”，confidence score 才可能回答“到底像不像任何已知类”。因此，本讲后续全部围绕如何定义、使用和改进 confidence score 展开。
+
+% =====================================================================
+\section{用 confidence threshold 做异常检测}
+% =====================================================================
+
+分类器不仅可以输出类别，也可以输出一个信心分数 $c(x)$。这个分数代表模型对当前分类结果的把握程度。若 $c(x)$ 高于阈值 $\lambda$，就把输入当作 normal；若 $c(x)$ 低于阈值，就当作 anomaly。
+
+\framefig{0.86}{figures/fig02_confidence_threshold_rule.jpg}
+{分类器输出类别和信心分数；异常检测可用阈值 $\lambda$ 把低信心输入判为 anomaly}
+{00:03:00--00:03:15}
+
+\subsection{决策规则}
+
+课程中的规则可以写成：
+
+\[
+f(x)=
+\begin{cases}
+\mathrm{normal}, & c(x)>\lambda,\\
+\mathrm{anomaly}, & c(x)\le \lambda.
+\end{cases}
+\]
+
+符号说明：
+\begin{itemize}
+    \item $c(x)$：分类器对输入 $x$ 的信心分数。
+    \item $\lambda$：阈值，通常需要用 development set 决定。
+    \item $f(x)$：最终异常检测输出。
+\end{itemize}
+
+这个规则非常直接，但它把问题转移到了两个新问题上：第一，$c(x)$ 如何定义？第二，$\lambda$ 如何选择？若信心分数定义不可靠，阈值再怎么调也只能治标；若阈值选择不合理，正常样本和异常样本之间会产生大量误报或漏报。
+
+\subsection{阈值的意义}
+
+阈值 $\lambda$ 控制保守程度。阈值高，只有非常有信心的输入才被接受为 normal，误报可能增加，但漏报可能减少；阈值低，模型更愿意接受输入为 normal，误报减少，但可能漏掉异常。
+
+\begin{knowledgebox}{development set 应该长什么样}
+    理想情况下，development set 要尽量模拟测试时 normal 和 anomaly 的组成。如果完全没有异常样本，阈值只能根据正常验证集的分数分布设定，例如选一个较低分位数作为拒绝边界；但这样无法保证未来异常一定会落在阈值外。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+用 confidence threshold 做异常检测的框架很简单：分类器给出 $c(x)$，阈值 $\lambda$ 决定 normal 或 anomaly。它是一个很实用的 baseline，因为不需要额外训练复杂模型。但它的成败高度依赖 confidence score 是否真的能反映“输入是否来自已知分布”。
+
+% =====================================================================
+\section{如何定义 confidence score}
+% =====================================================================
+
+分类器通常输出一个类别分布：
+
+\[
+p(y=k\mid x), \qquad k=1,\ldots,K
+\]
+
+其中 $K$ 是已知类别数。最直觉的 confidence score 是最大类别概率：
+
+\[
+c_{\max}(x)=\max_k p(y=k\mid x)
+\]
+
+\framefig{0.86}{figures/fig03_confidence_maximum_score.jpg}
+{最简单的 confidence score 是输出分布中的最大类别分数；分数高代表模型更确信某个类别}
+{00:05:30--00:05:45}
+
+\subsection{最大类别分数}
+
+若分类器对某张图片输出 $(0.97,0.01,0.01,0.01)$，最大类别分数为 $0.97$，模型非常有信心。若输出接近 $(0.24,0.26,0.25,0.25)$，最大分数只有 $0.26$，表示模型无法明显偏向任何已知类。
+
+最大类别分数的优点是简单、可解释、无需改模型。它的缺点是 softmax 分数不一定校准。模型可能对分布外输入也给出很高的最大概率，尤其是深度网络在训练时没有被明确教过“遇到未知输入时要低信心”。
+
+\subsection{负熵作为信心}
+
+另一种方法是看输出分布的 entropy：
+
+\[
+H(p)=-\sum_{k=1}^K p_k\log p_k
+\]
+
+若分布尖锐，entropy 小，模型较有信心；若分布平均，entropy 大，模型较没信心。因此可以使用负熵作为信心：
+
+\[
+c_{\mathrm{ent}}(x)=-H(p(y\mid x))
+\]
+
+\framefig{0.86}{figures/fig04_confidence_max_or_negative_entropy.jpg}
+{confidence 可由最大类别分数或负熵估计；两者都从输出分布的集中程度衡量模型把握}
+{00:06:45--00:07:00}
+
+最大类别分数只看最高的那一类；entropy 会看整个分布。若一个输出分布有两个很高的类别，最大分数可能仍不低，但 entropy 会反映这种不确定性。课程也指出，在文献和实践中，不同简单分数之间的差异未必总是很大；真正的问题常常是分类器的输出分布本身是否可靠。
+
+\subsection{分数定义对比}
+
+\begin{center}
+\begin{tabular}{L{3.0cm} L{4.4cm} L{5.0cm}}
+\toprule
+分数 & 计算方式 & 主要特点 \\
+\midrule
+最大类别分数 & $\max_k p_k$ & 最简单，常作为第一 baseline \\
+负熵 & $-\sum_k p_k\log p_k$ 的相反数 & 考虑整个分布是否集中 \\
+温度校准后分数 & 调整 softmax 温度后再取分数 & 可改善校准，但需要验证集 \\
+专门 confidence head & 模型直接输出 $c(x)$ & 更灵活，但需要额外训练设计 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{本章小结}
+
+confidence score 可以由分类器输出分布构造，最常见的是最大类别概率和负熵。它们都把“输出分布是否集中”当作信心来源。这个想法直观且容易实现，但要记住：softmax 分数不是天然可靠的概率信心，它只是模型在已知类别之间分配的相对分数。
+
+% =====================================================================
+\section{实验现象：简单 baseline 有用，但会过度自信}
+% =====================================================================
+
+课程用已训练好的角色分类器做实验。对训练分布内的图片，模型通常会给出很高分数；对分布外图片，分数多数会降低。这个结果说明 confidence score baseline 确实有信号。但实验也显示，它不是万无一失的。
+
+\subsection{未知输入也可能得到高分}
+
+有些分布外图片会被分类器以很高信心归到某个已知类别。原因可能是输入在某些低层特征上和某个已知类别相似，也可能是模型只学到了局部纹理、颜色或形状捷径。因为训练时模型只被要求在已知类别之间分类，它没有被明确惩罚“对未知输入过度自信”。
+
+\framefig{0.86}{figures/fig05_overconfident_unknown_example.jpg}
+{未知输入有时仍会得到很高 confidence；这暴露了直接使用 softmax 分数的风险}
+{00:09:15--00:09:30}
+
+这正是 open-set recognition 的核心麻烦。Closed-set classifier 被迫在已知类别中选择答案，所以它看到未知输入时也会输出一个已知类别。若 softmax 分布恰好尖锐，最大类别分数就会误导我们，让 anomaly 被当成 normal。
+
+\subsection{分布层面的观察}
+
+课程进一步比较信心分数分布：已知分布内样本的 confidence 大多集中在接近 1 的区域；分布外样本的 confidence 更分散，整体较低，但仍有一部分样本分数很高。也就是说，confidence score 在统计上可区分两群样本，但个别样本上会出错。
+
+\framefig{0.88}{figures/fig06_confidence_score_distribution.jpg}
+{已知分布和分布外样本的 confidence 分布有明显差异，但分布外样本仍可能出现高 confidence}
+{00:11:45--00:12:00}
+
+这个结果给了一个务实结论：若你手上已经有分类器，使用最大 softmax score 做异常检测是值得尝试的第一个 baseline。它非常简单，计算成本低，很多时候效果不差。但它不能被当成最终保证，尤其是在安全、医疗、金融等高风险应用里。
+
+\begin{warningbox}{softmax confidence 的根本限制}
+    Softmax 分数回答的是“在已知类别中，哪一类相对最大”，不是“输入是否属于已知分布”。两者在分布内样本上常常一致，但在分布外样本上可能分离。
+\end{warningbox}
+
+\subsection{本章小结}
+
+实验说明两件事同时成立：第一，分类器信心分数确实包含异常检测信号；第二，分类器可能对未知输入过度自信。它适合做快速 baseline，却需要校准、阈值验证或更专门的方法来提升可靠性。
+
+% =====================================================================
+\section{展望：直接学习 confidence}
+% =====================================================================
+
+课程最后提到一种更进一步的方向：不要先训练分类器、再事后从输出分布硬凑 confidence，而是在训练模型时就让网络直接输出 confidence。这样模型的目标不只是分类正确，还包括估计自己对当前输入的把握。
+
+\framefig{0.88}{figures/fig07_network_for_confidence_estimation.jpg}
+{展望方向：训练一个网络直接输出分类结果和 confidence，使 confidence estimation 成为模型目标的一部分}
+{00:14:00--00:14:09}
+
+\subsection{从后处理到模型内建}
+
+前面的最大分数和负熵都属于后处理：模型原本只为分类训练，confidence 是我们从输出分布中额外计算出来的。直接学习 confidence 则把 $c(x)$ 变成模型输出的一部分：
+
+\[
+\mathrm{model}(x) \rightarrow \bigl(p(y\mid x), c(x)\bigr)
+\]
+
+这种设计的好处是模型可以学习“什么时候应该不确定”。例如，它可能在输入远离训练分布、特征冲突或类别边界模糊时降低 confidence。坏处是训练目标更复杂，需要更谨慎的数据和损失设计。
+
+\subsection{和校准问题的关系}
+
+Confidence estimation 和 calibration 密切相关。一个校准良好的模型，预测 0.8 正确率的样本集合中，应大约有八成真的预测正确。但异常检测要求更进一步：不仅要知道分类是否可能错，还要知道输入是否来自训练分布之外。
+
+\begin{knowledgebox}{两种不确定性}
+    分类别不确定性是“这个输入像多个已知类中的哪一个”；分布外不确定性是“这个输入是否根本不属于已知世界”。异常检测更关心后者，而普通 softmax 分数主要反映前者。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+直接学习 confidence 是对简单 baseline 的升级。它承认一个事实：如果模型没有被训练去表达“不知道”，就很难指望它自然地在未知输入上低信心。未来的 open-set 和 out-of-distribution 方法，常常都围绕如何让模型知道自己的知识边界展开。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲给出了有标签异常检测的第一种实用路线：拿一个分类器，计算 confidence score，用阈值决定 normal 或 anomaly。它是非常好的第一 baseline，因为简单、便宜、实现快；但它也暴露了 softmax classifier 的局限：分布外输入仍可能得到高 confidence。
+
+\subsection{本讲核心压缩}
+
+\begin{center}
+\begin{tabular}{L{3.3cm} L{9.2cm}}
+\toprule
+概念 & 说明 \\
+\midrule
+Open-set setting & 测试样本可能不属于任何训练类别，分类器要能拒绝 unknown。 \\
+Confidence score & 用来衡量模型对当前分类结果的把握程度。 \\
+Threshold rule & $c(x)>\lambda$ 判 normal，$c(x)\le\lambda$ 判 anomaly。 \\
+Maximum score & 取 softmax 输出中的最大类别概率作为 confidence。 \\
+Negative entropy & 输出分布越集中，entropy 越小，confidence 越高。 \\
+Overconfidence & 未知输入也可能被分类器高信心归到已知类。 \\
+Learned confidence & 训练模型直接输出 confidence，而不是只做后处理。 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{实践建议}
+
+如果已经有一个分类器，先试最大 softmax score 是合理的。它能快速建立 baseline，也能帮助你看清资料分布：已知样本的分数是否集中？未知样本是否整体偏低？两者是否有可用阈值？如果 baseline 已经很好，复杂方法未必必要；如果 baseline 高误报或高漏报，就需要考虑校准、temperature scaling、专门的 OOD 方法、直接学习 confidence，或改用非分类器路线。
+
+\begin{importantbox}{最重要的一句话}
+    分类器信心分数是异常检测的好起点，但不是可靠性的终点。它告诉我们模型在已知类别之间有多确信，却不保证模型真的知道输入是否来自已知分布。
+\end{importantbox}
+
+\subsection{和下一步的连接}
+
+本讲处理的是有标签、已有分类器的情境。后续若进入无标签或 clean/polluted 设定，分类器 confidence 可能不再可用，方法会转向重建误差、密度估计、距离度量或其他 one-class 技术。学习时可以继续抓住三个问题：分数怎么定义，阈值怎么选，模型为什么会对未知样本犯错。
+
+\end{document}

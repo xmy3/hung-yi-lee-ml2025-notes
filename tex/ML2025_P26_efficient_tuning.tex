@@ -1,0 +1,684 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{如何有效地使用自督导式模型}
+\newcommand{\notesubtitle}{Data-Efficient \& Parameter-Efficient Tuning}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 1 小时 22 分 08 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=26}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{课程定位：为什么要重新讨论 PLM 的使用方式}
+% =====================================================================
+
+这节课接在 BERT、GPT 与自督导式学习之后，问题不再是「预训练语言模型能不能学到有用表示」，而是「这些已经很强、也越来越大的模型，怎样才能在真实下游任务中有效使用」。课程标题里的两个关键词很重要：\textbf{data-efficient} 处理标注数据不够的问题，\textbf{parameter-efficient} 处理模型太大、每个任务都复制一份太贵的问题。
+
+\begin{importantbox}{本讲的主线}
+    预训练语言模型（Pre-trained Language Model, PLM）已经在许多 NLP benchmark 上取得很强结果，但直接把它们用于实际任务会遇到三类瓶颈：下游标注资料少、模型参数量太大、推理时整颗模型都跑一遍太慢。本讲依次介绍 prompt tuning、few-shot/semi-supervised/zero-shot 方法，以及 adapter、LoRA、prefix tuning、soft prompting 和 early exit。
+\end{importantbox}
+
+\subsection{语言模型与预训练模型的最小背景}
+
+语言模型最基本的定义是：给定一个词序列，模型给出它出现的机率。直观地说，比较「电脑坏掉音」和「龟老天啤吟」这两串字，训练好的语言模型应该给前者更高机率。这个能力看似只是判断句子像不像自然语言，但它可以进一步发展成补全、生成、表示学习和下游任务迁移。
+
+\framefig{0.88}{figures/fig01_neural_lm_probability.jpg}
+{语言模型为词序列分配机率，训练目标是让自然、合理的句子比随机组合得到更高分数}
+{约 00:03:45--00:04:00}
+
+在现代 PLM 中，Transformer 已经成为主要骨架。Autoregressive Language Model（ALM）从左到右预测下一个 token；Masked Language Model（MLM）则遮住句子中的部分 token，再让模型根据未遮住的上下文把它们猜回来。二者的预训练目标不同，但共同点是都不需要人工标签，而是从大规模文本本身构造监督信号。
+
+\framefig{0.88}{figures/fig02_transformer_plm_stack.jpg}
+{Transformer-based PLM 由 embedding layer、多个 Transformer layer 与 LM head 组成，逐层抽取 token 表示}
+{约 00:07:15--00:07:30}
+
+预训练的核心假设是：如果一个模型在大量文本上学会补全、预测或填空，它内部的 hidden representation 会编码词义、句法、常识和任务相关线索。下游任务不必从零训练模型，而是把预训练模型作为初始化，再用少量任务资料微调。
+
+\framefig{0.86}{figures/fig03_pretraining_corpora.jpg}
+{PLM 先用 Wikipedia、Common Crawl 等大规模语料做预训练，再迁移到下游任务}
+{约 00:09:15--00:09:30}
+
+\subsection{Hidden representation 为什么可迁移}
+
+标准 fine-tuning 的流程是：把下游输入丢进 PLM，取出某个位置或整句的 hidden representation，再接一个 classifier head。以情感分类为例，电影评论经过 PLM 后，分类器判断它是正面还是负面。关键不在分类器有多复杂，而在 PLM 的表示已经包含足够多可迁移信息。
+
+\framefig{0.86}{figures/fig04_hidden_representations_transfer.jpg}
+{预训练后的 hidden representation 被视为包含可迁移知识，后续分类器只需读取这些表示}
+{约 00:11:00--00:11:15}
+
+但是标准 fine-tuning 会更新整颗模型。图中红色叉号表示：虽然模型由预训练权重初始化，但在下游训练时，BERT 本体也会被改变。每个任务训练完都会得到一份新的模型副本。
+
+\framefig{0.86}{figures/fig05_standard_finetuning_classifier.jpg}
+{标准 fine-tuning 在 PLM 后接 classifier head，并更新整颗 PLM 的参数}
+{约 00:12:15--00:12:30}
+
+\begin{knowledgebox}{PLM 的「使用」和「训练」不是同一件事}
+    预训练回答的是「如何让模型从海量未标注文本中学到通用表示」；本讲回答的是「当模型已经预训练好，如何在数据、参数、推理成本受限时把它放到下游任务」。这也是为什么本讲方法很多：现实限制不同，解法也不同。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+PLM 的价值来自大规模自督导式预训练：模型用文本自身构造目标，学到可迁移的 hidden representation。标准 fine-tuning 是最直接的使用方式，但它默认下游任务有足够标签、存储整颗模型不是问题、推理整颗模型也可以接受。后面的所有方法，都是在这些默认条件不成立时对使用方式做改造。
+
+% =====================================================================
+\section{PLM 落地的三个现实问题}
+% =====================================================================
+
+课程接着指出，PLM 在 benchmark 上表现好，并不代表真实应用中可以无痛使用。问题不是模型没有能力，而是成本结构不对：数据成本、存储成本、推理成本都会在落地时放大。
+
+\subsection{问题一：下游任务标注资料稀缺}
+
+PLM 在 NLP benchmark 上已经取得很强结果，许多任务上甚至形成「预训练模型 + fine-tuning」的标准范式。相关研究与引用数快速增加，说明 PLM 已经成为 NLP 基础设施。
+
+\framefig{0.88}{figures/fig06_plm_everywhere_growth.jpg}
+{语言模型相关论文与引用数快速成长，PLM 已经成为 NLP 领域的核心工具}
+{约 00:13:45--00:14:00}
+
+然而，下游任务往往没有大量标注资料。真实业务中的文本分类、问答、检索、医疗、法律、金融任务，标注可能昂贵、耗时，甚至需要领域专家。标准 fine-tuning 假设每个任务都有足够 labeled data，这在很多场景里不成立。
+
+\framefig{0.88}{figures/fig07_labeled_data_scarcity.jpg}
+{第一个问题是 data scarcity：每个下游任务都取得大量标注资料并不现实}
+{约 00:15:00--00:15:15}
+
+\subsection{问题二：模型太大，而且还在变大}
+
+课程第二个问题是模型规模。BERT-base 已有 110M 参数；后续 PLM 继续变大，参数量、训练资料规模和存储需求一起上升。对研究机构而言，大模型可以提升 benchmark；对部署系统而言，大模型会带来显存、延迟和维护成本。
+
+\framefig{0.88}{figures/fig08_plm_size_growth.jpg}
+{近期 PLM 的模型尺寸和训练资料规模持续增长，使用成本也随之上升}
+{约 00:16:00--00:16:15}
+
+更麻烦的是，如果对每个任务都做标准 fine-tuning，就会为每个任务保存一份完整模型。假设 BERT-base 是 110M 参数，任务 A、B、C、D 各自微调后就各要一份 110M 参数的副本。任务越多，存储越浪费。
+
+\framefig{0.88}{figures/fig09_one_copy_per_task.jpg}
+{标准 fine-tuning 会为每个下游任务保存一份完整模型副本，任务越多成本越高}
+{约 00:17:15--00:17:30}
+
+\subsection{问题三：推理太慢}
+
+即使存储可以接受，推理时也要经过整颗 PLM。对分类任务来说，某些样本可能非常简单，浅层 representation 已经足够判断；但标准推理仍然跑完整个 Transformer stack。于是第三个方向是：能不能在不明显损失表现的情况下，减少 inference 时参与计算的模型层数。
+
+\begin{warningbox}{Benchmark 成绩不等于可部署性}
+    真实系统关心的不只是一张表上的 accuracy，还包括标注成本、模型副本数量、显存占用、推理延迟、维护复杂度以及任务切换成本。本讲的许多方法并不是为了刷新最高分，而是为了改变这些成本结构。
+\end{warningbox}
+
+\subsection{本章小结}
+
+PLM 的现实瓶颈可以压缩成三句话：标注少时，标准 fine-tuning 容易学不好；模型大时，每个任务复制一份很贵；推理慢时，整颗模型都参与计算不一定必要。后续章节分别对应这些问题：data-efficient fine-tuning 主要减少标签需求，parameter-efficient fine-tuning 主要减少每个任务的新增参数，early exit 主要减少推理计算。
+
+% =====================================================================
+\section{Data-Efficient Fine-tuning：把任务改写成语言建模}
+% =====================================================================
+
+Data-efficient 的核心思想是：当 labeled data 很少时，不要只把任务看成一个任意分类问题，而是把它改写成 PLM 原本擅长的语言建模形式。Prompt tuning 正是这种思路的代表。
+
+\subsection{Prompt template、PLM 与 verbalizer}
+
+以 Natural Language Inference（NLI）为例，原始输入包含 premise、hypothesis 和 label。标准 fine-tuning 会把 premise 与 hypothesis 用 \texttt{[SEP]} 连接，送进 BERT，再用 classifier head 预测 label。Prompt tuning 则改写输入，让模型在 \texttt{[MASK]} 位置填词，例如：
+
+\begin{center}
+\texttt{Premise ? [MASK], Hypothesis}
+\end{center}
+
+然后用 verbalizer 把类别映射成词：\texttt{entailment} 对应 \texttt{yes}，\texttt{neutral} 对应 \texttt{maybe}，\texttt{contradiction} 对应 \texttt{no}。
+
+\framefig{0.90}{figures/fig10_prompt_tuning_components.jpg}
+{Prompt tuning 需要 prompt template、PLM 与 verbalizer：把下游类别转成 \texttt{[MASK]} 位置的词预测}
+{约 00:22:15--00:22:30}
+
+形式上，prompt tuning 可以写成：
+
+$$
+p(y\mid x)=\sum_{w\in \mathcal{V}_y}
+p_\theta\big([MASK]=w\mid T(x)\big)
+$$
+
+符号说明：
+\begin{itemize}
+    \item $x$：原始下游输入，例如 premise 与 hypothesis。
+    \item $T(x)$：prompt template 把 $x$ 改写后的自然语言输入。
+    \item $y$：下游任务标签，例如 entailment、neutral、contradiction。
+    \item $\mathcal{V}_y$：verbalizer 中与标签 $y$ 对应的词集合。
+    \item $p_\theta([MASK]=w\mid T(x))$：PLM 在 \texttt{[MASK]} 处预测词 $w$ 的机率。
+\end{itemize}
+
+\subsection{Prompt tuning 和 standard fine-tuning 的差别}
+
+图中左边是 prompt tuning：仍然使用 LM head，让 BERT 执行它预训练时熟悉的填空任务。右边是 standard fine-tuning：加入新的 classifier head，把表示映射到类别。课程特别强调一个差别：prompt tuning 可以不引入新的 task-specific classifier 参数，而是复用 PLM 原本的语言模型头。
+
+\framefig{0.90}{figures/fig11_prompt_vs_standard_finetuning.jpg}
+{Prompt tuning 复用 LM head 做填空预测；standard fine-tuning 则接新的 classifier head 做分类}
+{约 00:24:45--00:25:00}
+
+\begin{importantbox}{Prompt 的作用不是「魔法提示词」}
+    在这节课的语境中，prompt 是把下游任务重写成 PLM 预训练任务的一种接口。它的价值不只是让输入看起来像自然语言，而是把标签预测转成模型已经熟悉的 token prediction，借此利用预训练阶段学到的语言知识和任务格式知识。
+\end{importantbox}
+
+\subsection{为什么少量资料时 prompt tuning 可能更好}
+
+图中的实验曲线显示，在训练样本很少时，prompt tuning 往往比 standard fine-tuning 更有优势。课程给出的两个解释是：第一，prompt 把人类知识显式放进输入格式，例如「is it true that」暗示了判断真假；第二，prompt tuning 不一定引入新的 classifier 参数，少数据时较不容易把新参数训练坏。
+
+\framefig{0.88}{figures/fig12_prompt_low_data_curve.jpg}
+{在 data scarcity 场景下，prompt tuning 可能优于 standard fine-tuning，因为它利用自然语言提示并减少新增参数}
+{约 00:25:45--00:26:00}
+
+这个结论不能被机械理解为「prompt 一定比 fine-tuning 好」。当数据足够多、任务格式清楚、模型可充分训练时，standard fine-tuning 仍然很强。Prompt tuning 的优势主要出现在标注数据少、任务可以自然改写、verbalizer 设计合理的场景。
+
+\subsection{本章小结}
+
+Prompt tuning 解决 data-efficient fine-tuning 的第一步，是把下游任务转成语言模型任务。Prompt template 负责改写输入，PLM 负责在 \texttt{[MASK]} 处预测词，verbalizer 负责把词映射回标签。它的关键收益是利用预训练知识、减少新增参数，并在小样本情况下给模型更明确的任务线索。
+
+% =====================================================================
+\section{Few-shot、Semi-supervised 与 Zero-shot}
+% =====================================================================
+
+Data-efficient 并不是单一方法，而是一组围绕「标注资料不足」的策略。课程依次讲了 few-shot、semi-supervised 与 zero-shot：标注资料从少量，到少量加大量未标注，再到完全没有下游训练资料。
+
+\subsection{Few-shot learning：少量标注也要让模型学会任务}
+
+Few-shot learning 指只有少量 labeled training data，例如每个类别 5 或 10 笔。课程没有把 few-shot 定义得特别严格，而是把它当成一种现实情境：我们确实有一些标注，但远远不够标准 fine-tuning 稳定发挥。
+
+\framefig{0.86}{figures/fig13_few_shot_labeled_data.jpg}
+{Few-shot learning 场景中只有少量 labeled training data，需要让 PLM 在小数据上仍能适应下游任务}
+{约 00:28:00--00:28:15}
+
+GPT-3 让 few-shot learning 变得有名：不更新参数，只在 prompt 中给几个示范，模型就能做新任务。但课程也指出坏消息：GPT-3 参数量达到 175B，并不是每个人都能自由使用或部署。因此自然问题是：较小的 PLM 能不能也在 few-shot 场景中表现好？
+
+\framefig{0.86}{figures/fig14_gpt3_fewshot_limit.jpg}
+{GPT-3 展示了 few-shot prompting 的能力，但模型太大、不可随意取得，不能直接解决所有场景}
+{约 00:28:30--00:28:45}
+
+\subsection{LM-BFF：prompt 加 demonstration}
+
+LM-BFF 的名字来自「language models' best friends forever」，核心概念是 prompt 加 demonstration。它不是只写一个 template，而是在输入中放入少量示例，让模型看到任务格式。对小模型来说，这种做法可以把 in-context demonstration 与 prompt tuning 的好处结合起来。
+
+\framefig{0.90}{figures/fig15_lmbff_prompt_demo.jpg}
+{LM-BFF 使用 prompt 与 demonstration，让较小 PLM 在 few-shot fine-tuning 中获得更强任务线索}
+{约 00:30:45--00:31:00}
+
+实验表中可以看到，prompt-based fine-tuning 加 demonstration 和自动 template 搜索后，在多项任务上接近或超过 full fine-tuning。课程强调，这些结果在每类只有少量样本时尤其有意义，因为传统 fine-tuning 的方差很大，容易因为样本少而不稳定。
+
+\framefig{0.90}{figures/fig16_lmbff_results_table.jpg}
+{LM-BFF 的结果显示，prompt、demonstration 与自动 template 搜索能显著改善 few-shot 表现}
+{约 00:32:15--00:32:30}
+
+\subsection{Semi-supervised learning：少量标注加大量未标注}
+
+Semi-supervised learning 的假设是：虽然标注资料少，但未标注资料很多。模型先用少量标注资料获得初步能力，再利用大量未标注资料产生伪标签或软标签，扩大训练信号。
+
+\framefig{0.86}{figures/fig17_semisupervised_setup.jpg}
+{Semi-supervised learning 同时使用少量 labeled data 与大量 unlabeled data}
+{约 00:33:00--00:33:15}
+
+PET（Pattern-Exploiting Training）是课程重点介绍的 semi-supervised 方法。第一步，用不同 prompt template 和 verbalizer，在 labeled dataset 上 prompt-tune 多个 PLM。这里「不同 prompt」很重要，因为每个 prompt 都是对任务的一种表达方式，多个表达方式可以互补。
+
+\framefig{0.90}{figures/fig18_pet_step1_prompts.jpg}
+{PET 第一步：用不同 prompt 与 verbalizer 在少量标注资料上训练多个 prompt-based PLM}
+{约 00:35:00--00:35:15}
+
+第二步，把这些 prompt-tuned PLM 用于 unlabeled dataset。每个模型对未标注样本给出预测分布，再把多个模型的预测合并，形成一个更稳定的 soft label。Soft label 保留类别机率，而不是只保留一个硬标签，因此信息量更高。
+
+\framefig{0.90}{figures/fig19_pet_step2_predictions.jpg}
+{PET 第二步：多个 prompt-tuned 模型预测未标注资料，并合并成 soft label}
+{约 00:35:45--00:36:00}
+
+第三步，用这些 soft-labeled data 训练一个带 classifier head 的 PLM。也就是说，PET 最终并不一定在推理时保留多个 prompt 模型，而是把 prompt ensemble 对未标注资料的知识蒸馏到一个普通分类模型里。
+
+\framefig{0.86}{figures/fig20_pet_step3_soft_labels.jpg}
+{PET 第三步：把原本未标注资料变成 soft-labeled dataset，再训练最终分类模型}
+{约 00:36:00--00:36:15}
+
+\begin{knowledgebox}{PET 的直觉}
+    PET 不是简单地「给未标注资料打假标签」。它先用多种 prompt 视角训练多个模型，再把这些模型的预测合并成 soft label。这样做相当于让不同语言表达方式对同一任务投票，降低单一 prompt 偶然失效的风险。
+\end{knowledgebox}
+
+\subsection{Zero-shot learning：没有下游训练资料怎么办}
+
+Zero-shot inference 指没有任何下游训练资料，模型只根据任务描述直接做任务。GPT-3 显示，只要模型足够大，给出自然语言任务描述，也可能完成 zero-shot 推理。图中的曲线说明，模型规模越大，zero-shot/few-shot 表现越明显上升。
+
+\framefig{0.88}{figures/fig21_zeroshot_gpt3_curve.jpg}
+{GPT-3 显示 zero-shot 推理是可能的，但前提通常是模型足够大}
+{约 00:37:30--00:37:45}
+
+课程接着问：zero-shot 能力从哪里来？一个假设是，预训练语料中隐含了许多任务格式。例如网页上本来就有问答、摘要、翻译、考试题、说明文和评论；模型在大规模预训练时，也许已经见过类似「给问题，回答」或「判断句子关系」的格式，只是没有被显式标成某个 benchmark。
+
+\framefig{0.88}{figures/fig22_zeroshot_pretraining_hypothesis.jpg}
+{Zero-shot 能力可能来自预训练语料中隐含的多任务格式，例如问答、摘要、判断与翻译}
+{约 00:38:30--00:38:45}
+
+另一个方向是显式做 multi-task fine-tuning：把许多任务都改写成自然语言 prompt，让模型在多任务上训练，再测试它对未见任务的 zero-shot generalization。这样做不再只依赖预训练语料中是否碰巧有任务格式，而是主动教模型「读任务说明并作答」。
+
+\framefig{0.88}{figures/fig23_multitask_zeroshot_generalization.jpg}
+{Multi-task fine-tuning 让模型学习从自然语言任务描述到答案的映射，从而增强 zero-shot generalization}
+{约 00:39:45--00:40:00}
+
+以 NLI 为例，可以把原始数据转换成多种自然语言 prompt，例如「Based on the previous passage, is it true that hypothesis?」或「Given that premise, does it follow that hypothesis?」。这说明 prompt 不只是一个固定字符串，而是任务语义的语言化接口。
+
+\framefig{0.90}{figures/fig24_nli_prompt_format.jpg}
+{NLI 任务可以被转换成自然语言 prompt，再用 yes/no/maybe 等词对应标签}
+{约 00:40:15--00:40:30}
+
+课程提到，有些 multi-task fine-tuned 模型参数量远小于 GPT-3，却在部分 zero-shot 任务上达到或超过 GPT-3。这不是说小模型全面取代大模型，而是说明任务形式设计、训练资料组织和 prompt 化多任务学习，也能显著影响 zero-shot 能力。
+
+\framefig{0.88}{figures/fig25_11b_vs_gpt3.jpg}
+{经过合适的 multi-task fine-tuning，较小模型在部分 zero-shot 任务上可接近甚至超过 GPT-3}
+{约 00:41:00--00:41:15}
+
+\subsection{Data-efficient 方法的共同点}
+
+课程用一页总结 data-efficient fine-tuning：使用自然语言 prompt，并加入情境特定设计。这里的「情境特定」包括 template 怎么写、verbalizer 怎么选、是否加入 demonstration、是否使用未标注资料、是否做 multi-task fine-tuning。
+
+\framefig{0.88}{figures/fig26_data_efficient_summary.jpg}
+{Data-efficient fine-tuning 的共同思想是使用自然语言 prompt，并加入 scenario-specific designs}
+{约 00:42:15--00:42:30}
+
+\subsection{本章小结}
+
+Few-shot、semi-supervised、zero-shot 不是彼此孤立的方法名，而是标注资料数量逐渐减少时的一组应对策略。Few-shot 借助 prompt 和 demonstration 从少量标签中学习；semi-supervised 使用未标注资料和 soft label 放大监督信号；zero-shot 则依赖大规模预训练或 multi-task fine-tuning 学会理解任务描述。它们共同强调：当标注少时，输入形式和任务描述本身就是重要的学习信号。
+
+% =====================================================================
+\section{Reducing the Number of Parameters：从压缩模型到 PEFT}
+% =====================================================================
+
+Data-efficient 处理的是标签不够。接下来课程切换到第二条主线：模型太大，怎样减少每个任务需要保存或训练的参数。这里要区分两类目标：一类是让整颗模型本身变小，另一类是不改变共享 PLM，只让每个任务新增很少的参数。
+
+\subsection{模型压缩：distillation、pruning 与参数共享}
+
+一种思路是预训练大模型，但部署时使用较小模型。例如 distillation 把大模型知识转移到小模型，pruning 剪掉不重要的权重或结构。这样可以减少模型整体大小，也可以降低部分计算量。
+
+\framefig{0.88}{figures/fig27_distillation_pruning.jpg}
+{Distillation 与 pruning 通过小模型或剪枝模型减少下游任务使用的参数量}
+{约 00:44:45--00:45:00}
+
+另一种思路是跨 Transformer layer 共享参数。ALBERT 就是代表例子：不同层使用同一组参数，从而把 110M 参数的 BERT 压到约 12M 参数。这样模型深度仍在，但参数存储减少。
+
+\framefig{0.88}{figures/fig28_albert_parameter_sharing.jpg}
+{ALBERT 通过在 Transformer layer 间共享参数，大幅减少模型参数量}
+{约 00:45:30--00:45:45}
+
+这些方法可以让模型本身变小，但它们仍然没有完全解决「多任务」问题：如果每个任务都需要一份压缩后的完整模型，任务数一多仍然会累积成本。于是课程进入 parameter-efficient fine-tuning（PEFT）。
+
+\subsection{PEFT：共享大模型，只保存任务专属小模块}
+
+PEFT 的想法是：不要为每个任务复制整颗 PLM，而是共享同一个 frozen PLM。每个任务只训练、保存一小组 task-specific parameters。图中共享的 BERT 保留，任务 A、B、C 各有自己的小参数。
+
+\framefig{0.88}{figures/fig29_peft_task_specific_params.jpg}
+{PEFT 让多个下游任务共享同一个 PLM，每个任务只保存少量 task-specific parameters}
+{约 00:46:45--00:47:00}
+
+从 representation 的角度看，standard fine-tuning 真正在做的是修改 PLM 产生的 hidden representation。原始 PLM 给出 $h$，微调后的模型给出 $h'$。PEFT 的目标不是训练整颗模型得到 $h'$，而是用一个小模块产生变化量 $\Delta h$，让
+
+$$
+h' = h + \Delta h
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h$：冻结 PLM 原本产生的 hidden representation。
+    \item $\Delta h$：任务专属小模块产生的修正量。
+    \item $h'$：适应下游任务后的表示。
+\end{itemize}
+
+\framefig{0.86}{figures/fig30_hidden_representation_delta.jpg}
+{PEFT 可以理解为保留原始表示 $h$，再用小模块产生任务相关的 $\Delta h$}
+{约 00:48:30--00:48:45}
+
+\begin{importantbox}{PEFT 的本质}
+    PEFT 不是让模型「完全不变」，而是把可训练部分限制在小模块中。共享 PLM 提供通用能力，任务小模块提供任务偏移。这样既能适应下游任务，又不需要为每个任务保存一份完整模型。
+\end{importantbox}
+
+\subsection{本章小结}
+
+减少参数有两条路线。模型压缩试图让模型本体变小，例如 distillation、pruning、ALBERT；PEFT 则让模型本体共享，只让每个任务保存少量新增参数。前者关注单个模型的大小，后者关注多任务部署时的总成本。本讲后面的 adapter、LoRA、prefix tuning 和 soft prompting 都属于 PEFT 的不同实现。
+
+% =====================================================================
+\section{Adapter 与 LoRA：在模型内部加小模块}
+% =====================================================================
+
+Adapter 和 LoRA 都属于「在 Transformer 内部加入任务专属模块」的 PEFT 方法。它们的共同点是冻结 PLM 主体，只训练新增的小参数；差别在于小参数怎样插入、怎样影响 hidden representation。
+
+\subsection{Adapter：瓶颈式的小型残差模块}
+
+Adapter 通常插在 Transformer layer 的 attention 或 feed-forward 子层附近。图中黄色模块就是 adapter。它包含 down-project、非线性、up-project 三步：先把 hidden representation 降到低维，再经过非线性，再投回原维度，并通过残差连接加回主路径。
+
+\framefig{0.88}{figures/fig31_adapter_internal_structure.jpg}
+{Adapter 插入 Transformer layer 内部，只更新黄色 adapter 模块，以小瓶颈网络产生表示修正}
+{约 00:49:45--00:50:00}
+
+Adapter 的基本形式可以写成：
+
+$$
+\Delta h = W_{\mathrm{up}}\sigma(W_{\mathrm{down}}h),\qquad
+h' = h + \Delta h
+$$
+
+符号说明：
+\begin{itemize}
+    \item $W_{\mathrm{down}}$：down-project 矩阵，把表示从高维压到瓶颈维度。
+    \item $\sigma$：非线性函数。
+    \item $W_{\mathrm{up}}$：up-project 矩阵，把瓶颈表示投回原维度。
+    \item $\Delta h$：adapter 产生的任务相关修正。
+\end{itemize}
+
+微调时，只更新 adapter 和 classifier head。Transformer 原有层、embedding 和大部分 PLM 参数保持冻结。这样每个任务只需要保存 adapter 参数和分类头。
+
+\framefig{0.88}{figures/fig32_adapter_trainable_parts.jpg}
+{Adapter fine-tuning 只训练 adapter 与 classifier head，原本的 Transformer 参数保持冻结}
+{约 00:51:45--00:52:00}
+
+\subsection{LoRA：把权重更新限制在低秩空间}
+
+LoRA（Low-Rank Adaptation）从另一角度出发：标准 fine-tuning 会改变线性层权重 $W$，但权重更新 $\Delta W$ 也许可以用低秩矩阵近似。于是 LoRA 不直接训练完整 $\Delta W$，而是训练两个小矩阵 $A$ 和 $B$：
+
+$$
+W' = W + \Delta W,\qquad
+\Delta W = BA
+$$
+
+若 $W\in \mathbb{R}^{d_{\mathrm{out}}\times d_{\mathrm{in}}}$，则
+
+$$
+B\in \mathbb{R}^{d_{\mathrm{out}}\times r},\qquad
+A\in \mathbb{R}^{r\times d_{\mathrm{in}}},\qquad
+r \ll \min(d_{\mathrm{out}},d_{\mathrm{in}})
+$$
+
+符号说明：
+\begin{itemize}
+    \item $W$：冻结的原始权重矩阵。
+    \item $\Delta W$：任务需要的权重改变量。
+    \item $A,B$：LoRA 训练的两个低秩矩阵。
+    \item $r$：rank，远小于原矩阵维度，因此参数量很小。
+\end{itemize}
+
+\framefig{0.90}{figures/fig33_lora_low_rank_update.jpg}
+{LoRA 用低秩矩阵产生 $\Delta h$ 或 $\Delta W$，以很少参数近似完整权重更新}
+{约 00:55:00--00:55:15}
+
+LoRA 的部署方式和 adapter 类似：所有下游任务共享 PLM 主体；每个任务保存自己的 LoRA 模块和 classifier head。图中灰色 Transformer layer 共享，黄色 LoRA 分支是任务专属。
+
+\framefig{0.88}{figures/fig34_lora_task_specific_modules.jpg}
+{LoRA 让不同下游任务共享 PLM，只把每层 LoRA 分支和分类头作为任务专属模块保存}
+{约 00:56:00--00:56:15}
+
+\subsection{Adapter 与 LoRA 的比较}
+
+\begin{center}
+\begin{tabular}{L{2.9cm} L{5.1cm} L{5.1cm}}
+\toprule
+方法 & 机制 & 适合强调的点 \\
+\midrule
+Adapter & 在 Transformer 内插入瓶颈残差模块，训练 down/up projection & 模块化清楚，任务切换方便，新增参数较少 \\
+LoRA & 冻结原权重，用低秩矩阵近似权重更新 & 对大型线性层友好，参数量极小，常用于大语言模型微调 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+两者都在做同一件事：不要把整颗 PLM 改掉，而是给任务一个小型可训练通道。Adapter 更像「插入一个小神经网络」，LoRA 更像「把权重更新约束成低秩」。理解这个差别有助于后面看 prefix tuning 和 soft prompting：它们仍然是给任务一个小型可训练通道，只是通道不再放在线性层或 Transformer 子层中。
+
+\subsection{本章小结}
+
+Adapter 和 LoRA 都把 fine-tuning 从「更新整颗模型」改成「训练小模块」。Adapter 直接在层内添加瓶颈网络，LoRA 用低秩分解表示权重更新。二者都能显著减少每个任务要保存的参数，并让多个任务共享同一个 PLM 主体。
+
+% =====================================================================
+\section{Prefix Tuning 与 Soft Prompting：把可训练参数放到输入或注意力里}
+% =====================================================================
+
+Adapter 和 LoRA 把小模块放在模型内部。Prefix tuning 和 soft prompting 则把任务专属参数放在更接近输入的位置：一种是在 attention 的 key/value 侧加入虚拟 prefix，另一种是在 embedding layer 前加入可训练向量。
+
+\subsection{从 self-attention 看 prefix 的位置}
+
+标准 self-attention 中，每个 token 产生 query、key、value。某个位置的 query 会和所有 key 计算 attention score，再用这些 score 对 value 做加权求和。换句话说，attention 的输出可以被看成「当前 token 从其他 token 的 value 中读取信息」。
+
+\framefig{0.90}{figures/fig35_standard_self_attention.jpg}
+{标准 self-attention 由 query、key、value 与 attention score 组成，输出是 value 的加权和}
+{约 01:01:00--01:01:15}
+
+Prefix tuning 的做法是在每一层的 attention 中加入一组可训练的 prefix key/value。它们不是输入句子中的真实词，而是任务专属的虚拟记忆。模型在计算 attention 时，可以像关注普通 token 一样关注这些 prefix。
+
+\framefig{0.90}{figures/fig36_prefix_attention_kv.jpg}
+{Prefix tuning 在 attention 中加入可训练 prefix key/value，让模型读取任务专属虚拟信息}
+{约 01:02:15--01:02:30}
+
+\subsection{只更新 prefix，不更新 PLM 主体}
+
+微调时，prefix tuning 只更新这些 prefix key/value。Transformer layer、embedding layer 和原本模型参数都保持冻结。每个任务需要保存的就是各层 prefix 参数。
+
+\framefig{0.88}{figures/fig37_prefix_only_updated.jpg}
+{Prefix tuning 只训练每层 prefix key/value，并在多个任务之间共享同一个 PLM 主体}
+{约 01:03:45--01:04:00}
+
+\begin{importantbox}{Prefix 是参数，不是给人读的文字}
+    Prefix tuning 中的 prefix 不等于自然语言前缀。它是连续向量，被放进 attention 的 key/value 中。人类通常无法直接解释这些向量对应什么词，但它们可以有效引导模型在特定任务上的表示与输出。
+\end{importantbox}
+
+\subsection{Soft prompting：在 embedding 层加入可训练虚拟 token}
+
+Soft prompting 把可训练参数放在输入层。图中黄色条块是可训练的 prefix embedding，它们被 prepend 到真实输入 token 前面。和 prefix tuning 相比，soft prompt 更像是在输入序列前加几个虚拟 token，只不过这些 token 是连续向量，不一定对应词表中的真实词。
+
+\framefig{0.88}{figures/fig38_soft_prompt_input_layer.jpg}
+{Soft prompting 在 input layer 前加入可训练的 prefix embedding，并冻结 PLM 主体}
+{约 01:04:45--01:05:00}
+
+课程区分 hard prompt 与 soft prompt：hard prompt 是词表中的真实词，例如「很」「烂」这类人类可读 token；soft prompt 是向量，可以从某些词 embedding 初始化，也可以随机初始化。Hard prompt 可解释性强，但搜索空间受词表限制；soft prompt 可优化性强，但可解释性弱。
+
+\framefig{0.86}{figures/fig39_soft_vs_hard_prompt.jpg}
+{Soft prompt 是可训练向量；hard prompt 是词表中的真实词，二者在可解释性和可优化性上取舍不同}
+{约 01:06:00--01:06:15}
+
+\subsection{PEFT 方法的共同收益}
+
+课程用表格比较 adapter、LoRA、prefix tuning 和 soft prompting 的参数量。它们都让 task-specific parameters 远小于完整模型参数。尤其 soft prompting 每个任务只保存极少 prefix embedding，在参数效率上非常激进。
+
+\framefig{0.90}{figures/fig40_peft_parameter_comparison.jpg}
+{Adapter、LoRA、prefix tuning 与 soft prompting 都能大幅减少每个任务的 task-specific parameters}
+{约 01:08:15--01:08:30}
+
+少参数不仅减少存储，也可能减少过拟合。图中的 out-of-domain 结果说明，soft prompt 在某些 OOD 测试集上比完整模型 fine-tuning 更稳。直觉是：当训练资料少时，更新整颗模型容易把模型拉向训练集偶然模式；只训练少量参数反而限制了过拟合空间。
+
+\framefig{0.90}{figures/fig41_soft_prompt_ood_table.jpg}
+{Soft prompting 因为可训练参数少，在部分 out-of-domain 测试上更不容易过拟合}
+{约 01:10:00--01:10:15}
+
+另一个好处是小数据训练更适合。Adapter-based tuning 在低资源数据集上常能取得有竞争力的结果。课程把它总结为：当训练集小，参数越少越可能是优点，因为可学习自由度少，模型不容易被少量样本带偏。
+
+\framefig{0.90}{figures/fig42_small_data_adapter_table.jpg}
+{当训练资料很少时，少量可训练参数可以成为优势，adapter 在多项低资源任务上表现稳健}
+{约 01:11:15--01:11:30}
+
+\begin{warningbox}{参数少不是无条件更好}
+    PEFT 的优势来自任务、数据量和部署成本的平衡。如果下游任务和预训练分布差异极大，或者有大量高质量标注资料，完整 fine-tuning 仍可能更有表达能力。参数少降低过拟合风险，也限制了模型可调整空间。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Prefix tuning 和 soft prompting 把任务专属参数放到输入或 attention 侧。Prefix tuning 训练各层 key/value prefix，soft prompting 训练输入层前的连续向量。它们和 adapter、LoRA 一样共享 PLM 主体，只保存少量任务参数。PEFT 的收益不只是省空间，还包括小数据时更稳、任务切换更轻、部署维护更容易。
+
+% =====================================================================
+\section{Early Exit：减少推理时参与计算的层数}
+% =====================================================================
+
+前面的方法主要减少训练和存储参数。Early exit 处理第三个问题：推理时间太长。它的想法是，如果某个输入很简单，模型不一定需要跑完整个 Transformer stack；只要中间层的判断已经足够有信心，就可以提前输出。
+
+\subsection{在每一层加入 classifier}
+
+Early exit 在多个 Transformer layer 后面都接 classifier head。第 1 层、第 2 层、一直到第 $N$ 层都可以给出预测。这样模型不再只能等最后一层输出，而是每一层都有可能成为出口。
+
+\framefig{0.88}{figures/fig43_early_exit_layer_classifiers.jpg}
+{Early exit 在每个 Transformer layer 后加入 classifier head，使模型有机会提前输出}
+{约 01:13:45--01:14:00}
+
+\subsection{用 confidence predictor 决定是否退出}
+
+问题是：如何知道哪一层的 classifier 可以相信？课程图中加入 confidence predictor。如果第二层 classifier 的信心足够高，就直接采用它的输出，后面第三层到第 $N$ 层不再计算。若信心不足，就继续往后跑。
+
+\framefig{0.88}{figures/fig44_early_exit_confidence_stop.jpg}
+{Confidence predictor 判断中间层输出是否足够可信，可信时提前退出，省去后续层计算}
+{约 01:15:00--01:15:15}
+
+可以把 early exit 写成一个阈值规则：
+
+$$
+\text{exit at layer } k
+\quad \text{if} \quad
+c_k \ge \tau
+$$
+
+符号说明：
+\begin{itemize}
+    \item $k$：当前 Transformer layer。
+    \item $c_k$：第 $k$ 层 classifier 的信心分数。
+    \item $\tau$：提前退出阈值。
+    \item 若 $c_k < \tau$，模型继续计算下一层。
+\end{itemize}
+
+\subsection{速度和表现的取舍}
+
+实验表说明，early exit 可以降低平均推理层数或推理时间，同时尽量保持 performance。它不是让所有输入都只跑浅层，而是根据样本难度动态决定。简单样本早退，困难样本继续跑深层。
+
+\framefig{0.90}{figures/fig45_early_exit_results_table.jpg}
+{Early exit 通过动态减少推理层数降低 inference time，同时尽量维持任务表现}
+{约 01:15:30--01:15:45}
+
+课程最后用一页总结 parameter reduction：PEFT 减少每个下游任务的 task-specific parameters；early exit 减少 inference 时真正参与计算的模型部分。二者解决的成本不同，一个主要省存储和训练，一个主要省推理时间。
+
+\framefig{0.88}{figures/fig46_reducing_parameters_summary.jpg}
+{Reducing parameters 的总结：PEFT 减少任务专属参数，early exit 减少推理时参与计算的模型}
+{约 01:16:00--01:16:15}
+
+\subsection{本章小结}
+
+Early exit 的核心是动态推理。与其让每个样本都跑完整颗模型，不如让模型在中间层也能给出候选答案，并用 confidence 判断是否足够可靠。它和 PEFT 的关注点不同：PEFT 让每个任务更便宜，early exit 让每次推理更便宜。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+课程收尾强调，本讲解决的是两个现实问题：第一，让 PLM 更小、更快、更 parameter-efficient；第二，在下游标注资料稀缺时仍能部署 PLM。它也提醒我们，这些问题并没有被完全解决，只是 PLM 问题空间中的一小部分。
+
+\framefig{0.88}{figures/fig47_closing_open_problems.jpg}
+{课程结尾指出，本讲只覆盖 PLM 问题的一部分，仍有自督导原理、可解释性、领域适应、持续学习与安全隐私等开放问题}
+{约 01:19:15--01:19:30}
+
+\subsection{一张总图：问题到方法的映射}
+
+\begin{center}
+\begin{tabular}{L{3.2cm} L{5.4cm} L{5.3cm}}
+\toprule
+现实问题 & 代表方法 & 关键思想 \\
+\midrule
+标注资料少 & Prompt tuning、LM-BFF、PET、multi-task zero-shot & 把任务写成自然语言形式，利用预训练知识、示范、未标注资料或多任务训练 \\
+每个任务复制模型太贵 & Adapter、LoRA、prefix tuning、soft prompting & 冻结共享 PLM，只训练少量 task-specific parameters \\
+推理时整颗模型太慢 & Early exit & 在中间层接分类器，用信心分数决定是否提前输出 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{概念压缩}
+
+这节课可以压缩成一句话：\textbf{不要把 PLM 当成只能完整 fine-tune 的黑盒，而要根据约束重新设计「任务如何进入模型」「哪些参数可以更新」「推理何时可以停止」。}
+
+Prompt 系列方法改变的是任务接口：把分类、推理、问答等任务写成模型熟悉的语言建模问题。PEFT 系列方法改变的是可训练参数位置：不再更新整颗模型，而是把任务差异压进 adapter、LoRA、prefix 或 soft prompt。Early exit 改变的是推理路径：不再默认每个样本都跑到最后一层，而是让简单样本提前离开。
+
+\subsection{实践取舍}
+
+如果要在真实项目中选择方法，可以先问三个问题：
+
+\begin{enumerate}
+    \item 标签少吗？如果少，优先考虑 prompt-based fine-tuning、demonstration、semi-supervised 或 multi-task prompting。
+    \item 任务多吗？如果多，优先考虑 PEFT，因为共享 PLM 可以显著减少总存储。
+    \item 推理延迟敏感吗？如果敏感，考虑 early exit、蒸馏、剪枝或更小模型。
+\end{enumerate}
+
+这些问题不是互斥的。一个实际系统可以同时使用 soft prompt 处理多任务参数共享，再用 early exit 降低延迟，也可以先用 PET 产生软标签，再训练一个较小的任务模型。课程真正想传达的不是某个方法永远最好，而是使用 PLM 时要把数据、参数和推理三个维度一起考虑。
+
+\begin{importantbox}{最终 takeaway}
+    PLM 的能力来自预训练，但 PLM 的可用性来自使用策略。Prompt 让模型更会理解任务，PEFT 让模型更便宜地适应任务，early exit 让模型更快地产生答案。理解这些策略，比记住单个方法名更重要。
+\end{importantbox}
+
+\end{document}

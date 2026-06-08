@@ -1,0 +1,290 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（四）：confidence 的失败模式}
+\newcommand{\notesubtitle}{Spurious Features, Out-of-distribution Confidence, and Synthetic Anomalies}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 4 分 06 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=32}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{直接使用分类器 confidence 的问题}
+% =====================================================================
+
+前几讲介绍了一种很直观的异常检测 baseline：先训练一个普通分类器，再把分类器的 confidence score 当成输入是否正常的依据。如果 confidence 高，就认为输入属于训练时见过的正常类别；如果 confidence 低，就认为输入可能是 anomaly。
+
+这个方法简单、便宜，也经常有一定效果。但本讲一开始就提醒：它不是一个理论上很强的保证。分类器在训练时学到的是“如何区分已知类别”，不一定学到“什么东西不属于已知世界”。两者看起来接近，其实目标不同。
+
+\subsection{分类边界之外不一定低 confidence}
+
+假设我们训练了一个猫狗分类器。它会学习一些能区分猫和狗的特征，并在特征空间中画出一条分类边界。直觉上，如果输入既不像猫，也不像狗，例如草泥马、马或其他不相关对象，它可能落在边界附近，分类器两边都不确定，confidence 就会低。这样一来，低 confidence 确实能暗示 anomaly。
+
+问题是，异常样本不一定都落在边界附近。有些异常对象可能在某些特征上比正常类别还要“典型”。例如老虎不是训练时的猫类别，但它可能含有比家猫更强烈的猫科动物特征；狼不是训练时的狗类别，但它可能含有比宠物狗更强烈的犬科特征。分类器如果只会看这些特征，就可能对它们非常有把握。
+
+\framefig{0.86}{figures/fig01_cat_dog_boundary_failure.jpg}
+{猫狗分类器的可能失败模式：某些异常样本不在边界附近，反而在某一类方向上具有更强特征}
+{00:01:15--00:01:30}
+
+\subsection{为什么这会导致异常检测失败}
+
+用数学语言说，分类器通常学习的是条件分布
+\[
+p(y\mid x), \qquad y\in\{\text{cat},\text{dog}\}.
+\]
+它被训练来回答“在猫和狗之中，哪个更像？”而不是回答“这个输入是不是猫狗世界的一部分？”如果一个样本虽然不属于训练分布，却在模型使用的特征轴上很靠近某个类别方向，softmax 仍然可能给出很高分。
+
+因此，最大 softmax score
+\[
+c_{\max}(x)=\max_y p(y\mid x)
+\]
+并不是真正的 out-of-distribution probability。它只是模型在已知类别集合内部的相对偏好强度。对于分布内样本，这个偏好通常有意义；对于分布外样本，这个偏好可能只是模型被某个局部特征牵着走。
+
+\begin{warningbox}{confidence baseline 的根本限制}
+    分类器 confidence 高，只代表模型强烈偏向某个已知类别，不代表输入真的来自该类别分布。异常样本如果带有强烈的已知类特征，也可能得到高 confidence，从而被误判为 normal。
+\end{warningbox}
+
+\subsection{本章小结}
+
+直接使用分类器 confidence 做异常检测，依赖一个并不总成立的假设：异常样本会让分类器不确定。现实中，异常样本可能反而激活某些已知类别特征，使模型变得过度自信。这说明 closed-set classifier 的 confidence 不是天然可靠的异常检测分数。
+
+% =====================================================================
+\section{辛普森例子：模型学到的可能是捷径}
+% =====================================================================
+
+课程接着回到辛普森家族人物分类器。辛普森角色最显眼的视觉特征之一是黄脸。如果分类器在训练中发现“黄脸”对区分辛普森角色非常有用，它就可能把这个特征看得过重。于是，只要输入被改成黄色，模型的 confidence 就会突然上升。
+
+\framefig{0.86}{figures/fig02_yellow_face_spurious_feature.jpg}
+{把普通人脸或动漫脸涂黄后，分类器可能更自信地把它们归为辛普森角色，暴露出模型对黄色脸部特征的依赖}
+{00:02:15--00:02:30}
+
+\subsection{高 confidence 可能来自 spurious feature}
+
+图中展示了一个有趣但很典型的现象：原始图片的分类分数不高，但把脸部涂成黄色后，模型开始更有把握地判断它属于某个辛普森角色。甚至讲者把自己的脸涂黄后，分类器也可能给出较高的角色分数。
+
+这类特征被称为 spurious feature 或 shortcut feature。它在训练集上确实有预测能力，但并不代表真正的语义。对辛普森人物来说，黄色皮肤是一个强线索；但“黄色脸”并不等价于“来自辛普森家族”。模型如果过度依赖这个线索，遇到人为构造或自然出现的黄色脸异常样本时，就可能被欺骗。
+
+这和猫狗例子是同一个问题：分类器并没有学会完整的正常分布，只学会了一些能帮助 closed-set classification 的判别特征。异常检测却要求模型知道什么东西不应该被接受为正常。两种目标之间的差距，正是 confidence baseline 失败的来源。
+
+\subsection{分布内判别与分布外拒绝的差别}
+
+分类器训练目标通常是最小化交叉熵：
+\[
+\mathcal{L}_{\mathrm{cls}}=-\log p(y_{\mathrm{true}}\mid x).
+\]
+这个损失鼓励模型把正确类别的概率做高。只要训练集中黄脸几乎总是辛普森角色，模型就会被奖励去利用黄脸线索。训练目标没有告诉它：如果一个非辛普森人物也被涂成黄色，应该降低 confidence。
+
+从这个角度看，异常检测缺少的不是一个阈值，而是一个训练信号。阈值只能在已有分数上做切分；如果模型对异常样本本身就给出很高分，再怎么调阈值都很难同时保住正常样本和抓住这类异常。
+
+\begin{importantbox}{阈值不能修复所有 score 问题}
+    如果正常样本高分、异常样本低分，阈值选择是关键；但如果某些异常样本本身也高分，问题就不只是阈值，而是 confidence score 的语义不可靠。
+\end{importantbox}
+
+\subsection{本章小结}
+
+辛普森黄脸例子说明：模型可能依赖训练集中有效但语义不充分的捷径特征。这样的特征能提高 closed-set 分类表现，却会伤害 anomaly detection。异常检测系统需要的不只是分类器“有把握”，而是 confidence 能真正反映输入是否来自正常分布。
+
+% =====================================================================
+\section{改进方向一：让模型学会对异常低 confidence}
+% =====================================================================
+
+既然普通分类器没有被训练成“看到异常就低 confidence”，一个直接的改进方向是：在训练时加入异常资料，让模型明确学习这个行为。也就是说，模型不仅要在正常样本上分类正确，还要在异常样本上表现出不确定。
+
+\subsection{把 confidence 行为写进训练目标}
+
+如果我们能收集到一些异常资料，就可以设计训练目标：
+\begin{itemize}
+    \item 对正常样本，要求模型分类正确，并给出高 confidence。
+    \item 对异常样本，要求模型不要强烈偏向任何已知类别，或直接给出低 confidence。
+\end{itemize}
+
+若 confidence 用最大类别概率衡量，可以鼓励异常样本的最大 softmax score 变小：
+\[
+\max_y p(y\mid x_{\mathrm{anom}})\ \text{should be small}.
+\]
+若 confidence 用负 entropy 衡量，则可以鼓励异常样本具有更高 entropy：
+\[
+H(p(y\mid x_{\mathrm{anom}}))=-\sum_y p(y\mid x_{\mathrm{anom}})\log p(y\mid x_{\mathrm{anom}})
+\]
+越大越好。直观地说，模型看到异常时应该回答“我不知道它属于哪个已知类”，而不是硬把它塞进某个类别。
+
+\subsection{这种方法为什么更有针对性}
+
+这种做法比事后拿 softmax 分数当 confidence 更强，因为它把异常检测需求直接放进训练过程。模型会被惩罚“对异常过度自信”，从而学习到更适合 out-of-distribution detection 的分数形状。
+
+在训练过程中，异常资料可以看成一种负例。它告诉模型：已知类别边界之外还存在不应被接受的区域。模型不再只是学习“猫和狗如何分开”，还学习“有些东西不应该被高 confidence 地判成猫或狗”。
+
+\begin{knowledgebox}{一个常见训练思路}
+    对正常资料使用分类损失，对异常资料使用 confidence regularization。例如要求异常资料输出接近均匀分布，或要求异常资料的最大类别概率低于某个目标。这类方法的关键不是公式形式，而是明确给模型异常样本上的训练信号。
+\end{knowledgebox}
+
+\subsection{最大困难：异常资料不容易收集}
+
+课程也马上指出，这个方向会遇到一个现实问题：很多时候我们并不容易收集到 anomaly data。异常之所以叫异常，往往就是因为它少见、未知、多样，而且未来出现的异常不一定和过去收集到的一样。
+
+例如医疗、金融风控、设备故障、安全事件等场景中，真正重要的异常可能很少发生。即使有历史异常，也可能覆盖不了未来异常类型。把模型训练到某些已知异常上，不代表它一定能泛化到所有未知异常。
+
+\subsection{本章小结}
+
+让模型在训练时见到异常资料，并明确学习“异常低 confidence”，是比单纯事后设阈值更有针对性的方案。它能缓解过度自信问题，但前提是我们有足够代表性的异常资料。现实中，异常资料的稀缺和多样性是这条路线最大的限制。
+
+% =====================================================================
+\section{改进方向二：用生成模型制造异常资料}
+% =====================================================================
+
+如果真实异常资料难以收集，一个自然想法是：能不能用生成模型造一些异常资料？课程最后提到，有研究尝试用 generative model 生成 anomaly，再把这些生成出来的异常样本用于训练分类器，使其看到异常时给出低 confidence。
+
+\framefig{0.86}{figures/fig03_learning_more_low_confidence_and_generative_anomaly.jpg}
+{进一步学习方向：训练分类器对异常给低 confidence；若异常资料难以取得，可尝试用生成模型产生异常样本}
+{00:03:45--00:04:00}
+
+\subsection{生成异常的目标并不简单}
+
+生成异常资料听起来直接，但真正困难的是控制生成样本的位置。若生成样本太像真实正常资料，它就不应该被当作异常；若生成样本太离谱、太远离真实资料，模型可能只学会拒绝无意义的噪声，对真实边界附近的异常没有帮助。
+
+因此，理想的生成异常应该有一种微妙性质：它和正常资料有一定相似度，足以挑战分类器；但又不能真的属于正常分布。课程用的话说，就是“有点像真的，但又不能跟真的很像”。这类样本可以帮助模型学习正常分布边界附近的拒绝行为。
+
+\subsection{为什么边界附近的异常更有价值}
+
+从学习角度看，最有价值的异常样本往往不是离正常资料非常远的样本，而是靠近正常分布边界的样本。远离正常分布的异常太容易拒绝，不能提供太多训练信息；边界附近的异常更能暴露模型的过度自信问题。
+
+可以把训练资料分成三类：
+\begin{center}
+\begin{tabular}{L{3.4cm} L{4.8cm} L{4.8cm}}
+\toprule
+样本类型 & 对模型的影响 & 训练价值 \\
+\midrule
+正常样本 & 学习已知类别分类 & 必要，用于保持主任务表现 \\
+远离正常分布的异常 & 容易被拒绝 & 有帮助但信息量有限 \\
+靠近边界的异常 & 容易诱发高 confidence 错误 & 最能训练模型降低异常 confidence \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+生成模型的价值在于，它可能产生大量可控的边界样本，补足真实异常资料不足的问题。但这同时要求生成过程足够可控，否则生成出来的资料要么太真，要么太假，都不能很好服务异常检测。
+
+\subsection{和前面方法的关系}
+
+生成异常不是一个独立于前面方法的新目标，而是为前面的训练策略提供资料。流程可以概括为：
+\begin{enumerate}
+    \item 训练或使用一个生成模型，产生与正常资料相关但不属于正常分布的样本。
+    \item 把这些样本当作 anomaly data。
+    \item 训练分类器在正常样本上分类正确，在生成异常样本上给出低 confidence 或高 entropy。
+\end{enumerate}
+
+这样一来，分类器的 confidence 就不只是事后从 softmax 里读出来，而是在训练中被塑造成更适合异常检测的信号。
+
+\begin{warningbox}{生成异常也可能带来偏差}
+    如果生成模型产生的异常类型太单一，分类器可能只学会拒绝这些合成异常，而不是学会一般性的 out-of-distribution 判断。因此生成样本的多样性和位置控制非常关键。
+\end{warningbox}
+
+\subsection{本章小结}
+
+用生成模型制造异常资料，是为了解决真实 anomaly data 难收集的问题。关键不只是“生成一些不一样的东西”，而是生成足够接近正常分布、又确实不属于正常分布的样本。这样的样本能帮助分类器学习在边界附近降低 confidence。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+这一讲虽然很短，但补上了异常检测 confidence baseline 的核心弱点：分类器的高 confidence 可能来自捷径特征，而不是来自输入真的属于正常分布。猫狗例子说明异常样本可能比正常类更强烈地激活某些判别特征；辛普森黄脸例子则说明模型可能把“黄脸”这种局部线索当成角色身份的重要依据。
+
+因此，异常检测不能只停留在“拿分类器分数设阈值”。更好的方向是让模型在训练中见到异常或近似异常，并明确学习对这些样本给低 confidence。如果真实异常资料难以收集，可以考虑使用生成模型制造合成异常；但生成过程要小心控制，避免样本太真或太假。
+
+把 P28 到 P32 连起来看，异常检测的脉络可以整理成：
+\begin{enumerate}
+    \item 先明确异常检测的资料设定：是否有正常标签、是否有异常样本。
+    \item 如果已有分类器，可以把 confidence score 当作简单 baseline。
+    \item 用 development set 选择阈值，并用 cost table 或 AUC 等指标评价。
+    \item 警惕 confidence 的失败模式：模型可能对 out-of-distribution 样本过度自信。
+    \item 若要改进，需要让训练目标或训练资料直接约束异常样本上的 confidence。
+\end{enumerate}
+
+从实践角度说，这一讲最值得带走的一句话是：分类器 confidence 不是异常检测的终点，而只是一个起点。它提供了一个便宜 baseline，但真正可靠的系统还需要评估集、代价分析、异常训练信号，以及对模型捷径特征的检查。
+
+\end{document}

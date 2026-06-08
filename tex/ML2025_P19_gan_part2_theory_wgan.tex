@@ -1,0 +1,494 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{生成式对抗网络 GAN（二）}
+\newcommand{\notesubtitle}{理论介绍：JS Divergence、Wasserstein Distance 与 WGAN}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅机器学习深度学习课程（Bilibili）}
+\newcommand{\videoduration}{约 47 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=19}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.4cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{GAN 真正想优化什么}
+% =====================================================================
+
+上一讲给出了 GAN 的训练流程：固定 generator 训练 discriminator，再固定 discriminator 训练 generator。本讲要回答更根本的问题：这种互动到底在优化什么？为什么两个网络互相欺骗，最后 generator 就能产生像真实资料的样本？
+
+普通 supervised learning 通常先定义 loss function，再用 gradient descent 调参数。GAN 也是如此，只是它的 loss 不是单一输入对应单一标签，而是两个分布之间的距离。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_gan_objective.jpg}
+    \caption{GAN 的目标是让 generator 诱导出的分布 $P_G$ 尽可能接近真实资料分布 $P_{\mathrm{data}}$。\protect\footnotemark}
+    \label{fig:objective}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:19--01:06；字幕附近说明本讲要弄清楚训练目标是什么，以及 generation 问题中要 minimize 或 maximize 什么。}
+
+\subsection{Generator 诱导出一个分布}
+
+Generator 从简单分布中采样 $z$，经过神经网络得到样本：
+\[
+    z\sim P_z,\qquad x=G_\theta(z).
+\]
+当 $z$ 在 $P_z$ 中变化，$G_\theta(z)$ 就在样本空间中形成一个分布，记为 $P_G$。真实资料也有自己的分布，记为 $P_{\mathrm{data}}$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_generator_pushforward_distribution.jpg}
+    \caption{简单分布经过 generator 之后会被扭曲成新的分布 $P_G$；训练希望 $P_G$ 与真实资料分布 $P_{\mathrm{data}}$ 越接近越好。\protect\footnotemark}
+    \label{fig:pushforward}
+\end{figure}
+\footnotetext{视频画面时间区间：约 02:04--02:53；字幕附近说明 normal distribution 中的点经过 generator 后位置改变，形成新的 distribution，并希望它接近真实资料分布。}
+
+因此，生成模型的目标可以抽象写成
+\[
+    G^\ast
+    =
+    \arg\min_G
+    \mathrm{Div}\bigl(P_G,P_{\mathrm{data}}\bigr),
+\]
+其中 $\mathrm{Div}$ 是某种衡量分布差异的距离或 divergence。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig03_minimize_divergence.jpg}
+    \caption{若能计算 $P_G$ 与 $P_{\mathrm{data}}$ 的 divergence，就可以把 GAN 看成寻找使 divergence 最小的 generator。\protect\footnotemark}
+    \label{fig:min-div}
+\end{figure}
+\footnotetext{视频画面时间区间：约 04:19--05:06；字幕附近说明 generation 问题中的 loss function 就是 $P_G$ 与 $P_{\mathrm{data}}$ 的 divergence，目标是找 $G$ 使它最小。}
+
+\subsection{困难在于分布本身不可见}
+
+问题是，我们通常不知道 $P_G$ 和 $P_{\mathrm{data}}$ 的完整解析式。真实资料分布只以 dataset 的形式存在；生成分布也只能通过采样 $z$ 后得到一批假样本。GAN 的巧妙之处就在这里：即使不知道两个分布的公式，只要能从它们采样，就可以通过 discriminator 估计某种分布差异。
+
+\begin{knowledgebox}{GAN 理论的一句话版本}
+    GAN 把「比较两个分布」变成「训练一个分类器区分两个分布的样本」。如果分类器很容易区分，两个分布差异大；如果分类器难以区分，两个分布更接近。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+GAN 的目标不是让某个输出等于某张训练图，而是让生成分布 $P_G$ 接近真实分布 $P_{\mathrm{data}}$。理论问题因此变成：在只能采样、不能写出分布公式的情况下，如何估计并最小化两个分布之间的差异。
+
+% =====================================================================
+\section{Discriminator 如何估计 Divergence}
+% =====================================================================
+
+虽然不知道两个分布的公式，但我们能从它们采样。从资料库抽出的样本来自 $P_{\mathrm{data}}$；从随机向量经过 generator 得到的样本来自 $P_G$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig04_sampling_enough.jpg}
+    \caption{GAN 只需要能够从 $P_{\mathrm{data}}$ 和 $P_G$ 采样：真实资料来自 database，生成资料来自 $z$ 经过 generator。\protect\footnotemark}
+    \label{fig:sampling}
+\end{figure}
+\footnotetext{视频画面时间区间：约 06:49--07:33；字幕附近说明我们可以从 normal distribution sample 向量给 generator，也可以从真实资料库 sample，因此可在只能采样的前提下估计 divergence。}
+
+\subsection{把 Discriminator 看成二分类器}
+
+给定一个 generator，discriminator 的训练资料可以这样构造：真实样本标为 class 1，生成样本标为 class 2。于是 discriminator 变成一个 binary classifier。若用 $D(x)$ 表示样本来自真实资料的概率，原始 GAN 中 discriminator 的目标是最大化
+\[
+    V(D,G)
+    =
+    \mathbb{E}_{x\sim P_{\mathrm{data}}}\bigl[\log D(x)\bigr]
+    +
+    \mathbb{E}_{x\sim P_G}\bigl[\log(1-D(x))\bigr].
+\]
+等价地，也可以写成 $z\sim P_z$：
+\[
+    \mathbb{E}_{z\sim P_z}\bigl[\log(1-D(G(z)))\bigr].
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig05_discriminator_objective.jpg}
+    \caption{Discriminator 的 objective 等价于训练 binary classifier：真实样本为 class 1，生成样本为 class 2，最大化负 cross entropy。\protect\footnotemark}
+    \label{fig:d-objective}
+\end{figure}
+\footnotetext{视频画面时间区间：约 10:35--11:23；字幕附近说明最大化该 objective 等同于最小化 cross entropy，也就是训练一个二分类器。}
+
+如果两个分布差异小，真实样本和生成样本混在一起，分类器很难分，最佳 $V(D,G)$ 的值不会太大。若两个分布差异大，分类器容易把它们分开，最佳 objective 值就会变大。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_small_large_divergence.jpg}
+    \caption{当两组样本混在一起时，discriminator 难以区分，最大 objective 值较小；当两组样本很分离时，最大 objective 值较大。\protect\footnotemark}
+    \label{fig:small-large-div}
+\end{figure}
+\footnotetext{视频画面时间区间：约 13:19--14:07；字幕附近说明小 divergence 对应较小的 objective maximum，大 divergence 对应容易分类和较大的 maximum。}
+
+\subsection{原始 GAN 的 Minimax 结构}
+
+在给定 $G$ 时，最强 discriminator 会达到
+\[
+    \max_D V(D,G).
+\]
+这个最大值和 $P_G$、$P_{\mathrm{data}}$ 之间的 Jensen-Shannon divergence 有关。经典推导会得到
+\[
+    \max_D V(D,G)
+    =
+    -\log 4
+    +
+    2\,\mathrm{JS}\bigl(P_{\mathrm{data}}\Vert P_G\bigr).
+\]
+因此让 generator 最小化这个最大值，就等价于让 $P_G$ 靠近 $P_{\mathrm{data}}$：
+\[
+    G^\ast
+    =
+    \arg\min_G
+    \max_D V(D,G).
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig07_minimax_value_js.jpg}
+    \caption{原始 GAN 的互动可以写成 min-max 问题：固定 $G$ 时找最大化 $V(D,G)$ 的 $D$，再找使该最大值最小的 $G$。\protect\footnotemark}
+    \label{fig:minimax}
+\end{figure}
+\footnotetext{视频画面时间区间：约 15:19--16:06；字幕附近解释红框里的 $\max_D V(D,G)$ 是另一个 optimization problem，而 generator 要让这个最大值最小。}
+
+\begin{importantbox}{为什么 Discriminator 能提供训练信号}
+    对固定 generator 来说，最优 discriminator 的能力反映了两个分布的差异。Generator 更新时，就是在尝试让 discriminator 越来越难分辨真实样本和生成样本。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Discriminator 把分布比较转化为二分类任务。原始 GAN 中，最优 discriminator 的 objective 与 JS divergence 有关，因此 GAN 的 min-max 训练可以被理解为间接最小化生成分布和真实分布之间的 JS divergence。
+
+% =====================================================================
+\section{为什么 JS Divergence 不适合}
+% =====================================================================
+
+既然原始 GAN 和 JS divergence 有关，为什么 GAN 仍然难训练？本讲的关键解释是：在高维真实资料中，$P_G$ 和 $P_{\mathrm{data}}$ 往往几乎不重叠，而 JS divergence 在非重叠分布上无法提供有用的距离信息。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.84\textwidth]{figures/fig08_js_not_suitable_reasons.jpg}
+    \caption{课程指出 JS divergence 不适合的主要原因：多数情况下 $P_G$ 与 $P_{\mathrm{data}}$ 不重叠，原因来自资料本身的低维结构和采样限制。\protect\footnotemark}
+    \label{fig:js-reasons}
+\end{figure}
+\footnotetext{视频画面时间区间：约 18:17--18:56；字幕附近说明原始 GAN 最小化 JS divergence，但 $P_G$ 和 $P_{\mathrm{data}}$ 的重叠部分往往非常少。}
+
+\subsection{高维资料常在低维流形上}
+
+真实图片虽然处在极高维像素空间中，但自然图片只占其中极小一部分。随机像素几乎不可能是一张合理图片；合理图片形成的集合更像嵌在高维空间中的低维流形。Generator 产生的图片也落在另一个低维流形上。两个低维流形在高维空间中随机相交的机会很小，因此 $P_G$ 和 $P_{\mathrm{data}}$ 常常没有重叠。
+
+另一个原因是采样。即使真实分布和生成分布理论上有些重叠，我们实际训练只看有限样本。有限样本在高维空间中非常稀疏，discriminator 很容易画出分界线把真实样本和生成样本完全分开。
+
+\subsection{非重叠时 JS 值恒定}
+
+JS divergence 有一个关键性质：如果两个分布完全不重叠，JS divergence 就是常数 $\log 2$。这意味着两个生成分布只要都没和真实分布重叠，不管一个离真实分布近、另一个离得远，JS divergence 都可能给出同样的值。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig09_nonoverlap_js_log2.jpg}
+    \caption{只要两个分布没有重叠，JS divergence 就会是 $\log 2$，无法区分「远一点」和「近一点」。\protect\footnotemark}
+    \label{fig:js-log2}
+\end{figure}
+\footnotetext{视频画面时间区间：约 21:20--22:07；字幕附近说明两个没有重叠的分布，JS divergence 算出来永远都是 $\log 2$。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig10_js_equally_bad.jpg}
+    \caption{不同 generator 可能明显有好坏之分，但若它们与真实分布都不重叠，JS divergence 会认为它们一样糟。\protect\footnotemark}
+    \label{fig:js-equally-bad}
+\end{figure}
+\footnotetext{视频画面时间区间：约 22:47--23:24；字幕附近说明中间的 generator 明明比左边更接近真实分布，但从 JS divergence 看不出差别。}
+
+这会直接破坏训练。若 loss 对许多 generator 都给出同样数值，gradient 就无法告诉 generator 应该往哪里移动。模型不是没有方向，就是训练信号极不稳定。
+
+\subsection{分类器准确率也失去意义}
+
+从实际操作看，若真实样本和生成样本总能被 binary classifier 完全分开，discriminator 的正确率每次都是 100\%。这时你无法从 discriminator 的 loss 或 accuracy 看出 generator 有没有进步，只能靠肉眼观察样本质量。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig11_classifier_loss_no_signal.jpg}
+    \caption{当两个分布不重叠时，binary classifier 可以轻松达到 100\% accuracy；此时分类器 loss 对 GAN 训练不再提供有效进度信息。\protect\footnotemark}
+    \label{fig:no-signal}
+\end{figure}
+\footnotetext{视频画面时间区间：约 25:35--26:23；字幕附近说明若 classifier 每次正确率都是 100\%，就无法知道 generator 有没有越来越好。}
+
+\begin{warningbox}{JS divergence 的核心问题}
+    JS divergence 在分布不重叠时饱和为常数。对 GAN 来说，这表示「离真实分布很远」和「已经靠近但还没重叠」可能得到一样的训练信号。
+\end{warningbox}
+
+\subsection{本章小结}
+
+原始 GAN 理论上对应 JS divergence，但高维资料分布常不重叠，有限采样又会加剧不重叠。JS divergence 在不重叠时恒为 $\log 2$，不能反映 generator 是否更接近真实分布，因此训练信号容易失效。
+
+% =====================================================================
+\section{Wasserstein Distance}
+% =====================================================================
+
+为了解决 JS divergence 的饱和问题，人们考虑使用其他衡量分布差异的方式。本讲重点介绍 Wasserstein distance，也叫 Earth Mover distance。
+
+\subsection{土方距离直觉}
+
+把一个分布想象成一堆土，把另一个分布想象成目标地形。Wasserstein distance 衡量的是：平均要把土移动多远，才能把第一个分布变成第二个分布。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.84\textwidth]{figures/fig12_wasserstein_moving_plan.jpg}
+    \caption{Wasserstein distance 可理解为 earth mover distance：把分布 $P$ 重新搬运成分布 $Q$，平均移动距离就是分布差异。\protect\footnotemark}
+    \label{fig:w-moving}
+\end{figure}
+\footnotetext{视频画面时间区间：约 27:49--28:37；字幕附近说明 Wasserstein distance 又叫 earth mover distance，并用推土机搬运分布形状作类比。}
+
+对于复杂分布，搬运方案不止一种。一个地方的质量可以搬到多个目标位置，多个来源也可以汇到同一目标。Wasserstein distance 不是随便选一个搬运方案，而是在所有可行 moving plans 中，选择平均搬运距离最小的那个。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig13_wasserstein_min_plan.jpg}
+    \caption{同一对分布之间可能有许多 moving plans；Wasserstein distance 使用平均移动距离最小的方案。\protect\footnotemark}
+    \label{fig:w-min-plan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 29:17--30:07；字幕附近说明要穷举所有把 $P$ 变成 $Q$ 的 moving plan，并选平均距离最短的方案。}
+
+数学上可写为
+\[
+    W(P,Q)
+    =
+    \inf_{\gamma\in\Pi(P,Q)}
+    \mathbb{E}_{(x,y)\sim\gamma}\bigl[\|x-y\|\bigr],
+\]
+其中 $\Pi(P,Q)$ 表示所有边缘分布分别为 $P$ 和 $Q$ 的 joint distributions，也就是所有合法搬运方案。
+
+\subsection{为什么它比 JS 更适合}
+
+Wasserstein distance 即使在两个分布不重叠时，也能反映距离远近。若生成分布逐渐向真实分布移动，Wasserstein distance 会逐渐变小；JS divergence 则可能一直是 $\log 2$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig14_wasserstein_progress_signal.jpg}
+    \caption{即使分布不重叠，Wasserstein distance 仍能区分 generator 是否更接近真实分布，从而提供连续的训练信号。\protect\footnotemark}
+    \label{fig:w-progress}
+\end{figure}
+\footnotetext{视频画面时间区间：约 31:04--31:27；字幕附近说明若换成 Wasserstein distance，就能看出 generator 由左向右越来越好。}
+
+这正是 WGAN 想解决的问题：GAN 训练需要的不只是一个理论上的 divergence，更需要一个能在训练早期提供有意义 gradient 的目标。
+
+\subsection{本章小结}
+
+Wasserstein distance 把分布差异看成搬运成本。它的优势是：即使两个分布没有重叠，也能根据距离远近给出不同数值。因此它比 JS divergence 更适合描述 GAN 训练中生成分布逐渐靠近真实分布的过程。
+
+% =====================================================================
+\section{WGAN：用 Critic 估计 Wasserstein Distance}
+% =====================================================================
+
+直接计算 Wasserstein distance 需要解 optimal transport 问题，成本不低。WGAN 使用 Kantorovich-Rubinstein duality，把 Wasserstein distance 写成另一个优化问题：
+\[
+    W(P_{\mathrm{data}},P_G)
+    =
+    \max_{\|D\|_L\le 1}
+    \left[
+    \mathbb{E}_{x\sim P_{\mathrm{data}}}D(x)
+    -
+    \mathbb{E}_{x\sim P_G}D(x)
+    \right].
+\]
+这里的 $D$ 不再是输出概率的 classifier，而是 critic。它给真实样本高分、给生成样本低分，两者期望差用来估计 Wasserstein distance。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig15_wgan_dual_formula.jpg}
+    \caption{WGAN 用一个受约束的 critic $D$ 来估计 $P_{\mathrm{data}}$ 与 $P_G$ 的 Wasserstein distance。\protect\footnotemark}
+    \label{fig:wgan-formula}
+\end{figure}
+\footnotetext{视频画面时间区间：约 34:35--35:22；字幕附近直接给出 WGAN 的 optimization 形式，并说明该值就是 $P_{\mathrm{data}}$ 与 $P_G$ 的 Wasserstein distance。}
+
+\subsection{为什么需要 Lipschitz 约束}
+
+公式里的 $\|D\|_L\le 1$ 是关键。若不限制 $D$，critic 可以把真实样本分数推到无限大，把生成样本分数推到无限小，objective 会发散。这样得到的最大值没有意义，也不会是 Wasserstein distance。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig16_lipschitz_constraint.jpg}
+    \caption{若没有 Lipschitz 约束，critic 可把真实样本分数推到正无穷、生成样本分数推到负无穷，训练不会收敛。\protect\footnotemark}
+    \label{fig:lipschitz}
+\end{figure}
+\footnotetext{视频画面时间区间：约 36:49--37:35；字幕附近说明若不限制 $D$，real image 可被给无限大正值，generated image 给无限大负值，因此必须加限制。}
+
+1-Lipschitz 的直觉是：$D$ 不能变化得太剧烈。若两个样本在输入空间中很近，$D$ 的输出不能差太多。这样 critic 的分数差才会反映空间距离，而不是任意放大。
+
+\begin{importantbox}{WGAN 中的 D 不是分类器}
+    原始 GAN 的 discriminator 输出真假概率；WGAN 的 critic 输出实数分数。它不需要 sigmoid，也不直接训练二分类 cross entropy。它的任务是估计两个分布的 Wasserstein 距离。
+\end{importantbox}
+
+\subsection{Generator 如何更新}
+
+WGAN 训练 critic 时，最大化真实样本分数和生成样本分数的差：
+\[
+    \mathbb{E}_{x\sim P_{\mathrm{data}}}D(x)
+    -
+    \mathbb{E}_{z\sim P_z}D(G(z)).
+\]
+训练 generator 时，固定 critic，让生成样本获得更高分数，也就是最小化 critic 估计出的分布差异。
+
+\subsection{本章小结}
+
+WGAN 用受 Lipschitz 约束的 critic 估计 Wasserstein distance。相比原始 GAN 的分类器，critic 提供更连续的距离信息；但 Lipschitz 约束是必要条件，否则优化目标会发散。
+
+% =====================================================================
+\section{如何让 Critic 足够平滑}
+% =====================================================================
+
+WGAN 的理论要求 critic 是 1-Lipschitz。实际训练时，如何强制神经网络满足这个限制，是一个重要工程问题。
+
+\subsection{Weight Clipping}
+
+原始 WGAN 使用 weight clipping：每次参数更新后，把 critic 的权重裁剪到区间 $[-c,c]$ 内。若某个权重大于 $c$，设为 $c$；小于 $-c$，设为 $-c$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig17_weight_clipping_gradient_penalty.jpg}
+    \caption{原始 WGAN 用 weight clipping 粗略限制 critic；后续 improved WGAN 提出 gradient penalty，让梯度接近 1。\protect\footnotemark}
+    \label{fig:weight-clipping}
+\end{figure}
+\footnotetext{视频画面时间区间：约 39:19--40:07；字幕附近说明原始 WGAN 把参数限制在 $[-c,c]$，但这只是粗糙处理，后来有 gradient penalty。}
+
+Weight clipping 简单，但缺点明显。参数范围受限不等于函数一定满足 1-Lipschitz；过小的 $c$ 会限制模型容量，过大的 $c$ 又难以有效约束。因此它可以作为最初尝试，但不是理想解法。
+
+\subsection{Gradient Penalty 与 Spectral Normalization}
+
+Improved WGAN 提出 gradient penalty，直接约束 critic 对输入的梯度范数：
+\[
+    \lambda
+    \mathbb{E}_{\hat{x}}
+    \left(\|\nabla_{\hat{x}}D(\hat{x})\|_2-1\right)^2.
+\]
+常见做法是在真实样本和生成样本之间插值出 $\hat{x}$，要求这些点上的 gradient norm 接近 1。这样比单纯裁剪参数更贴近 Lipschitz 条件。
+
+另一种方法是 spectral normalization。它通过控制每层权重矩阵的 spectral norm，让网络整体的 Lipschitz 常数受到控制。课程提到，若要训练较好的 GAN，这类方法往往很有用。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig18_gradient_penalty_spectral_norm.jpg}
+    \caption{改进方法包括 gradient penalty 和 spectral normalization：前者让梯度接近 1，后者控制各层权重的谱范数以限制函数斜率。\protect\footnotemark}
+    \label{fig:gp-sn}
+\end{figure}
+\footnotetext{视频画面时间区间：约 40:50--41:27；字幕附近提到 improved WGAN、spectral normalization，并说明训练高质量 GAN 可能需要这些技巧。}
+
+\begin{warningbox}{理论与实作之间的缝隙}
+    理论上 critic 应该在每次 generator 更新前充分优化，但实践中通常只更新几步 critic，再更新 generator。WGAN 的公式提供方向，真实训练仍需要在计算量、稳定性和约束强度之间调参。
+\end{warningbox}
+
+\subsection{本章小结}
+
+WGAN 的关键是让 critic 近似满足 Lipschitz 条件。Weight clipping 简单但粗糙；gradient penalty 更直接约束梯度；spectral normalization 通过控制权重矩阵谱范数限制函数变化。这些技巧决定了 WGAN 理论能否在实际训练中发挥作用。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲从理论上解释了 GAN 的训练。原始 GAN 的 discriminator 可以被看成估计 JS divergence 的二分类器；但在高维资料中，真实分布和生成分布常常不重叠，JS divergence 会饱和，导致训练信号失效。Wasserstein distance 即使在非重叠时也能反映距离，因此 WGAN 用 critic 估计 Wasserstein distance，给 generator 更有意义的优化方向。
+
+\subsection{核心公式回顾}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{@{}L{0.24\textwidth}L{0.42\textwidth}L{0.24\textwidth}@{}}
+        \toprule
+        对象 & 公式 & 含义 \\
+        \midrule
+        生成分布目标 &
+        $G^\ast=\arg\min_G \mathrm{Div}(P_G,P_{\mathrm{data}})$ &
+        让生成分布接近真实分布。 \\
+        原始 GAN &
+        $\min_G\max_D V(D,G)$ &
+        最优 $D$ 的值与 JS divergence 有关。 \\
+        JS 问题 &
+        非重叠时 $\mathrm{JS}=\log 2$ &
+        无法区分近与远。 \\
+        Wasserstein &
+        $W(P,Q)=\inf_{\gamma}\mathbb{E}\|x-y\|$ &
+        最小平均搬运距离。 \\
+        WGAN dual &
+        $\max_{\|D\|_L\le1}\mathbb{E}_{P_{\mathrm{data}}}D-\mathbb{E}_{P_G}D$ &
+        用受约束 critic 估计 Wasserstein distance。 \\
+        \bottomrule
+    \end{tabular}
+    \caption{本讲公式主线。}
+    \label{tab:formula-summary}
+\end{table}
+
+\subsection{理解路径}
+
+第一，不要把 GAN 只记成「两个网络互相骗」。更准确地说，discriminator/critic 是分布差异的估计器，generator 根据这个估计器提供的信号更新。
+
+第二，原始 GAN 难训练不是偶然。高维资料分布不重叠时，JS divergence 不能提供渐进信号；这解释了为什么过去训练 GAN 常要靠大量经验和人工观察。
+
+第三，WGAN 的贡献不是简单换一个 loss，而是换了分布距离，并通过 Lipschitz critic 让这个距离可以被神经网络估计。后续的 weight clipping、gradient penalty、spectral normalization 都是在解决「如何让 critic 满足约束」这个问题。
+
+\begin{importantbox}{带走的判断}
+    原始 GAN 用分类器判断真假，WGAN 用 critic 衡量距离。前者在分布不重叠时容易饱和，后者在不重叠时仍能给出远近信息。理解这一点，就理解了 WGAN 为什么会成为 GAN 训练稳定化的重要里程碑。
+\end{importantbox}
+
+\subsection{延伸}
+
+继续学习 GAN 理论时，可以沿三条线深入：一是不同 divergence 和 probability metric 的性质，例如 KL、reverse KL、JS、Total Variation、Wasserstein；二是 Lipschitz 约束的实现，例如 gradient penalty、spectral normalization、orthogonal regularization；三是训练动态和收敛问题，也就是 min-max optimization 本身为什么难。
+
+本讲的主线可以浓缩为一句话：GAN 的困难不只是生成器不够强，而是训练信号本身可能不可靠；WGAN 通过更合适的分布距离，让「越来越接近真实资料」这件事在 loss 上也看得见。
+
+\end{document}

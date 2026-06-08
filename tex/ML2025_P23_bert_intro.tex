@@ -1,0 +1,606 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自监督式学习（二）}
+\newcommand{\notesubtitle}{BERT 简介：从遮蔽填空到下游任务微调}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》2025 课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 50 分 40 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=23}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.2cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{自监督学习与 BERT 的问题设定}
+% =====================================================================
+
+本讲从上一讲的自监督学习导入，正式进入 BERT。课程的重点不是把 BERT 当作一个神秘的大模型名称，而是把它拆成一个可理解的训练流程：先从没有人工标签的大量文本中构造训练目标，让模型学会利用上下文；再把这个预训练好的模型迁移到分类、标注、双句判断、问答等下游任务。
+
+如果只记一句话：BERT 是一个先通过自监督任务学语言表示，再通过少量标注数据微调用于具体任务的 Transformer encoder。
+
+\subsection{从监督学习到自监督学习}
+
+监督学习中，训练样本通常以 $(x,y)$ 形式出现：输入 $x$ 交给模型，模型输出 $\hat{y}$，再用人工给定的标签 $y$ 计算损失。问题是，人工标签很贵。文本、语音、图片、影片可以大量收集，但要把它们逐条标成情感类别、词性标签、问答答案或语义关系，成本很高。
+
+自监督学习把思路反过来：不先问“人类给了什么标签”，而是问“数据本身能不能产生一个可预测的目标”。例如把一句话的某些词遮住，让模型根据上下文猜原词；或者给两句话，让模型判断它们是否相邻。标签不是人另外写的，而是从原始数据中自动挖出来的。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig01_self_supervised_pipeline.jpg}
+    \caption{监督学习使用外部标签；自监督学习从输入本身构造预测目标，因此可以利用大量未标注资料。\protect\footnotemark}
+    \label{fig:self-supervised-pipeline}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:01:56--00:02:23；字幕说明 self-supervised learning 可以看作一种从资料本身产生训练目标的方法。}
+
+\begin{importantbox}{自监督不是没有监督}
+    自监督学习仍然有明确的训练目标和损失函数。它和传统监督学习的差异，不在于有没有 loss，而在于监督信号来自哪里：传统监督学习依赖人工标签，自监督学习从原始资料中自动构造伪标签或预测目标。
+\end{importantbox}
+
+\subsection{LeCun 对 self-supervised learning 的说法}
+
+课程引用 Yann LeCun 的说法：self-supervised learning 之所以不是简单叫 unsupervised learning，是因为它仍然构造了一个预测任务。系统从输入的某些部分预测另一些部分，因此它既不像分类任务那样依赖人工标签，也不像传统聚类那样只寻找数据结构。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig02_lecun_self_supervised_definition.jpg}
+    \caption{LeCun 强调 self-supervised learning 通过“从输入的一部分预测另一部分”来产生训练目标。\protect\footnotemark}
+    \label{fig:lecun-ssl}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:03:12--00:03:35；字幕说明 unsupervised learning 是较大的 family，而 self-supervised learning 更明确指向这种预测式训练。}
+
+用自然语言作为例子，输入可以是一句话、一个段落或两句话的组合。模型可以被要求回答：
+
+\begin{itemize}
+    \item 这句话中被遮住的字或词是什么？
+    \item 两句话是否原本相邻？
+    \item 被弄乱或删除一部分的句子，原本应该长什么样？
+\end{itemize}
+
+这些任务本身未必是最终应用。我们真正需要的是模型在完成这些任务时，被迫学习词义、句法、上下文、长距离依赖和语义关系。BERT 的关键价值就在这里：预训练任务像练基本功，下游任务像正式比赛。
+
+\subsection{本章小结}
+
+本章建立 BERT 的大前提：未标注数据可以通过自监督目标转化为训练资料。BERT 不直接从人工标注任务开始，而是先在大规模文本上学习可迁移的表示。后续章节要回答两个问题：BERT 预训练时到底做什么题，以及预训练完成后如何变成各种下游任务模型。
+
+% =====================================================================
+\section{BERT 的两个预训练目标}
+% =====================================================================
+
+BERT 的经典预训练包含两个目标：Masked Language Modeling（MLM）和 Next Sentence Prediction（NSP）。前者是遮蔽填空，后者是判断两句话是否相邻。课程也补充说明，后续研究发现 NSP 未必有帮助，RoBERTa 移除了它，而 ALBERT 使用了更有用的 Sentence Order Prediction（SOP）。
+
+\subsection{Masked Language Modeling：遮住一部分再猜回来}
+
+MLM 的基本流程是：给 BERT 一段文字，随机选一些 token 做处理，再要求 BERT 在对应位置预测原本的 token。课程用中文句子举例：输入包含“台、湾、大、学”等字，其中某个字可能被遮住，BERT 要根据周围上下文猜出正确答案。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig03_bert_masking_overview.jpg}
+    \caption{BERT 以 Transformer encoder 为主体，输入序列后，对被选中的位置学习恢复原始 token。\protect\footnotemark}
+    \label{fig:bert-masking-overview}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:05:11--00:05:29；字幕说明 BERT 的想法最早用于文字，但同类自监督思想也可迁移到语音或影像。}
+
+设原始序列为 $x=(x_1,\ldots,x_n)$，被选中要预测的位置集合为 $M$，经过遮蔽或替换后的输入为 $\tilde{x}$。MLM 的损失可以写为
+
+$$
+\mathcal{L}_{\mathrm{MLM}}
+= - \sum_{i\in M} \log p_\theta(x_i \mid \tilde{x})
+$$
+
+符号说明：
+\begin{itemize}
+    \item $M$：被抽中作为预测目标的位置集合。
+    \item $\tilde{x}$：经过 mask、随机替换或保持原样后的输入序列。
+    \item $p_\theta(x_i \mid \tilde{x})$：模型在位置 $i$ 预测原始 token $x_i$ 的机率。
+    \item $\theta$：BERT 的参数，包括 Transformer encoder 和输出分类层。
+\end{itemize}
+
+\begin{knowledgebox}{为什么不是把所有 token 都拿来预测}
+    如果每个位置都要求预测自己，模型可能学到近乎复制输入的捷径。MLM 只抽一部分位置作为目标，让模型必须利用上下文推断缺失信息。这样训练出来的表示更容易捕捉语义和句法，而不是只记住当前位置的字形。
+\end{knowledgebox}
+
+\subsection{MASK 与随机替换}
+
+课程强调，被选中的 token 不一定总是变成特殊符号 \texttt{[MASK]}。训练时有两类典型处理：一类是把原 token 替换成 \texttt{[MASK]}，另一类是替换成随机 token。这样做的原因是，真实下游任务里通常不会出现 \texttt{[MASK]} 这个特殊符号。如果训练时只让模型看 \texttt{[MASK]}，预训练和微调之间会有落差。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig04_mask_or_random_replacement.jpg}
+    \caption{被选中的位置可以替换为特殊的 \texttt{[MASK]}，也可以随机换成另一个 token；两种方式都是为了构造恢复原词的训练目标。\protect\footnotemark}
+    \label{fig:mask-random}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:06:55--00:07:09；字幕说明训练时有两种做法：一种加 mask，一种随机换成某个字，实际采用哪种也是随机决定。}
+
+可以把 MLM 想成一个大规模分类问题：如果词表大小是 $V$，那么每个被预测位置都要在 $V$ 个类别中选出原始 token。课程用“湾”这个字举例：BERT 在被遮蔽位置输出一个向量，经过线性层和 softmax 后，产生对所有中文字或 token 的机率分布；训练目标是让正确字的机率最高。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig05_mlm_softmax_cross_entropy.jpg}
+    \caption{MLM 在被选中位置接线性层与 softmax，把恢复原 token 转化为词表上的分类问题，并以交叉熵训练。\protect\footnotemark}
+    \label{fig:mlm-loss}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:08:59--00:09:28；字幕说明模型输出要接近 ground truth token 的 one-hot vector，本质上是在做类别数等于词表大小的分类问题。}
+
+\begin{warningbox}{MLM 学到的是上下文，不是单纯背答案}
+    被遮蔽位置的答案来自原句，因此看起来像“把答案藏起来再猜”。但只要语料足够大、上下文足够多样，模型不能靠记忆单一句子解决问题，而必须学习词与词之间的搭配、语法结构和语义线索。
+\end{warningbox}
+
+\subsection{Next Sentence Prediction：判断两句是否相邻}
+
+BERT 的第二个经典目标是 NSP。输入由两个句子组成，中间放入 \texttt{[SEP]}，最前面放入 \texttt{[CLS]}。BERT 读取整个序列后，取 \texttt{[CLS]} 对应的输出向量，接一个线性分类器，判断这两个句子是否在原始语料中相邻。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig06_nsp_input_format.jpg}
+    \caption{NSP 的输入格式：最前面加入 \texttt{[CLS]}，两句话之间加入 \texttt{[SEP]}，让 BERT 知道这是一个双句输入。\protect\footnotemark}
+    \label{fig:nsp-input}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:10:41--00:11:04；字幕说明从语料中取两个句子，并在中间加入特殊分隔符，在最前面加入 \texttt{[CLS]}。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig07_nsp_prediction_head.jpg}
+    \caption{NSP 用 \texttt{[CLS]} 位置的表示接线性分类器，输出 Yes/No，判断两句是否相接。\protect\footnotemark}
+    \label{fig:nsp-head}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:11:56--00:12:20；字幕说明 Yes/No 指的是两个句子是不是相接，模型看到相接句子应输出 Yes，否则输出 No。}
+
+若 $h_{\mathrm{[CLS]}}$ 表示 \texttt{[CLS]} 的输出向量，NSP 可以写成
+
+$$
+p = \sigma(w^\top h_{\mathrm{[CLS]}} + b), \qquad
+\mathcal{L}_{\mathrm{NSP}}
+= - \bigl[y\log p + (1-y)\log(1-p)\bigr]
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h_{\mathrm{[CLS]}}$：BERT 对整个双句输入压缩出的分类用表示。
+    \item $p$：模型判断“两句相邻”的机率。
+    \item $y$：真实标签，$1$ 表示相邻，$0$ 表示不相邻。
+    \item $w,b$：NSP 分类头的参数。
+\end{itemize}
+
+\subsection{NSP 的后续修正：RoBERTa 与 ALBERT}
+
+课程指出，后来的研究认为 NSP 并不一定有帮助。RoBERTa 通过更充分的训练和资料处理，移除了 NSP；ALBERT 则采用 SOP，也就是 Sentence Order Prediction。SOP 不只是问两句是否相邻，而是给一对相邻句子，随机交换顺序，让模型判断它们是否顺序正确。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig08_sop_albert_variant.jpg}
+    \caption{NSP 后来被质疑效果有限；RoBERTa 移除 NSP，ALBERT 使用 SOP 来判断相邻句子的顺序是否正确。\protect\footnotemark}
+    \label{fig:sop-albert}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:14:12--00:14:30；字幕说明 SOP 被用于 ALBERT，而 ALBERT 名称也延续了芝麻街命名趣味。}
+
+\begin{knowledgebox}{NSP 与 SOP 的差异}
+    NSP 可能被模型用主题差异解决：两句来自同一篇文章就可能比较像，来自不同文章就可能比较不像。SOP 更聚焦于篇章顺序，因为正负样本都来自相邻句，只是顺序可能被调换。它迫使模型学习句子之间的前后逻辑，而不只是主题是否一致。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+BERT 的预训练以 MLM 为核心：随机处理部分 token，让模型恢复原本内容。NSP 则试图让模型学习句子关系，但后续研究发现它不是不可或缺，RoBERTa 和 ALBERT 给出了不同修正。理解这两个任务的重点，不是记住它们的名字，而是看见自监督学习如何把无标签文本变成有 loss 的训练资料。
+
+% =====================================================================
+\section{从预训练到微调}
+% =====================================================================
+
+BERT 预训练完成后，只会做它被训练过的自监督题目：遮蔽填空、或在原始版本中做 NSP。它并不会天然懂得情感分类、词性标注或问答。要让 BERT 执行具体任务，需要把它接到任务头上，并用少量标注资料微调。
+
+\subsection{预训练提供通用表示，微调负责具体任务}
+
+课程用一个非常清楚的图说明流程：大量未标注文字先经过 self-supervised learning 训练出 BERT；接着同一个 BERT 被复制到不同下游任务中，各自接上不同输出头，再用少量标注资料 fine-tune。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig09_pretrain_then_finetune.jpg}
+    \caption{BERT 先通过 MLM/NSP 等目标预训练，再被微调到不同下游任务；各任务共享预训练表示，但有各自的输出头。\protect\footnotemark}
+    \label{fig:pretrain-finetune}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:15:59--00:16:27；字幕说明 BERT 学会做填空题后，可被拿去做各种下游任务，但仍需要一些标注资料。}
+
+这个流程有两个重要含义。
+
+\begin{enumerate}
+    \item 预训练阶段吃的是大量无标签资料，目标是学语言表示，而不是直接解决某个应用。
+    \item 微调阶段吃的是少量有标签资料，目标是把通用表示转成任务需要的输出。
+\end{enumerate}
+
+课程把 BERT 比喻成胚胎干细胞：还没有分化时，它不等于任何具体器官；但它具有分化成多种功能的潜能。预训练 BERT 也是如此，它不是现成的情感分析器或问答系统，但它包含可被塑造成这些系统的表示能力。
+
+\subsection{用 GLUE 评估通用语言理解能力}
+
+要评价一个自监督模型，不能只看它在单一任务上的表现。GLUE（General Language Understanding Evaluation）就是一组自然语言理解任务集合，包括语法可接受性、情感分析、句子对相似度、问答式推理、自然语言推论等。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig10_glue_tasks.jpg}
+    \caption{GLUE 把多个语言理解任务放在一起评估，避免只用单一任务判断模型是否真的学到通用表示。\protect\footnotemark}
+    \label{fig:glue}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:18:23--00:18:37；字幕说明评估 self-supervised model 通常会测试多个任务，因为 BERT 要分化到各种下游任务。}
+
+GLUE 的意义在于，它把“模型是否懂语言”拆成多种可测的行为。一个模型如果只在情感分类上表现好，可能只是学到情绪词；如果在句子相似度、自然语言推论、问答式判断等任务上也表现好，才更有理由相信它学到较一般的语言表示。
+
+\subsection{BERT family 与性能演进}
+
+课程展示 BERT 及其后续模型在 GLUE 上的变化。随着模型架构、预训练资料、训练策略和规模不断改进，许多任务从明显落后人类逐步接近甚至超过人类基准。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig11_bert_family_glue_scores.jpg}
+    \caption{BERT family 在 GLUE 上不断推进，说明预训练表示、模型规模与训练策略会显著影响下游任务表现。\protect\footnotemark}
+    \label{fig:bert-family}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:20:42--00:21:05；字幕说明较强模型在某些 GLUE 任务上逐渐追上甚至超过人类平均表现。}
+
+\begin{warningbox}{不要把 benchmark 分数误读成“真正理解”}
+    GLUE 分数提升说明模型在这些任务格式上表现更好，但不等于模型具有和人一样的理解方式。课程也提醒，这些结果是在特定资料集和评估方式上的结果；真实语义理解、稳健性、泛化与可解释性仍需要额外检验。
+\end{warningbox}
+
+\subsection{本章小结}
+
+BERT 的使用方式是“先预训练，再微调”。预训练阶段提供可迁移表示，微调阶段把表示对接到具体任务。GLUE 这样的多任务 benchmark 用来检查模型是否具有较通用的语言理解能力，但 benchmark 只是测量工具，不应被误认为完整智能。
+
+% =====================================================================
+\section{BERT 的四种下游用法}
+% =====================================================================
+
+课程把 BERT 的下游应用整理成四个 case。这个分类非常实用，因为它告诉我们：面对一个 NLP 任务时，关键不是重新发明模型，而是判断输入输出形式，然后选择合适的任务头。
+
+\subsection{Case 1：输入一个序列，输出一个类别}
+
+第一类任务是 sequence classification。输入是一段文字，输出是一个类别，例如情感分析：句子“this is good”要被分类为 positive。做法是把 \texttt{[CLS]} 放在序列开头，让 BERT 编码整个句子，再取 \texttt{[CLS]} 的输出向量接线性分类器。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig12_case1_sequence_classification.jpg}
+    \caption{Case 1 使用 \texttt{[CLS]} 表示做整句分类；BERT 参数由预训练初始化，分类头再由下游标注资料学习。\protect\footnotemark}
+    \label{fig:case1}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:24:28--00:24:58；字幕说明下游分类模型不是随机初始化 BERT，而是用预训练好的 BERT 参数作为初始化。}
+
+数学上可写为
+
+$$
+\hat{y}=\operatorname{softmax}(W h_{\mathrm{[CLS]}} + b)
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h_{\mathrm{[CLS]}}$：BERT 对整段输入产生的分类向量。
+    \item $W,b$：下游任务的线性分类头。
+    \item $\hat{y}$：对类别的预测分布，例如 positive/negative。
+\end{itemize}
+
+这里真正需要从头学习的，主要是任务头和 BERT 参数的微调方向。预训练参数给模型一个比随机初始化更好的起点，因此少量标注数据也可能得到不错结果。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig13_pretrain_vs_random_init.jpg}
+    \caption{预训练初始化通常比从随机初始化开始更快、更稳；图中 fine-tune 曲线明显优于 scratch 曲线。\protect\footnotemark}
+    \label{fig:pretrain-vs-random}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:24:53--00:25:07；字幕说明用会做填空题的 BERT 初始化，直觉上会比随机初始化更好，并引入文献曲线作为例子。}
+
+\begin{importantbox}{微调不是只训练最后一层}
+    在典型 fine-tuning 中，分类头当然要学习，但 BERT 本体参数也会跟着更新。预训练提供的是起点，不是冻结不动的知识库。若资料很少或任务很特殊，也可以选择冻结部分层，但这已经是另一个训练策略问题。
+\end{importantbox}
+
+\subsection{Case 2：输入一个序列，输出等长序列}
+
+第二类任务是 sequence labeling。输入是一个序列，输出也是一个等长序列，常见例子包括词性标注、命名实体识别、逐字分类等。每个 token 的 BERT 输出向量都接一个分类器，各自预测该位置的标签。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig14_case2_sequence_labeling.jpg}
+    \caption{Case 2 对每个 token 的输出分别接线性分类器，得到与输入长度相同的标签序列，例如 POS tagging。\protect\footnotemark}
+    \label{fig:case2}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:29:35--00:30:18；字幕说明每个词汇要判断属于哪一类，本质仍是分类问题，但 BERT encoder 由预训练参数初始化。}
+
+若 $h_i$ 是第 $i$ 个 token 的 BERT 输出，则
+
+$$
+\hat{y}_i=\operatorname{softmax}(W h_i+b), \qquad i=1,\ldots,n
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h_i$：第 $i$ 个 token 的上下文表示。
+    \item $\hat{y}_i$：第 $i$ 个位置的标签预测，例如名词、动词、限定词。
+    \item $n$：输入序列长度。
+\end{itemize}
+
+Case 2 和 Case 1 的区别在输出粒度。Case 1 要整句一个答案，因此用 \texttt{[CLS]}；Case 2 要每个 token 一个答案，因此保留每个位置的输出。
+
+\subsection{Case 3：输入两个序列，输出一个类别}
+
+第三类任务是 sentence pair classification。输入两个句子，输出一个类别，例如自然语言推论（NLI）：判断 premise 与 hypothesis 是 entailment、contradiction 还是 neutral。做法与 NSP 类似：把两个句子用 \texttt{[SEP]} 分开，整体送入 BERT，再取 \texttt{[CLS]} 输出做分类。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig15_case3_pair_classification.jpg}
+    \caption{Case 3 把两个句子合并为一个双句输入，用 \texttt{[CLS]} 的输出判断二者关系，例如 NLI 中的矛盾、蕴含或中立。\protect\footnotemark}
+    \label{fig:case3}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:33:06--00:33:49；字幕说明 BERT 读入两句话后，只取 \texttt{[CLS]} 部分接线性层，判断两句应输出什么类别。}
+
+这一类任务特别体现 BERT 的双向上下文能力。两个句子不是分别编码后才比较，而是合并输入，让 self-attention 可以在两句话之间直接交互。这样模型在编码 premise 中某个词时，可以同时看 hypothesis 中相关词，反之亦然。
+
+\subsection{Case 4：抽取式问答}
+
+第四类任务是 extraction-based question answering。给模型一个问题和一篇文章，答案一定是文章中的一个连续片段。模型不用生成新文字，只要输出两个整数：答案起点 $s$ 和终点 $e$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig16_case4_extractive_qa_definition.jpg}
+    \caption{抽取式 QA 的答案被定义为文章中的连续 span；模型输出起点与终点，而不是从零开始生成答案。\protect\footnotemark}
+    \label{fig:qa-definition}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:35:12--00:35:32；字幕说明 QA 可以被设定为输出两个整数 $(s,e)$，答案就是文章中从 $s$ 到 $e$ 的片段。}
+
+BERT 的输入格式仍然是把问题和文章串接起来：
+
+\begin{center}
+\texttt{[CLS] question [SEP] document [SEP]}
+\end{center}
+
+模型读取整个序列后，对文章中的每个 token 预测“是否为答案起点”和“是否为答案终点”。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig17_case4_question_document_input.jpg}
+    \caption{QA 微调时，BERT 同时读取 question 与 document，并利用 \texttt{[SEP]} 区分二者。\protect\footnotemark}
+    \label{fig:qa-input}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:36:55--00:37:16；字幕说明 BERT 要同时看问题和文章，中间用特殊符号分隔。}
+
+常见做法是学习两个向量 $u_s,u_e$，分别对应起点和终点。对文章中第 $i$ 个 token 的表示 $h_i$，计算
+
+$$
+P_s(i)=\frac{\exp(h_i^\top u_s)}{\sum_j \exp(h_j^\top u_s)}, \qquad
+P_e(i)=\frac{\exp(h_i^\top u_e)}{\sum_j \exp(h_j^\top u_e)}
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h_i$：第 $i$ 个文章 token 的 BERT 表示。
+    \item $u_s$：判断“答案起点”的可学习向量。
+    \item $u_e$：判断“答案终点”的可学习向量。
+    \item $P_s(i),P_e(i)$：第 $i$ 个位置分别作为起点、终点的机率。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig18_case4_span_prediction.jpg}
+    \caption{抽取式 QA 用两个分布选择答案 span 的起点与终点；图中最高分位置给出答案区间 $d_2,d_3$。\protect\footnotemark}
+    \label{fig:qa-span}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:39:26--00:39:44；字幕说明模型要预测正确答案出现的起始位置和结束位置，答案必须在文章中。}
+
+\begin{warningbox}{抽取式 QA 的隐藏假设}
+    这种方法假设答案一定能在文章中找到一个连续片段。如果问题需要综合多段信息、答案不在文章中、或需要生成解释，单纯预测 $(s,e)$ 就不够。它适合 SQuAD 式设定，但不是所有问答任务的通用解法。
+\end{warningbox}
+
+\subsection{本章小结}
+
+BERT 的下游使用可以按输入输出形式整理：整句分类取 \texttt{[CLS]}；逐 token 标注取每个位置；双句分类把两句合并后取 \texttt{[CLS]}；抽取式 QA 预测文章中的起点和终点。四种 case 的共同点是：BERT 本体来自预训练，任务差异主要体现在输入组织方式与输出头设计。
+
+% =====================================================================
+\section{训练成本与 BERT 胚胎学}
+% =====================================================================
+
+课程在讲完如何使用 BERT 后，转向两个更高层的问题：第一，训练 BERT 很难；第二，BERT 在预训练过程中到底什么时候学会哪些语言能力。
+
+\subsection{训练 BERT 的困难}
+
+BERT 的资料规模很大。课程提到，原始 BERT 训练资料超过 30 亿词，相当于数千本《哈利波特》的量级。资料本身可以从网络上爬取，但真正困难的是训练：大量参数、多轮更新、昂贵硬件和长时间计算。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig19_training_bert_challenging.jpg}
+    \caption{训练 BERT 的成本很高：预训练步数可达百万级，硬件与时间成本显著，后续模型也不断尝试提高训练效率。\protect\footnotemark}
+    \label{fig:training-bert}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:44:26--00:44:44；字幕说明资料量很大但爬取不一定最难，困难在训练过程，百万次更新可能需要 TPU 跑数天。}
+
+这也解释了为什么 BERT 之后会出现大量改进模型。它们不只是为了把 benchmark 分数提高一点，也常常为了让训练更有效率、参数更少、资料利用更充分，或让同样成本换来更好的下游表现。
+
+\begin{knowledgebox}{预训练成本改变了研究与应用分工}
+    当预训练成本很高时，多数应用团队不会从零训练 BERT，而是下载公开预训练模型，再用自己的少量标注资料微调。于是 NLP 工作流从“为每个任务训练一个模型”，转向“共享基础模型，再做任务适配”。
+\end{knowledgebox}
+
+\subsection{BERT Embryology：模型什么时候学会什么}
+
+课程最后提到一个有趣问题：BERT 在训练过程中，到底先学会词性、句法还是语义？它什么时候开始会填简单名词，什么时候能处理代名词，什么时候学会更复杂的语义关系？这类问题被课程称为 BERT Embryology，也就是观察 BERT 的“发育过程”。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig20_bert_embryology.jpg}
+    \caption{BERT Embryology 关注模型在预训练过程中能力如何逐步出现：词性、句法、语义等能力并不一定同步成熟。\protect\footnotemark}
+    \label{fig:bert-embryology}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:46:26--00:46:46；字幕说明可以观察 BERT 在什么时候学会填不同类型的词，以及填空能力如何增进。}
+
+这个问题很重要，因为它不再只问“最后分数多少”，而是问“能力是怎么长出来的”。如果某些能力很早出现，说明它们可能是训练目标的直接副产品；如果某些能力很晚才出现，可能需要更长训练、更大模型或更复杂上下文。这样的分析有助于理解预训练过程，也能帮助设计更有效的训练策略。
+
+\subsection{本章小结}
+
+BERT 的成功不是免费的。大规模预训练需要大量资料和算力，因此实际应用通常依赖公开预训练模型，再做下游微调。BERT Embryology 则提醒我们，模型能力不是瞬间出现的，而是在训练过程中逐步形成；理解这个过程，可能比只看最终 benchmark 更接近模型机制本身。
+
+% =====================================================================
+\section{BERT 之后：seq2seq 自监督模型}
+% =====================================================================
+
+课程结尾从 BERT 自然延伸到 seq2seq 预训练。BERT 是 encoder-only 架构，适合理解与抽取式任务；如果要做翻译、摘要、生成式问答等输入输出长度不同的任务，就会需要 encoder-decoder 或 text-to-text 架构。
+
+\subsection{预训练 seq2seq：弄坏输入，再要求还原}
+
+seq2seq 自监督预训练的基本想法是：先把输入句子弄坏，再让 encoder 读损坏后的输入，由 decoder 还原原句。这里的“弄坏”可以是删除、遮蔽、打乱、替换片段等。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig21_seq2seq_pretraining_reconstruction.jpg}
+    \caption{seq2seq 预训练把输入破坏后交给 encoder，再让 decoder 重建原始输入，从而学习可生成的语言表示。\protect\footnotemark}
+    \label{fig:seq2seq-pretrain}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:47:20--00:47:58；字幕说明 encoder 看到被弄坏的结果，decoder 要输出还原前的句子。}
+
+可将目标写为
+
+$$
+\mathcal{L}_{\mathrm{denoise}}
+= -\log p_\theta(x \mid c(x))
+$$
+
+符号说明：
+\begin{itemize}
+    \item $x$：原始序列。
+    \item $c(x)$：经过 corruption function 破坏后的序列。
+    \item $p_\theta(x \mid c(x))$：模型根据损坏输入重建原始序列的机率。
+\end{itemize}
+
+这种目标和 BERT 的 MLM 有同源关系：都是从资料中拿掉或扰动一部分信息，再训练模型恢复。但 seq2seq 版本输出的是完整序列，更适合生成式任务。
+
+\subsection{MASS 与 BART：多种 corruption 策略}
+
+课程提到 MASS 与 BART。MASS 主要强调遮蔽片段并恢复；BART 则把多种破坏方式组合起来，例如删除 token、句子排列、旋转、text infilling 等。课程开玩笑说 BART 名字不再是芝麻街，而是换成另一个角色；但技术重点是：不同破坏策略会迫使模型学习不同粒度的恢复能力。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig22_mass_bart_corruption.jpg}
+    \caption{MASS/BART 通过删除、重排、旋转、片段填补等方式构造去噪预训练任务，训练模型从损坏输入恢复原始文本。\protect\footnotemark}
+    \label{fig:mass-bart}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:48:41--00:48:58；字幕说明 BART 将多种破坏方法一起使用，经验上可能带来更好结果。}
+
+\subsection{T5：把任务统一成 text-to-text}
+
+T5 的思想更进一步：把各种 NLP 任务都改写成 text-to-text 格式。输入是文字，输出也是文字；分类、翻译、摘要、问答都可以统一到同一套框架中。课程展示 T5 使用 C4（Colossal Clean Crawled Corpus）作为大规模训练语料，并比较不同 corruption rate 与 span length 的设定。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig23_t5_comparison.jpg}
+    \caption{T5 将多类任务统一成 text-to-text，并系统比较不同预训练目标、corruption 策略与资料设定。\protect\footnotemark}
+    \label{fig:t5}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:50:11--00:50:25；字幕说明 C4 语料规模很大，下载、存储和前处理都需要显著成本。}
+
+\begin{importantbox}{从 BERT 到 T5 的主线}
+    BERT 代表 encoder-only 的理解式预训练；MASS/BART 代表 encoder-decoder 的去噪重建；T5 则把任务接口统一为 text-to-text。它们共享同一个核心精神：从大规模原始文本中构造训练目标，再把学到的表示迁移到下游任务。
+\end{importantbox}
+
+\subsection{本章小结}
+
+BERT 不是自监督学习的终点。它之后的 MASS、BART、T5 等模型把“遮蔽再恢复”的思想推广到序列到序列生成，并尝试统一 NLP 任务接口。理解这些模型时，最重要的是抓住 corruption 与 reconstruction 的关系：怎样破坏输入，就会影响模型被迫学习什么能力。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲把 BERT 放在自监督学习的大框架中解释。BERT 的核心不是“一个很大的网络”这么简单，而是一套训练和迁移范式：
+
+\begin{enumerate}
+    \item 先从无标签文本中构造预训练任务，例如 MLM 和 NSP/SOP。
+    \item 用 Transformer encoder 学到上下文相关的 token 表示。
+    \item 再根据下游任务的输入输出形式，接上合适任务头并微调。
+    \item 通过多任务 benchmark 检查表示是否具有通用性。
+\end{enumerate}
+
+从机制上看，BERT 的四类用法可以压缩成一个表：
+
+\begin{center}
+\begin{tabular}{L{0.22\textwidth} L{0.30\textwidth} L{0.34\textwidth}}
+\toprule
+任务类型 & 输入输出 & BERT 用法 \\
+\midrule
+整句分类 & 一个序列 $\rightarrow$ 一个类别 & 取 \texttt{[CLS]} 表示接分类器 \\
+序列标注 & 一个序列 $\rightarrow$ 等长标签序列 & 每个 token 输出接分类器 \\
+双句分类 & 两个序列 $\rightarrow$ 一个类别 & 两句合并输入，取 \texttt{[CLS]} \\
+抽取式问答 & 问题+文章 $\rightarrow$ 起点/终点 & 对文章位置预测 start/end 分布 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+课程最后给出的延伸很关键：BERT 之后，模型不只追求更高 GLUE 分数，也开始关注更通用的生成式接口、更有效的预训练目标、更低的训练成本，以及模型能力在训练过程中的形成顺序。换句话说，自监督学习从“如何用无标签资料训练模型”发展到“如何设计一个可迁移、可扩展、可解释的基础模型训练系统”。
+
+\begin{knowledgebox}{继续学习时的三条线}
+    第一条线是预训练目标：比较 MLM、causal LM、denoising、span corruption 等目标各自逼迫模型学习什么。第二条线是架构：比较 encoder-only、decoder-only、encoder-decoder 的适用任务。第三条线是迁移方式：比较 full fine-tuning、冻结特征、prompting、adapter、LoRA 等方法如何把基础模型接到具体任务上。
+\end{knowledgebox}
+
+本讲的重点可以浓缩为一句话：BERT 用自监督任务从文本中学通用表示，再用微调把表示分化为具体能力；这条路线后来扩展成现代基础模型的核心范式之一。
+
+\end{document}

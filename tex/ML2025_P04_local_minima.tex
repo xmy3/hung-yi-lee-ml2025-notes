@@ -1,0 +1,450 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}
+
+% ===== Highlight boxes =====
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+% ===== Code listings =====
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+% ===== Front-page metadata =====
+\newcommand{\notetitle}{局部最小值与鞍点}
+\newcommand{\notesubtitle}{李宏毅《机器学习》2025 · 类神经网络训练不起来怎么办（一）}
+\newcommand{\noteauthors}{基于李宏毅老师课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili 搬运）}
+\newcommand{\videoduration}{约 34 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=4}
+
+\begin{document}
+
+\pagestyle{empty}
+
+% ===== Cover page =====
+\begin{center}
+    \vspace*{1.5cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.4cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.8\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+
+% ===== TOC =====
+\tableofcontents
+\newpage
+
+\pagestyle{plain}
+
+% =====================================================================
+\section{引言：当 gradient 很小，训练就停了}
+% =====================================================================
+
+承接上一节的攻略：当\textbf{训练资料}上的 loss 很大、又排除了 Model Bias 之后，问题就出在 \textbf{Optimization 失败}——gradient descent 没能找到那组好参数。这一节专门讨论：\textbf{optimization 为什么会失败，以及失败时该怎么办}。
+
+\begin{knowledgebox}{本节的定位}
+    这一节只关心 optimization 本身，与 overfitting 没有太大关联。我们讨论的是：随着参数不断 update，training loss 不再下降、却仍不令人满意（甚至一开始就 train 不起来），这时\textbf{到底发生了什么、又能怎么补救}。
+\end{knowledgebox}
+
+\subsection{Critical Point：梯度为零的点}
+
+一个常见的猜想是：训练之所以停下来，是因为参数走到了一个\textbf{对 loss 的微分为零}的地方。梯度一旦为零，gradient descent 就再也无法更新参数，training 随之停滞，loss 自然不再下降。
+
+讲到``梯度为零''，大多数人脑海里最先浮现的就是 \textbf{local minima}（局部最小值）。坊间常有一种说法：``做 deep learning 会卡在 local minima，所以 gradient descent 不 work、deep learning 不行。''
+
+\begin{warningbox}{千万别张口就说``卡在 local minima''}
+    如果你要写 deep learning 相关的论文，\textbf{千万不要轻易断言``卡在 local minima''}，否则会显得非常没有水准。原因很简单：\textbf{不是只有 local minima 的梯度才为零}。鞍点（saddle point）的梯度同样是零。
+
+    因此，对于这些梯度为零的点，应统称为 \textbf{Critical Point（临界点）}。你可以说``loss 降不下去也许是卡在了某个 critical point''，但\textbf{不能武断地说是卡在 local minima}。
+\end{warningbox}
+
+\begin{knowledgebox}{什么是 Saddle Point（鞍点）}
+    Saddle point 是指：梯度为零，但\textbf{既不是 local minima、也不是 local maxima} 的点。在下图右侧的例子里，红点沿某个方向看是``谷底''（左右方向更高），沿另一个方向看却是``山顶''（前后方向更低），形状像一个\textbf{马鞍}，故称鞍点。
+\end{knowledgebox}
+
+\subsection{为什么一定要区分 local minima 与 saddle point}
+
+区分这两者非常关键，因为它们的``处境''完全不同：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/fig01_critical_point.jpg}
+    \caption{Optimization 失败时，gradient 接近零，参数卡在 critical point。critical point 有两种：\textbf{local minima}（左，四周都高，``No way to go''，无路可走）与 \textbf{saddle point}（右，旁边仍有更低处，可以``escape''逃离）。当务之急是判断``Which one?''}
+    \label{fig:critical}
+    \footnotetext{视频画面时间区间：00:01:40--00:04:15。}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{卡在 local minima}：四周的 loss 都比当前位置高，你已身处附近的最低点，\textbf{真的无路可走}。
+    \item \textbf{卡在 saddle point}：旁边还有让 loss 更低的方向，只要能\textbf{逃离鞍点}，就有机会继续把 loss 降下去。
+\end{itemize}
+
+所以，当训练停在一个 critical point 时，\textbf{它究竟是 local minima 还是 saddle point，是一个非常值得探讨的问题}——答案直接决定了我们还有没有救。
+
+% =====================================================================
+\section{如何判断 critical point 的类型}
+% =====================================================================
+
+要判断一个 critical point 是哪种类型，就需要知道 loss function 在该点附近的``地貌''。network 极其复杂，我们无法写出整个 loss function 的完整形状，\textbf{但在给定参数 $\boldsymbol{\theta}'$ 的邻域内，可以用泰勒级数把它近似出来}。
+
+\subsection{Taylor Series Approximation（泰勒级数近似）}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig02_taylor.jpg}
+    \caption{$L(\boldsymbol{\theta})$ 在 $\boldsymbol{\theta}=\boldsymbol{\theta}'$ 附近的泰勒近似：常数项 $L(\boldsymbol{\theta}')$、一次项（绿框，含 Gradient $\boldsymbol{g}$）、二次项（红框，含 Hessian $H$）。$\boldsymbol{g}$ 是向量（一次微分），$H$ 是矩阵（二次微分）。}
+    \label{fig:taylor}
+    \footnotetext{视频画面时间区间：00:05:30--00:08:20。}
+\end{figure}
+
+在 $\boldsymbol{\theta}'$ 附近，loss function 可近似为：
+\[
+L(\boldsymbol{\theta}) \approx L(\boldsymbol{\theta}')
++ (\boldsymbol{\theta}-\boldsymbol{\theta}')^{T}\,\boldsymbol{g}
++ \frac{1}{2}(\boldsymbol{\theta}-\boldsymbol{\theta}')^{T} H\,(\boldsymbol{\theta}-\boldsymbol{\theta}')
+\]
+
+三项的含义：
+\begin{itemize}
+    \item \textbf{第一项 $L(\boldsymbol{\theta}')$}：当 $\boldsymbol{\theta}$ 与 $\boldsymbol{\theta}'$ 很近时，$L(\boldsymbol{\theta})$ 应与 $L(\boldsymbol{\theta}')$ 接近。
+    \item \textbf{第二项（Gradient 项）}：$\boldsymbol{g} = \nabla L(\boldsymbol{\theta}')$ 是\textbf{梯度向量}（一次微分），其第 $i$ 个分量为
+    \[
+    g_i = \frac{\partial L(\boldsymbol{\theta}')}{\partial \theta_i}
+    \]
+    它弥补 $\boldsymbol{\theta}'$ 与 $\boldsymbol{\theta}$ 之间的一阶差距。
+    \item \textbf{第三项（Hessian 项）}：$H$ 是 \textbf{Hessian 矩阵}（二次微分），其第 $i$ 行第 $j$ 列的元素为
+    \[
+    H_{ij} = \frac{\partial^2}{\partial \theta_i\, \partial \theta_j} L(\boldsymbol{\theta}')
+    \]
+    它在一次项之外，进一步补足与真实 $L(\boldsymbol{\theta})$ 的二阶差距。
+\end{itemize}
+
+\subsection{在 critical point：只剩 Hessian 项}
+
+\begin{importantbox}{critical point 处梯度为零，地貌由 Hessian 决定}
+    在 critical point，$\boldsymbol{g}=\boldsymbol{0}$（零向量），泰勒展开的\textbf{绿色一次项整项消失}，只剩下：
+    \[
+    L(\boldsymbol{\theta}) \approx L(\boldsymbol{\theta}') + \frac{1}{2}(\boldsymbol{\theta}-\boldsymbol{\theta}')^{T} H\,(\boldsymbol{\theta}-\boldsymbol{\theta}')
+    \]
+    于是，$\boldsymbol{\theta}'$ 附近的地貌\textbf{完全由 Hessian 项决定}。判断它是 local minima、local maxima 还是 saddle point，就看这一项的正负。
+\end{importantbox}
+
+为了书写方便，记 $\boldsymbol{v} = \boldsymbol{\theta}-\boldsymbol{\theta}'$，则需要考察的就是 $\boldsymbol{v}^{T} H \boldsymbol{v}$ 的符号。
+
+\subsection{用 $\boldsymbol{v}^{T}H\boldsymbol{v}$ 判定三种情形}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/fig03_hessian.jpg}
+    \caption{在 critical point，根据 $\boldsymbol{v}^{T}H\boldsymbol{v}$ 对所有 $\boldsymbol{v}$ 的符号判定类型：恒正 $\Rightarrow$ Local minima；恒负 $\Rightarrow$ Local maxima；时正时负 $\Rightarrow$ Saddle point。}
+    \label{fig:hessian}
+    \footnotetext{视频画面时间区间：00:09:25--00:11:40。}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{对所有 $\boldsymbol{v}$，$\boldsymbol{v}^{T}H\boldsymbol{v} > 0$}：则附近恒有 $L(\boldsymbol{\theta}) > L(\boldsymbol{\theta}')$，$\boldsymbol{\theta}'$ 是最低点 $\Rightarrow$ \textbf{Local minima}。
+    \item \textbf{对所有 $\boldsymbol{v}$，$\boldsymbol{v}^{T}H\boldsymbol{v} < 0$}：则附近恒有 $L(\boldsymbol{\theta}) < L(\boldsymbol{\theta}')$，$\boldsymbol{\theta}'$ 是最高点 $\Rightarrow$ \textbf{Local maxima}。
+    \item \textbf{有时 $>0$、有时 $<0$}：附近有些方向更高、有些方向更低 $\Rightarrow$ \textbf{Saddle point}。
+\end{itemize}
+
+\subsection{捷径：直接看 Hessian 的特征值}
+
+逐一尝试``所有的 $\boldsymbol{v}$''显然不现实。线性代数给出了更简便的结论——\textbf{只需看 Hessian 矩阵 $H$ 的特征值（eigenvalue）}：
+
+\begin{importantbox}{特征值判定法（无需遍历 $\boldsymbol{v}$）}
+    \begin{itemize}
+        \item \textbf{所有特征值都为正} $\Rightarrow$ $H$ 是 positive definite（正定）$\Rightarrow$ 对所有 $\boldsymbol{v}$ 有 $\boldsymbol{v}^{T}H\boldsymbol{v}>0$ $\Rightarrow$ \textbf{Local minima}
+        \item \textbf{所有特征值都为负} $\Rightarrow$ $H$ 是 negative definite（负定）$\Rightarrow$ \textbf{Local maxima}
+        \item \textbf{特征值有正有负} $\Rightarrow$ \textbf{Saddle point}
+    \end{itemize}
+    一句话：算出 Hessian，看它的特征值符号，类型立刻揭晓。
+\end{importantbox}
+
+% =====================================================================
+\section{一个具体例子：史上最废的 network}
+% =====================================================================
+
+为了把上面的流程走一遍，老师举了一个``史上最废''的例子。
+
+\subsection{模型与资料}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig04_example_setup.jpg}
+    \caption{史上最废的 network：$x \to w_1 \to w_2 \to y$，无 bias、无 activation，故 $y=w_1 w_2 x$。仅一笔训练资料 $x=1,\ \hat{y}=1$，损失 $L=(1-w_1 w_2)^2$。右上为穷举所有 $(w_1,w_2)$ 画出的 error surface（呈鞍形）。}
+    \label{fig:example}
+    \footnotetext{视频画面时间区间：00:13:35--00:17:35。}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{模型}：输入 $x$，经过两个神经元（仅各乘一个权重、无激活函数），输出 $y=w_1 w_2 x$。整个网络只有 $w_1$、$w_2$ 两个参数。
+    \item \textbf{资料}：只有一笔，$x=1$ 时 $\hat{y}=1$。
+    \item \textbf{损失}：$L = (\hat{y}-w_1 w_2 x)^2 = (1-w_1 w_2)^2$。
+\end{itemize}
+
+由于只有两个参数，可以穷举所有 $(w_1,w_2)$ 算出 loss，直接画出 error surface：四个角落 loss 高，中间有一条``山沟''。图上原点 $(0,0)$ 是一个 critical point，沿对角线方向还排布着一排 critical point。
+
+\subsection{求梯度 $\boldsymbol{g}$，定位 critical point}
+
+对 $L=(1-w_1 w_2)^2$ 求偏导：
+\[
+\frac{\partial L}{\partial w_1} = 2(1-w_1 w_2)(-w_2), \qquad
+\frac{\partial L}{\partial w_2} = 2(1-w_1 w_2)(-w_1)
+\]
+令两者同时为零，原点 $w_1=0,\ w_2=0$ 即为一个 critical point。但它到底是哪种类型？光看梯度无法判断，\textbf{必须看 Hessian}。
+
+\subsection{求 Hessian $H$，算特征值}
+
+四个二阶偏导为：
+\[
+\begin{aligned}
+\frac{\partial^2 L}{\partial w_1^2} &= 2(-w_2)(-w_2), &\qquad
+\frac{\partial^2 L}{\partial w_1 \partial w_2} &= -2 + 4 w_1 w_2, \\[3pt]
+\frac{\partial^2 L}{\partial w_2 \partial w_1} &= -2 + 4 w_1 w_2, &\qquad
+\frac{\partial^2 L}{\partial w_2^2} &= 2(-w_1)(-w_1).
+\end{aligned}
+\]
+
+将原点 $w_1=w_2=0$ 代入，得到 Hessian 及其特征值：
+\[
+H = \begin{bmatrix} 0 & -2 \\ -2 & 0 \end{bmatrix},
+\qquad \lambda_1 = 2,\quad \lambda_2 = -2
+\]
+
+特征值\textbf{有正有负}，所以原点是一个 \textbf{saddle point}（与穷举 error surface 的观察一致）。
+
+% =====================================================================
+\section{不要怕 saddle point：Hessian 指出逃生方向}
+% =====================================================================
+
+如果卡住的地方是 saddle point，其实\textbf{不必惊慌}——因为 Hessian 不仅能判断类型，\textbf{还能告诉我们参数该往哪个方向 update}。
+
+\subsection{逃离原理：沿负特征值的特征向量走}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig05_escape.jpg}
+    \caption{$H$ 可以指出更新方向。设 $\boldsymbol{u}$ 是 $H$ 的特征向量、$\lambda$ 是其特征值，则 $\boldsymbol{u}^{T}H\boldsymbol{u}=\boldsymbol{u}^{T}(\lambda\boldsymbol{u})=\lambda\|\boldsymbol{u}\|^2$。若取 $\lambda<0$，此项即为负，沿 $\boldsymbol{\theta}-\boldsymbol{\theta}'=\boldsymbol{u}$ 方向走即可降低 loss。}
+    \label{fig:escape}
+    \footnotetext{视频画面时间区间：00:20:20--00:22:35。}
+\end{figure}
+
+设 $\boldsymbol{u}$ 是 $H$ 的一个特征向量，$\lambda$ 是它对应的特征值。若把 $\boldsymbol{v}=\boldsymbol{\theta}-\boldsymbol{\theta}'$ 取为 $\boldsymbol{u}$，则利用 $H\boldsymbol{u}=\lambda\boldsymbol{u}$：
+\[
+\boldsymbol{u}^{T} H \boldsymbol{u} = \boldsymbol{u}^{T}(\lambda \boldsymbol{u}) = \lambda \,\|\boldsymbol{u}\|^2
+\]
+
+\begin{importantbox}{找到负特征值，就找到了下山的路}
+    由于 $\|\boldsymbol{u}\|^2 > 0$，只要\textbf{特征值 $\lambda < 0$}，就有 $\boldsymbol{u}^{T}H\boldsymbol{u} = \lambda\|\boldsymbol{u}\|^2 < 0$。代回 critical point 处的近似式：
+    \[
+    L(\boldsymbol{\theta}) \approx L(\boldsymbol{\theta}') + \frac{1}{2}\,\boldsymbol{u}^{T}H\boldsymbol{u} < L(\boldsymbol{\theta}')
+    \]
+    也就是说，令 $\boldsymbol{\theta} = \boldsymbol{\theta}' + \boldsymbol{u}$、\textbf{沿着负特征值对应的特征向量方向更新参数}，就能让 loss 下降，从而逃离 saddle point。
+\end{importantbox}
+
+\subsection{回到例子：沿 $\boldsymbol{u}=[1,1]^{T}$ 逃离}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig06_example_result.jpg}
+    \caption{例子的完整结论：原点 $H=\bigl[\begin{smallmatrix}0&-2\\-2&0\end{smallmatrix}\bigr]$，$\lambda_1=2,\lambda_2=-2$ $\Rightarrow$ saddle point。负特征值 $\lambda_2=-2$ 对应特征向量 $\boldsymbol{u}=[1,1]^{T}$；沿 $\boldsymbol{u}$ 方向更新即可逃离鞍点、降低 loss。注：此法实务中很少使用。}
+    \label{fig:example_result}
+    \footnotetext{视频画面时间区间：00:22:55--00:24:45。}
+\end{figure}
+
+在上一节的例子里，原点处负特征值 $\lambda_2=-2$ 对应的一个特征向量是 $\boldsymbol{u}=[1,1]^{T}$。于是只要从原点沿 $(1,1)$ 方向更新参数，就能走到一个 loss 更低的点，成功逃离鞍点。
+
+\begin{warningbox}{这个方法实务上几乎不用}
+    虽然理论上漂亮，但实作中\textbf{几乎没有人真的去算 Hessian 来逃离 saddle point}。原因是：Hessian 要做二次微分，计算这个矩阵的运算量极大，更别说还要求它的特征值与特征向量。后续课程会介绍\textbf{运算量小得多}的逃离方法（如 batch 与 momentum）。这里把它拿出来讲，只是想说明：\textbf{卡在 saddle point 并不可怕，最坏情况下你也总有一条已知的路可走。}
+\end{warningbox}
+
+% =====================================================================
+\section{Saddle Point 还是 Local Minima 更常见？}
+% =====================================================================
+
+既然 saddle point 没那么可怕，那么一个自然的问题是：实际训练中，我们\textbf{更常遇到的是 saddle point 还是 local minima}？如果多半是 saddle point，那就太好了。
+
+\subsection{高维直觉：魔法师 Diorena 的故事}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{figures/fig07_magician.jpg}
+    \caption{魔法师 Diorena（迪奥伦娜，出自《三体 III · 死神永生》）：石棺从\textbf{三维空间}看是密封的（``it is sealed''），但在\textbf{更高维度}里并非封闭（``not in higher dimensions''），存在可以进出的路径。}
+    \label{fig:magician}
+    \footnotetext{视频画面时间区间：00:26:02--00:28:55。}
+\end{figure}
+
+\begin{knowledgebox}{故事的寓意：低维的``封闭''在高维未必封闭}
+    传说魔法师 Diorena 能从一只\textbf{密封石棺}中取出圣杯。在三维空间看，石棺四壁封闭、无路可入；但若能进入\textbf{四维空间}，石棺其实是``开着''的，存在可以进去的通路。
+
+    （历史上君士坦丁堡陷落于 1453 年；课堂讲述的魔法师情节出自科幻小说《三体》，仅作类比之用。）
+\end{knowledgebox}
+
+\subsection{error surface 同理：维度越高，路越多}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig08_higher_dim.jpg}
+    \caption{Saddle point vs.\ local minima 的维度直觉：在低维（左）看似``无路可走''的 local minima，放到\textbf{更高维度}（右，真实 network 的 error surface）也许只是一个 saddle point——存在尚未被``看见''的下降方向。}
+    \label{fig:higher_dim}
+    \footnotetext{视频画面时间区间：00:29:30--00:30:35。}
+\end{figure}
+
+把这个直觉搬到 error surface 上：在低维空间里看起来四周都高、像是 local minima 的点，\textbf{放到更高的维度去看，旁边可能就有路可以走，其实只是个 saddle point}。
+
+\begin{importantbox}{参数动辄百万千万，维度极高}
+    训练 network 时，参数往往\textbf{百万、千万乃至上亿}。有多少参数，error surface 就有多少维度。维度如此之高，意味着\textbf{可走的方向（路）非常多}。既然路这么多，真正``四面八方都堵死''的 local minima，反而\textbf{可能很罕见}。
+\end{importantbox}
+
+\subsection{Empirical Study：local minima 确实罕见}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/fig09_empirical.jpg}
+    \caption{实证研究：每个点是一个训练到 critical point 的 network。纵轴为卡住时的 training loss，横轴为 \textbf{Minimum Ratio}（正特征值数目 / 全部特征值数目）。Minimum Ratio 越靠近 1 越像 local minima，但实测\textbf{最大也只到约 0.5--0.6}。}
+    \label{fig:empirical}
+    \footnotetext{视频画面时间区间：00:30:40--00:33:08。}
+\end{figure}
+
+\begin{knowledgebox}{Minimum Ratio 怎么读}
+    \[
+    \text{Minimum Ratio} = \frac{\text{正特征值的数目}}{\text{特征值的总数目}}
+    \]
+    \begin{itemize}
+        \item 若所有特征值都为正（ratio $=1$），该 critical point 才是真正的 local minima。
+        \item 实验中，无论训练多少个 network，Minimum Ratio \textbf{最大也不过 $0.5\sim0.6$}——意味着即便在最``像'' local minima 的情况下，仍有\textbf{近一半特征值是负的}。
+    \end{itemize}
+\end{knowledgebox}
+
+\textbf{结论：} 负特征值的存在，代表在那些维度上\textbf{仍有让 loss 下降的路}。所以从经验上看，\textbf{真正的 local minima 并不常见}；多数时候你发现梯度很小、参数停止更新，其实是\textbf{卡在了 saddle point}。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig10_summary.jpg}
+    \caption{Small Gradient 的三种典型成因：在\textbf{plateau}（平原）上 $\partial L/\partial w \approx 0$，更新极慢；卡在 \textbf{saddle point} 或 \textbf{local minima} 时 $\partial L/\partial w = 0$，更新停滞。本节回答了``是哪一种''与``saddle point 怎么逃''。}
+    \label{fig:summary}
+    \footnotetext{视频画面时间区间：00:33:20--00:33:45。}
+\end{figure}
+
+\subsection{诊断流程复盘}
+
+\begin{importantbox}{遇到梯度很小、训练停滞时的处理流程}
+    \begin{enumerate}
+        \item 确认是\textbf{critical point}（梯度接近零），而非简单的学习率问题。
+        \item 算出该点的 \textbf{Hessian $H$}，求其\textbf{特征值}。
+        \item 看特征值符号：\textbf{全正} $\Rightarrow$ local minima；\textbf{全负} $\Rightarrow$ local maxima；\textbf{有正有负} $\Rightarrow$ saddle point。
+        \item 若是 \textbf{saddle point}：取\textbf{负特征值}对应的\textbf{特征向量 $\boldsymbol{u}$}，沿 $\boldsymbol{\theta}'+\boldsymbol{u}$ 方向更新即可逃离、降低 loss。
+        \item 实务上因 Hessian 运算量太大，几乎不直接这么做——但好消息是：经验表明卡住时\textbf{多半是 saddle point 而非 local minima}，本就有路可走。
+    \end{enumerate}
+\end{importantbox}
+
+\begin{knowledgebox}{本节关键概念清单}
+    \begin{center}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{概念} & \textbf{英文} & \textbf{说明} \\
+        \midrule
+        临界点 & Critical Point & 梯度为零的点（统称） \\
+        局部最小值 & Local Minima & 四周都更高，无路可走 \\
+        局部最大值 & Local Maxima & 四周都更低 \\
+        鞍点 & Saddle Point & 梯度为零，但有方向更高、有方向更低 \\
+        泰勒近似 & Taylor Approximation & 用 $\boldsymbol{g}$、$H$ 近似邻域内的 $L$ \\
+        梯度 & Gradient $\boldsymbol{g}$ & 一次微分向量，$g_i=\partial L/\partial\theta_i$ \\
+        海森矩阵 & Hessian $H$ & 二次微分矩阵，$H_{ij}=\partial^2 L/\partial\theta_i\partial\theta_j$ \\
+        特征值 & Eigenvalue $\lambda$ & 判定 critical point 类型的依据 \\
+        特征向量 & Eigenvector $\boldsymbol{u}$ & 负特征值对应的 $\boldsymbol{u}$ 即逃离方向 \\
+        正定 & Positive Definite & 特征值全正 $\Rightarrow$ local minima \\
+        最小值比例 & Minimum Ratio & 正特征值数 / 总特征值数 \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+\end{knowledgebox}
+
+\subsection{核心要点提炼}
+
+\begin{itemize}
+    \item \textbf{别只想到 local minima}：梯度为零的点统称 critical point，saddle point 同样会让训练停滞。
+    \item \textbf{Hessian 是判别工具}：critical point 处一次项消失，地貌由 Hessian 决定；看其特征值即可定类型。
+    \item \textbf{saddle point 可逃}：沿负特征值的特征向量方向更新即可下山——尽管实务上有更省的办法。
+    \item \textbf{高维世界里 local minima 罕见}：参数维度极高，下降的``路''很多；实证的 Minimum Ratio 从未接近 1，说明卡住时多为 saddle point。
+\end{itemize}
+
+\subsection{下一讲预告}
+
+\begin{itemize}
+    \item 既然直接算 Hessian 太贵，\textbf{有哪些运算量小、又能帮助逃离 critical point / 加速训练的方法}？
+    \item 下一节将介绍 \textbf{Batch（批次）与 Momentum（动量）}：小批次带来的噪声本身就有助于跳出 saddle point 甚至 local minima，而 momentum 则借``惯性''冲过平坦与小坑。
+    \item 之后还会讲到\textbf{自动调整学习率}、\textbf{损失函数的选择}等``类神经网络训练不起来怎么办''系列的其余技巧。
+\end{itemize}
+
+\vspace{1cm}
+
+\begin{center}
+    \rule{0.5\textwidth}{0.5pt}
+    \vspace{0.3cm}
+
+    \textbf{本节完 · 下一节：类神经网络训练不起来怎么办（二）—— Batch 与 Momentum}
+
+    课程视频：\href{\videourl}{\videourl}
+
+    \vspace{0.3cm}
+    \rule{0.5\textwidth}{0.5pt}
+\end{center}
+
+\end{document}

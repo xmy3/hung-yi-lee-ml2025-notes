@@ -1,0 +1,464 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自监督式学习（三）}
+\newcommand{\notesubtitle}{BERT 的奇闻轶事：能力来源、多语言迁移与隐藏语言向量}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》2025 课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 24 分 13 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=24}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.2cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{为什么 BERT 会有用}
+% =====================================================================
+
+上一讲讲的是 BERT 怎么预训练、怎么微调。这一讲追问一个更底层的问题：为什么一个通过填空题训练出来的模型，拿去做情感分析、问答、词性标注，甚至跨语言任务时会有用？最常见的解释是：BERT 的输出向量不是普通编号，而是能表示 token 在上下文中的意义。
+
+\subsection{同一个字在不同上下文中有不同 embedding}
+
+课程从“果”这个字开始。中文里“果”可以指可吃的水果，也可以出现在“苹果电脑”“苹果手机”里。字面上都是同一个字，但语义不同。BERT 的关键能力之一，是同一个 token 放在不同句子里，输出的向量可以不同。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig01_context_dependent_embedding.jpg}
+    \caption{同一个“果”在“吃苹果”和“苹果手机”两种上下文中，BERT 输出的 embedding 可以落在不同语义区域。\protect\footnotemark}
+    \label{fig:context-embedding}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:01:20--00:01:50；字幕说明同一个“果”因为上下文不同，对应 embedding 会非常不一样。}
+
+这和早期静态词向量不同。静态词向量会给每个词一个固定向量，因此同一个词在任何句子里都一样。BERT 经过 self-attention 编码后，每个位置的输出会综合周围 token，所以它更像是“这个词在这句话里的意义”，而不是“这个词在词表里的编号”。
+
+\begin{importantbox}{BERT 表示的是 token-in-context}
+    BERT 的输出不是单纯的 word embedding，而是 contextualized embedding。它同时依赖 token 本身和它所在的上下文，因此能区分同形异义、语境差异和句中角色。
+\end{importantbox}
+
+\subsection{用 cosine similarity 检查语义聚类}
+
+为了验证这个说法，课程收集多个包含“果”的句子，把这些句子送进 BERT，再取出每个“果”的 embedding，计算两两之间的 cosine similarity。
+
+若 $h_i,h_j$ 是两个“果”的向量，cosine similarity 为
+
+$$
+\operatorname{cos}(h_i,h_j)=
+\frac{h_i^\top h_j}{\|h_i\|\,\|h_j\|}
+$$
+
+符号说明：
+\begin{itemize}
+    \item $h_i,h_j$：两个不同句子中目标 token 的 BERT 输出向量。
+    \item $h_i^\top h_j$：两个向量的内积。
+    \item $\|h_i\|,\|h_j\|$：向量长度，用来消除尺度影响。
+    \item 数值越大，表示两个向量方向越接近，通常被解读为语义越相似。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig02_cosine_similarity_setup.jpg}
+    \caption{把多个含“果”的句子送入 BERT，再比较不同“果”字 embedding 的 cosine similarity。\protect\footnotemark}
+    \label{fig:cosine-setup}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:02:05--00:02:47；字幕说明收集多句含“果”的句子，分别取出对应向量并计算相似度。}
+
+结果很符合直觉：表示水果的“果”彼此更相似，表示苹果电脑或苹果公司的“果”彼此更相似，而这两群之间的相似度较低。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig03_apple_similarity_matrix.jpg}
+    \caption{“果”的 embedding 相似度矩阵形成两块结构：水果语义聚在一起，苹果公司语义聚在一起。\protect\footnotemark}
+    \label{fig:apple-matrix}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:03:22--00:04:16；字幕说明前五个“果”代表可吃的苹果，后五个代表苹果电脑，BERT 自己把两类语义分开。}
+
+\subsection{分布语义假设：You shall know a word by the company it keeps}
+
+课程接着引用语言学家 John Rupert Firth 的名句：“You shall know a word by the company it keeps.” 一个词的意义可以从它经常一起出现的词看出来。若“果”周围常出现“吃”“树”“茶”，它可能与水果相关；若周围常出现“电脑”“专利”“股价”，它可能与苹果公司相关。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig04_firth_distributional_hypothesis.jpg}
+    \caption{Firth 的分布语义观点：词义可由上下文揭示；BERT 在学填空题时，很可能也在从上下文抽取这类信息。\protect\footnotemark}
+    \label{fig:firth}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:04:51--00:05:45；字幕说明一个词汇的意思取决于上下文，而 BERT 做填空题时也许就在学习从上下文抽取资讯。}
+
+这解释了为什么 MLM 有用。为了猜被遮住的 token，BERT 必须理解周围词的约束；为了理解周围词，它又必须把语法和语义编码进表示中。填空题表面简单，但当语料足够大、上下文足够复杂时，它会逼迫模型学到许多语言规律。
+
+\subsection{Contextualized word embedding}
+
+课程把 BERT 的表示称为 contextualized word embedding。它可以看作早期 word embedding 的进阶版：不是只给词一个静态向量，而是让向量随上下文变化。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig05_contextualized_word_embedding.jpg}
+    \caption{BERT 输出的是 contextualized word embedding：同一个词在不同上下文中会得到不同向量。\protect\footnotemark}
+    \label{fig:contextualized}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:07:22--00:08:04；字幕说明 BERT 是考虑上下文的 word embedding 进阶版，因此输出向量称为 contextualized word embedding。}
+
+\begin{knowledgebox}{这只是一个解释，不是完整答案}
+    “BERT 学到语义”是有证据的，因为 embedding 中确实能看到语义聚类。但本讲后半会强调：这不一定是 BERT 有用的全部原因。预训练参数、模型结构、优化动态和资料规模，也可能提供额外贡献。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+本章给出 BERT 有用的常见解释：通过填空任务，BERT 学会从上下文中抽取语义信息，输出 contextualized embedding。同一个 token 的向量会随语境变化，语义相近的用法在向量空间中也更接近。不过这只是第一层解释，后面会看到一些实验让这个解释变得没那么简单。
+
+% =====================================================================
+\section{奇怪实验：BERT 是否只是懂语义}
+% =====================================================================
+
+课程接下来讲一个“会让人睡不着”的实验：把在英文文本上预训练的 BERT 拿去做蛋白质、DNA、音乐分类。乍看之下，这完全不合理。英文 BERT 学的是英文填空，DNA 序列和音乐片段并没有自然语言语义；如果 BERT 有用只是因为它懂英文，那它不应该帮上忙。
+
+\subsection{把 BERT 用到蛋白质、DNA、音乐}
+
+实验的基本想法是：把非语言序列编码成一串“像文字一样”的 token，再套用 BERT 的分类范式。课程先用 DNA 举例。DNA 序列由 A、T、C、G 组成；可以把这四个符号随机映射到英文词汇，例如 A 对应 \texttt{we}，T 对应 \texttt{you}，C 对应 \texttt{he}，G 对应 \texttt{she}。这样一串 DNA 就被转换成一串英文 token。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig06_bert_beyond_language.jpg}
+    \caption{实验把 BERT 应用于蛋白质、DNA、音乐分类，挑战“BERT 有用只是因为懂语言语义”的简单解释。\protect\footnotemark}
+    \label{fig:beyond-language}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:08:23--00:08:52；字幕说明将训练在文字上的 BERT 拿来做蛋白质、DNA 或音乐分类。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig07_dna_to_words_mapping.jpg}
+    \caption{DNA 中的 A/T/C/G 可随机映射成英文词汇，从而把 DNA 序列包装成 BERT 可读取的 token 序列。\protect\footnotemark}
+    \label{fig:dna-mapping}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:09:21--00:10:19；字幕说明 A/T/C/G 对应到哪些英文词并不重要，随机映射也可以，关键是把 DNA 变成一串文字。}
+
+\subsection{英文预训练参数作为初始化}
+
+接下来使用和普通文本分类一样的架构：序列前面加 \texttt{[CLS]}，送入 BERT，取 \texttt{[CLS]} 向量接线性层分类。差异在于，BERT 的预训练参数来自英文填空任务，而输入其实是被随机映射后的 DNA 或其他非语言序列。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig08_english_pretrained_bert_for_dna.jpg}
+    \caption{DNA 分类仍使用 BERT 分类架构；BERT 本体由英文预训练参数初始化，而不是从随机参数开始。\protect\footnotemark}
+    \label{fig:dna-bert}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:10:35--00:11:23；字幕说明模型结构与分类任务相同，只是 BERT 由英文填空预训练模型初始化。}
+
+这看起来很荒谬：输入 token 对 BERT 来说已经失去自然语言意义，英文语义知识似乎派不上用场。若结果仍然变好，说明 BERT 的好处至少不完全来自“看懂英文内容”。
+
+\subsection{结果：BERT 仍然有帮助}
+
+实验结果显示，在若干蛋白质、DNA、音乐分类任务中，使用英文预训练 BERT 的初始化，经常比随机初始化更好。课程强调，这个现象没有特别好的解释，但它提示我们：BERT 的能力来源可能包含更普遍的序列建模 inductive bias、优化起点、层级表示结构，甚至只是更好的参数分布。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig09_protein_dna_music_results.jpg}
+    \caption{在蛋白质、DNA、音乐等非语言分类任务中，英文预训练 BERT 仍可能优于随机初始化，说明 BERT 的好处不只来自懂英文语义。\protect\footnotemark}
+    \label{fig:nonlanguage-results}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:11:50--00:12:47；字幕说明红色的 BERT 结果较好，作者用此提醒 BERT 为什么会好仍有很大研究空间。}
+
+\begin{warningbox}{不要把这个实验误解成“语义不重要”}
+    这个实验不是否认 BERT 学到语义。前面的“果”实验已经显示 BERT embedding 中有语义结构。它真正说明的是：语义解释不是完整解释。预训练 BERT 可能同时提供语义知识、序列处理结构、优化优势和参数初始化优势。
+\end{warningbox}
+
+\subsection{可能的解释路径}
+
+可以从几条线理解这个现象。
+
+\begin{itemize}
+    \item \textbf{初始化效应}：预训练参数可能处在比随机参数更容易优化的位置，即使输入 token 的语义被打乱，也能帮助下游训练。
+    \item \textbf{序列结构效应}：BERT 通过 self-attention 处理长序列关系，DNA、蛋白质、音乐也都是序列，可能共享某些统计结构。
+    \item \textbf{表示空间效应}：预训练让层与层之间形成稳定的尺度、归一化和梯度传播特性，迁移到其他序列任务时仍有用。
+    \item \textbf{任务头效应}：下游分类仍然使用 \texttt{[CLS]} 聚合序列信息，这个机制可能本身就适合多种序列分类。
+\end{itemize}
+
+这些解释都不是最终答案，但它们共同提醒我们：大模型有效性常常不是单一因素造成的。课程把这类现象称为“奇闻轶事”，其实是在训练我们对模型机制保持怀疑。
+
+\subsection{本章小结}
+
+本章通过非语言序列实验，挑战“BERT 有用只是因为懂语义”的解释。英文预训练 BERT 居然能帮 DNA、蛋白质、音乐分类，说明预训练模型的迁移能力可能来自语义之外的因素。这个结论不推翻语义解释，而是把它放回更大的机制图景中。
+
+% =====================================================================
+\section{多语言 BERT 与零样本跨语言迁移}
+% =====================================================================
+
+课程后半进入 multilingual BERT（mBERT 或 Multi-BERT）。它的训练方式很朴素：把许多语言的文本都拿来做填空题。Google 的多语言 BERT 使用 104 种语言预训练。真正神奇的是：它可以用英文 QA 资料微调，然后在中文 QA 上表现不错。
+
+\subsection{多语言填空模型}
+
+多语言 BERT 的预训练目标仍然是 MLM。不同的是，训练语料不只包含英文，也包含中文、德文、法文等多种语言。模型看见不同语言的句子，都要学会填空。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig10_multilingual_bert_overview.jpg}
+    \caption{多语言 BERT 在多种语言上做填空题，学习共享的多语言表示空间。\protect\footnotemark}
+    \label{fig:mbert-overview}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:13:44--00:14:17；字幕说明多语言 BERT 用许多语言做填空题，Google 的版本包含 104 种语言。}
+
+这本身还不奇怪。奇怪的是，模型似乎可以把某种语言中学到的任务能力迁移到另一种语言。例如只用英文问答资料 fine-tune，却能回答中文问题。
+
+\subsection{Zero-shot Reading Comprehension}
+
+Zero-shot 跨语言阅读理解的设定如下：预训练阶段使用 104 种语言；微调阶段只给英文 QA 资料；测试阶段直接给中文 QA。若模型能成功，就说明它不仅学会了英文 QA 的任务格式，还能把“如何做问答”迁移到中文表示上。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig11_zero_shot_qa_setup.jpg}
+    \caption{Zero-shot reading comprehension：用英文 QA 资料训练 Multi-BERT，再直接测试中文 QA。\protect\footnotemark}
+    \label{fig:zero-shot-setup}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:14:21--00:14:47；字幕说明拿英文 QA 资料训练后，模型自动学会中文 QA，中文资料集使用 DRCD。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig12_zero_shot_qa_results.jpg}
+    \caption{跨语言 QA 结果显示，Multi-BERT 即使只在英文 QA 上微调，也能在中文测试中取得相当表现。\protect\footnotemark}
+    \label{fig:zero-shot-results}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:14:53--00:16:15；字幕比较 QANet、中文预训练/中文微调、104 语言预训练/英文微调等设定。}
+
+\begin{importantbox}{零样本迁移的关键}
+    任务监督来自英文，但测试语言是中文。模型能迁移，表示它在预训练中学到的表示空间让不同语言之间存在某种对齐，使英文任务头可以作用到中文表示上。
+\end{importantbox}
+
+\subsection{一种解释：跨语言 embedding 对齐}
+
+课程给出直觉解释：也许对 mBERT 来说，不同语言中意义相同的词，embedding 会靠近。例如“兔”和 rabbit 靠近，“跳”和 jump 靠近，“鱼”和 fish 靠近，“游”和 swim 靠近。若语义相同的词在向量空间中对齐，英文任务头就可能迁移到中文。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig13_cross_lingual_alignment_question.jpg}
+    \caption{跨语言迁移的一种解释：不同语言中意义相同的词在 embedding 空间中靠近，因此任务知识可以跨语言共享。\protect\footnotemark}
+    \label{fig:crosslingual-question}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:16:35--00:17:19；字幕说明 rabbit/兔、jump/跳 等同义词可能在 Multi-BERT 表示空间中靠近。}
+
+为了量化这件事，可以用 Mean Reciprocal Rank（MRR）衡量同义词翻译是否互为近邻。若一个英文词的最近邻中，对应中文词排名越前，MRR 越高，表示跨语言对齐越好。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig14_mrr_alignment_google_mbert.jpg}
+    \caption{MRR 越高表示跨语言同义词越靠近；Google 的 Multi-BERT 在多种语言上显示较强对齐。\protect\footnotemark}
+    \label{fig:mrr-google}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:17:35--00:18:18；字幕说明深蓝色柱代表 Google 的 104 语言 Multi-BERT，MRR 高表示不同语言同义词向量更接近。}
+
+\subsection{训练并不容易：资料量与突然下降的 loss}
+
+课程讲了一个训练细节：实验室自己训练 Multi-BERT 时，最初每种语言只用 20 万句，跨语言对齐效果不好。后来把资料加到每种语言 100 万句，训练时间变长很多，loss 甚至在两天内几乎不降，正要放弃时突然下降。最终结果显示，资料量增加后 alignment 才明显学起来。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig15_multibert_training_challenge.jpg}
+    \caption{Multi-BERT 训练过程中 loss 可能长时间不降，随后突然下降；这种现象显示大规模训练的优化过程并不直观。\protect\footnotemark}
+    \label{fig:training-challenge}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:19:07--00:20:01；字幕说明增加资料后训练时间大幅增加，loss 跑了两天才突然下降，完整实验要一周以上。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig16_more_data_improves_alignment.jpg}
+    \caption{资料量从每语言 20 万句增加到 100 万句后，跨语言对齐明显改善，说明某些能力需要足够资料规模才会出现。\protect\footnotemark}
+    \label{fig:more-data}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:20:01--00:20:17；字幕说明资料变多后 alignment 学起来，资料量是不同语言对齐的关键因素。}
+
+\begin{knowledgebox}{规模导致现象显现}
+    课程强调，过去可能不是没有类似能力，而是资料量和运算资源不足，所以观察不到。某些模型现象不是小规模实验的线性外推，而是在足够规模后才突然变得明显。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+多语言 BERT 的奇妙之处在于，它能把英文任务监督迁移到中文等其他语言。一个合理解释是跨语言 embedding 对齐：不同语言中意义相同的词被放到相近位置。但这个能力依赖足够大的资料与训练规模，小模型或小资料未必自然出现同样现象。
+
+% =====================================================================
+\section{语言信息到底藏在哪里}
+% =====================================================================
+
+如果 mBERT 真把同义词跨语言对齐，那么会产生一个悖论：如果 rabbit 和“兔”几乎一样，jump 和“跳”几乎一样，那模型为什么不会在英文句子里填中文词？它为什么知道现在应该用英文填空，而不是把不同语言混在一起？
+
+\subsection{跨语言对齐与语言识别的矛盾}
+
+课程用 “Weird???” 引出这个问题。mBERT 似乎一方面让不同语言同义词靠近，另一方面又保留语言身份，否则它无法正确做单一语言的填空。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig17_language_information_paradox.jpg}
+    \caption{悖论：若不同语言同义词向量接近，模型如何仍知道当前句子属于哪一种语言？\protect\footnotemark}
+    \label{fig:language-paradox}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:20:51--00:21:07；字幕提出疑问：若不同语言同义符号很接近，为什么模型不会混用语言填空？}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig18_reconstruction_paradox.jpg}
+    \caption{如果 embedding 完全语言无关，重建时就不知道应输出哪种语言；事实说明语言信息并未被完全抹掉。\protect\footnotemark}
+    \label{fig:reconstruction-paradox}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:21:15--00:21:45；字幕说明模型能做英文填空和中文填空，代表它并没有完全抹掉语言资讯。}
+
+这说明 mBERT 的表示至少包含两部分信息：一部分是跨语言共享的语义结构，另一部分是语言身份。前者让 zero-shot 迁移成为可能，后者让模型知道应该用哪种语言输出。
+
+\subsection{语言向量：平均 embedding 的差}
+
+课程提到一个实验：把大量英文词汇输入 mBERT，取它们 embedding 的平均；再把大量中文词汇输入 mBERT，取平均。两者相减，可以得到一个近似表示“英文到中文差距”的向量。把这个向量加到英文句子的 embedding 上，模型会像读到中文一样进行填空。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig19_language_vector_difference.jpg}
+    \caption{把中文平均 embedding 与英文平均 embedding 相减，可得到类似语言方向的向量；加到英文表示上会改变模型感知的语言。\protect\footnotemark}
+    \label{fig:language-vector}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:21:52--00:22:34；字幕说明英文 embedding 平均与中文 embedding 平均相减后，可把英文表示推向中文表示。}
+
+可写成
+
+$$
+v_{\mathrm{zh}-\mathrm{en}}
+= \frac{1}{|\mathcal{V}_{\mathrm{zh}}|}\sum_{w\in \mathcal{V}_{\mathrm{zh}}} h(w)
+- \frac{1}{|\mathcal{V}_{\mathrm{en}}|}\sum_{w\in \mathcal{V}_{\mathrm{en}}} h(w)
+$$
+
+符号说明：
+\begin{itemize}
+    \item $\mathcal{V}_{\mathrm{zh}}$：中文 token 集合。
+    \item $\mathcal{V}_{\mathrm{en}}$：英文 token 集合。
+    \item $h(w)$：token $w$ 经过 mBERT 得到的表示。
+    \item $v_{\mathrm{zh}-\mathrm{en}}$：近似从英文表示空间指向中文表示空间的语言差向量。
+\end{itemize}
+
+\subsection{把英文 embedding 推向中文}
+
+课程展示真实例子：输入英文句子 “There is no one who can help me”，再把语言差向量加到 embedding 上。BERT 原本读入的是英文，但经过向量偏移后，它的输出开始混合中文词，例如把 “no one” 往“无人”、把 “me” 往“我”的方向转换。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig20_embedding_shift_example.jpg}
+    \caption{对英文句子的 embedding 加上语言方向后，mBERT 会把原本英文输入部分转成中文式输出。\protect\footnotemark}
+    \label{fig:shift-example}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:22:37--00:23:23；字幕说明英文句子进入模型后，加上蓝色语言向量，BERT 会觉得读到的是中文句子。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig21_unsupervised_token_translation.jpg}
+    \caption{这种 embedding shift 可产生粗糙的 token-level translation，说明语言身份在表示空间中具有可操作方向。\protect\footnotemark}
+    \label{fig:token-translation}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:23:35--00:24:06；字幕说明虽然翻译并不好，但实验显示 multilingual BERT 中仍藏有语言资讯。}
+
+\begin{importantbox}{mBERT 表示不是纯语义，也不是纯语言}
+    多语言 BERT 的 embedding 同时包含跨语言语义对齐和语言身份信息。语义对齐让任务可以跨语言迁移；语言信息让模型知道该用哪种语言恢复 token。二者不是互斥关系，而是叠加在同一个表示空间里。
+\end{importantbox}
+
+\subsection{本章小结}
+
+本章揭示 mBERT 的更细机制：不同语言的同义词可以靠近，但语言身份没有消失。通过平均 embedding 差构造语言向量，可以在表示空间中把英文句子推向中文式输出。这说明大模型表示空间里不仅有语义维度，也可能存在可操作的语言方向。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲围绕“BERT 的奇闻轶事”展开，但这些轶事都指向同一个核心问题：BERT 的能力到底从哪里来？
+
+第一，BERT 确实学到上下文语义。相同 token 在不同语境中得到不同 embedding，相似语义会形成向量聚类，这与分布语义假设一致。
+
+第二，BERT 的好处不只来自语义。英文预训练 BERT 能帮 DNA、蛋白质、音乐分类，说明预训练参数可能还提供优化优势、序列建模结构和更好的初始化。
+
+第三，多语言 BERT 展示了跨语言迁移能力。用英文 QA 微调、直接测试中文 QA 能工作，说明不同语言的表示可以在某种程度上对齐。
+
+第四，跨语言对齐并不等于语言信息消失。mBERT 仍知道输入属于哪种语言；语言身份可以表现为 embedding 空间中的方向，甚至可以通过向量偏移做粗糙的 token-level translation。
+
+\begin{center}
+\begin{tabular}{L{0.24\textwidth} L{0.33\textwidth} L{0.31\textwidth}}
+\toprule
+现象 & 表面解释 & 更深的问题 \\
+\midrule
+“果”的 embedding 分群 & BERT 学到上下文语义 & 语义如何在层中形成 \\
+DNA/音乐也能迁移 & 预训练是好初始化 & 迁移到底来自结构还是资料 \\
+英文 QA 迁移到中文 & 多语言表示对齐 & 对齐需要多少资料与算力 \\
+语言向量可偏移 & 语言身份藏在 embedding 中 & 表示空间有哪些可控方向 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{knowledgebox}{继续深入的方向}
+    可以沿三条线继续读。第一条线是 representation probing：用探针或相似度分析模型是否编码词性、句法、语义、语言身份。第二条线是 transfer learning：区分语义迁移、优化迁移、结构迁移和资料规模效应。第三条线是 multilingual representation：研究跨语言对齐、语言向量、zero-shot transfer 与低资源语言适配。
+\end{knowledgebox}
+
+这节课真正的结论不是“BERT 很神奇”，而是：当模型、资料和训练规模足够大时，表示空间会出现很多可测、可利用、但未必直观的结构。理解这些结构，比只记住 BERT 的训练公式更接近现代自监督模型的核心。
+
+\end{document}

@@ -1,0 +1,420 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{生成式对抗网络 GAN（一）}
+\newcommand{\notesubtitle}{基本概念：Generator、Discriminator 与交替训练}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅机器学习深度学习课程（Bilibili）}
+\newcommand{\videoduration}{约 39 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=18}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.4cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从确定性网络到分布型 Generator}
+% =====================================================================
+
+过去讲的 supervised learning 多半把神经网络看成一个确定性函数：
+\[
+    y=f_\theta(x).
+\]
+同一个输入 $x$ 进来，网络输出一个固定的 $y$。这适合分类、回归、语音帧标注等任务，因为训练资料通常告诉你「这一个输入对应这一个答案」。
+
+生成任务不一定如此。很多时候，同一个输入可以有很多合理输出。例如给定一段游戏画面的过去几帧，下一帧可能往左走、往右走、停下来，甚至出现多种视觉变化；给定「画一个红眼睛角色」这样的描述，不同人会画出不同角色，这些答案都可以是合理的。若仍强迫网络输出一个单一平均答案，模型常会产生模糊、混合、没有个性的结果。
+
+\subsection{把随机变量送进网络}
+
+解决思路是给网络额外输入一个随机变量 $z$。令 $z$ 从简单分布中采样，例如标准正态分布或均匀分布：
+\[
+    z\sim p_z(z),\qquad y=G_\theta(x,z).
+\]
+这样同一个 $x$ 搭配不同的 $z$，可以得到不同输出。网络不再只表示一个点，而是在表示一个由 $z$ 推出来的输出分布。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_generator_distribution.jpg}
+    \caption{Generator 接收普通输入 $x$ 与简单分布中采样出的 $z$，再把它们变换成复杂输出分布中的样本 $y$。\protect\footnotemark}
+    \label{fig:generator-distribution}
+\end{figure}
+\footnotetext{视频画面时间区间：约 02:48--03:42；字幕附近说明每次从简单分布 sample 到不同的 $z$，同一个 $x$ 的输出 $y$ 就不一样，网络输出变成复杂 distribution。}
+
+这里的关键不是正态分布本身有多神奇，而是它足够简单、容易采样。真正复杂的部分交给 generator：它学习一个映射，把简单分布中的点推到复杂资料分布上。用概率语言说，generator 学的是一个 push-forward distribution：
+\[
+    z\sim p_z,\qquad G_\theta(z)\sim p_g.
+\]
+训练的目标是让 $p_g$ 接近真实资料分布 $p_{\mathrm{data}}$。
+
+\subsection{为什么输出分布很重要}
+
+视频预测是一个典型例子。若模型只用传统 supervised learning，把可能的未来都平均起来，就可能得到模糊画面。多个未来都合理时，平均未来往往不是一个真实未来。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig02_video_prediction_uncertainty.jpg}
+    \caption{在 video prediction 中，给定过去帧以后，下一帧可能有多种合理走向；若训练成单一输出，容易得到模糊或混合的预测。\protect\footnotemark}
+    \label{fig:video-prediction}
+\end{figure}
+\footnotetext{视频画面时间区间：约 05:35--06:25；字幕附近说明用普通 supervised learning 预测下一帧可能会模糊，甚至出现角色分裂或消失。}
+
+这种问题不是模型不够大就能彻底解决，因为目标本身是多模态的。若一个输入对应多个可能输出，单一均方误差会鼓励平均值；而平均值常常落在真实分布之外。生成模型要做的不是输出平均答案，而是学会从所有合理答案中采样。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig03_creative_distribution_tasks.jpg}
+    \caption{需要创造性的任务常有「同一输入，多种正确输出」的结构；generator 应学会产生一个分布，而不是只给一个平均答案。\protect\footnotemark}
+    \label{fig:creative-tasks}
+\end{figure}
+\footnotetext{视频画面时间区间：约 09:02--09:56；字幕附近说明同样输入有多种可能输出，画红眼睛角色时每个人想象的答案可能不同。}
+
+\begin{knowledgebox}{为什么需要随机变量}
+    随机变量 $z$ 让网络拥有「选择不同合理输出」的自由度。没有 $z$，同一输入只能对应一个输出；有了 $z$，模型可以把一个简单、可采样的分布扭曲成复杂资料分布。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Generator 的核心不是单纯「产生图片」，而是学习一个从简单随机分布到复杂资料分布的映射。生成任务常有多种正确答案，因此模型必须能输出分布；否则就容易产生模糊的平均结果。
+
+% =====================================================================
+\section{GAN 的问题设定}
+% =====================================================================
+
+GAN 是 Generative Adversarial Network 的缩写。2014 年 Ian Goodfellow 等人提出 GAN 后，围绕 GAN 的变型非常多，课程中也展示了 GAN zoo：GAN、ACGAN、BGAN、CGAN、DCGAN、EBGAN、fGAN、GoGAN 等名称层出不穷。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig04_gan_zoo.jpg}
+    \caption{GAN 之后出现了大量变型，名称从 A 到 Z 几乎都被用过；本讲先聚焦最基本的 GAN 训练概念。\protect\footnotemark}
+    \label{fig:gan-zoo}
+\end{figure}
+\footnotetext{视频画面时间区间：约 13:04--13:52；字幕附近说明 GAN 相关论文和名称非常多，并转入本讲使用的动画人脸 unconditional generation 例子。}
+
+这堂课不急着讨论所有变型，而是用「生成动画人物头像」作为例子，讲清楚最基本的 generator、discriminator 与对抗训练。
+
+\subsection{Unconditional Generation}
+
+Unconditional generation 指的是：不输入类别、文字描述或其他条件，只从随机向量 $z$ 产生样本。例如从正态分布采样一个低维向量，经由 generator 输出一张高维图片：
+\[
+    z\sim \mathcal{N}(0,I),\qquad x_{\mathrm{fake}}=G_\theta(z).
+\]
+这里 $z$ 的维度可能只有几十或几百，而输出图片的维度等于像素数乘以通道数，远高于 $z$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig05_anime_face_generator.jpg}
+    \caption{动画头像生成例子中，generator 把低维随机向量 $z$ 映射为高维图片向量，希望不同 $z$ 都能产生看起来像动画人物脸的图片。\protect\footnotemark}
+    \label{fig:anime-generator}
+\end{figure}
+\footnotetext{视频画面时间区间：约 15:32--16:21；字幕附近说明 sample 不同 $z$ 会得到不同 $y$，但希望无论采到什么 $z$，输出都像动画人物头像。}
+
+这和普通分类器很不一样。分类器的目标是把输入压成标签；generator 的目标是从低维隐空间展开到高维资料空间。它不是记忆训练图片，而是学习资料分布的结构：眼睛、头发、脸型、颜色、姿态等因素如何组合成可信样本。
+
+\subsection{简单分布为什么够用}
+
+课程中特别提醒：$z$ 不一定非要正态分布，也可以是其他容易采样的分布。选择正态分布的主要原因是方便。因为 generator 有足够表达能力，它可以把简单分布变成复杂分布。换句话说，复杂性不在 $p_z$，而在 $G_\theta$。
+
+\begin{importantbox}{隐变量不是标签}
+    $z$ 通常不是人工标注的语义标签。它只是生成过程的随机源。训练成功后，$z$ 空间中的某些方向可能会对应发色、姿态、表情等语义变化，但这些语义不是一开始硬编码进去的，而是模型在拟合资料分布时学出来的。
+\end{importantbox}
+
+\subsection{本章小结}
+
+GAN 的基本设定是让 generator 从简单随机分布产生假样本。以动画头像为例，模型从低维 $z$ 出发，输出高维图片。训练目标不是为每个 $z$ 指定标准答案，而是让整体生成分布接近真实图片分布。
+
+% =====================================================================
+\section{Discriminator 与对抗直觉}
+% =====================================================================
+
+Generator 负责产生假样本，但训练时还需要一个 judge，也就是 discriminator。Discriminator 本身也是一个神经网络：
+\[
+    D_\phi(x)\in \mathbb{R}.
+\]
+它输入一张图片，输出一个分数。分数越高，表示它认为图片越像真实资料；分数越低，表示越像 generator 造出来的假图片。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_discriminator_score.jpg}
+    \caption{Discriminator 输入图片并输出 scalar score；课程例子中分数越大代表越像真实动画头像，分数越小代表越像假图。\protect\footnotemark}
+    \label{fig:discriminator}
+\end{figure}
+\footnotetext{视频画面时间区间：约 16:45--17:42；字幕附近说明 discriminator 输入一张图片，输出一个数值，数值越大代表越像真实二次元头像。}
+
+\subsection{对抗关系}
+
+GAN 的名字里有 adversarial，因为 generator 和 discriminator 不是各自独立训练，而是互相推动。Discriminator 越强，越能指出 generator 产生图片的破绽；generator 被迫改进，以骗过 discriminator；generator 变强以后，又会迫使 discriminator 学会更细的判断标准。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig07_adversarial_evolution_analogy.jpg}
+    \caption{课程用演化式类比说明 GAN：一方学会伪装，另一方学会识别，双方互相推动，判断标准越来越细。\protect\footnotemark}
+    \label{fig:adversarial-analogy}
+\end{figure}
+\footnotetext{视频画面时间区间：约 19:19--20:12；字幕附近用伪装与识别的演化故事引出 GAN 中 generator 与 discriminator 的对应关系。}
+
+这个过程像一个动态课程。早期 discriminator 只需发现很粗糙的假图特征，例如没有头发、没有嘴巴、颜色不自然；generator 修掉这些问题后，discriminator 才会学习更细的判断，例如眼睛是否对称、脸部轮廓是否自然、纹理是否合理。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig08_generator_discriminator_progress.jpg}
+    \caption{Generator 和 discriminator 交替进步：更严格的 discriminator 会逼迫下一代 generator 产生更真实、更完整的图片。\protect\footnotemark}
+    \label{fig:gan-progress}
+\end{figure}
+\footnotetext{视频画面时间区间：约 21:48--22:42；字幕附近说明 generator 为了骗过越来越严苛的 discriminator，会逐渐补上嘴巴、头发等细节。}
+
+\begin{warningbox}{GAN 难训练的根源}
+    GAN 不是固定目标函数上的普通单人优化。训练过程中，generator 的目标会随 discriminator 改变，discriminator 的训练资料又包含 generator 当前产生的样本。因此训练动态更像双人博弈，稳定性比普通 supervised learning 更微妙。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Discriminator 是 GAN 中的评审网络，用来判断图片真伪。Generator 的目标不是直接匹配某一张训练图，而是产生能骗过 discriminator 的样本。两者交替进步，形成 adversarial training。
+
+% =====================================================================
+\section{GAN 的交替训练算法}
+% =====================================================================
+
+课程把 GAN 训练拆成两个步骤。初始化时，generator $G$ 和 discriminator $D$ 都是随机参数。每一次训练迭代中，先固定 $G$ 更新 $D$，再固定 $D$ 更新 $G$。
+
+\subsection{第一步：固定 Generator，训练 Discriminator}
+
+一开始 generator 参数随机，输入随机向量后会输出杂讯般的假图片。此时可以从真实资料库 sample 一批真实图片，再让 $G$ 产生一批假图片。对 discriminator 来说，这就变成一个普通二分类或回归问题：真实图片标为 $1$，假图片标为 $0$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig09_fix_generator_samples.jpg}
+    \caption{Step 1 开始时固定 generator，从随机向量产生一批 fake objects；这些假样本会和真实资料一起交给 discriminator 学习。\protect\footnotemark}
+    \label{fig:fix-g-samples}
+\end{figure}
+\footnotetext{视频画面时间区间：约 24:18--25:11；字幕附近说明先固定 generator，只训练 discriminator；随机初始化的 generator 会产生不像真实头像的图片。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig10_train_discriminator.jpg}
+    \caption{训练 discriminator 时，真实图片被标为高分，generator 产生的图片被标为低分；此时 $G$ 固定，只更新 $D$。\protect\footnotemark}
+    \label{fig:train-d}
+\end{figure}
+\footnotetext{视频画面时间区间：约 25:48--26:44；字幕附近说明真实人物图片可标为 1，generator 产生图片标为 0，让 discriminator 学会区分 real image 与 generated image。}
+
+若用概率形式写，discriminator 常见目标是最大化
+\[
+    \mathcal{L}_D
+    =
+    \mathbb{E}_{x\sim p_{\mathrm{data}}}\log D(x)
+    +
+    \mathbb{E}_{z\sim p_z}\log\bigl(1-D(G(z))\bigr).
+\]
+第一项鼓励真实图片分数高，第二项鼓励假图片分数低。课程此处强调的是训练流程，因此不需要一开始被公式困住；先把它看作「训练一个真伪分类器」就够了。
+
+\subsection{第二步：固定 Discriminator，训练 Generator}
+
+第二步反过来：固定 discriminator，更新 generator。Generator 的目标是让 $D(G(z))$ 尽可能高，也就是让 discriminator 以为假图是真的。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig11_train_generator_fool_d.jpg}
+    \caption{Step 2 固定 discriminator，把 generator 与 discriminator 接成一个大网络；只更新 generator，让它产生能得到高分的图片。\protect\footnotemark}
+    \label{fig:train-g}
+\end{figure}
+\footnotetext{视频画面时间区间：约 28:03--29:01；字幕附近说明把 generator 与 discriminator 接起来看成一个大 network，并固定 discriminator，只调整 generator。}
+
+这里有一个重要实现细节。虽然 discriminator 固定，它仍参与前向传播和反向传播。梯度会穿过 discriminator 传回 generator，用来告诉 generator 哪些像素或特征方向能提高 $D$ 的分数；但 discriminator 自己的参数不更新。
+
+Generator 的目标函数常见写法有两种。原始 minimax 形式是最小化
+\[
+    \mathbb{E}_{z\sim p_z}\log\bigl(1-D(G(z))\bigr),
+\]
+实践中也常用 non-saturating 形式最大化
+\[
+    \mathbb{E}_{z\sim p_z}\log D(G(z)).
+\]
+两者都表达同一个方向：让生成图片更像真实图片。
+
+\subsection{反复交替}
+
+训练不是只做一次，而是反复执行：训练一阵子 $D$，再训练一阵子 $G$，再用更新后的 $G$ 产生新假图，继续训练 $D$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.94\textwidth]{figures/fig12_gan_training_loop.jpg}
+    \caption{GAN 的完整训练循环：Learning D 时固定 $G$，Learning G 时固定 $D$；两者交替更新，互相推动。\protect\footnotemark}
+    \label{fig:training-loop}
+\end{figure}
+\footnotetext{视频画面时间区间：约 30:49--31:40；字幕附近总结两个步骤：固定 generator 训练 discriminator，再固定 discriminator 训练 generator，反复执行。}
+
+\begin{importantbox}{训练流程的最小记忆版}
+    训练 $D$：真实图给高分，假图给低分，$G$ 不动。训练 $G$：让假图通过固定的 $D$ 得高分，$D$ 不动。反复交替，直到生成分布越来越接近真实分布。
+\end{importantbox}
+
+\subsection{本章小结}
+
+GAN 的训练可以理解为交替优化。Discriminator 学会区分真实与生成样本；generator 学会骗过当前 discriminator。公式上这是一个双人博弈，流程上就是「固定一方、训练另一方」的循环。
+
+% =====================================================================
+\section{训练结果与生成能力}
+% =====================================================================
+
+训练早期的 generator 输出很粗糙，常只出现一些模糊块状结构。随着更新次数增加，模型逐渐学到人脸结构：先出现眼睛，再出现嘴巴、头发、脸部轮廓，最后颜色和纹理越来越像真实动画头像。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig13_training_updates_faces.jpg}
+    \caption{动画头像 GAN 的训练过程：更新次数增加后，生成图从模糊块状逐渐变成有眼睛、嘴巴、头发和脸部结构的头像。\protect\footnotemark}
+    \label{fig:training-updates}
+\end{figure}
+\footnotetext{视频画面时间区间：约 32:47--33:40；字幕附近说明模型先学到眼睛，再出现嘴巴，更新到 1 万、2 万、5 万次后形状越来越完整。}
+
+这个例子说明 GAN 学到的不是逐张复制，而是资料分布中反复出现的结构。若训练资料都是动画头像，模型会逐渐发现「头像通常有两只眼睛」「眼睛有高光」「脸部有轮廓」「头发和背景有颜色组合」等统计规律。
+
+\subsection{StyleGAN 与 Progressive GAN}
+
+课程展示了 StyleGAN 生成的动画人物，以及 Progressive GAN 生成的真实人脸。它们说明 GAN 可以把简单随机向量映射成非常高质量的图片。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig14_stylegan_progressive_gan.jpg}
+    \caption{StyleGAN 可生成高质量动画人物，Progressive GAN 可生成逼真的人脸；这些例子展示了 GAN 在图像生成上的强大能力。\protect\footnotemark}
+    \label{fig:style-progressive}
+\end{figure}
+\footnotetext{视频画面时间区间：约 34:17--35:13；字幕附近说明 StyleGAN 生成动画人物，Progressive GAN 可以产生高清真实人脸。}
+
+GAN 的一个有趣能力是 latent interpolation。因为输入是连续向量，若在两个 $z$ 之间做线性插值，输出图片也常会平滑变化。这意味着 generator 学到的映射不是离散记忆，而是在隐空间中形成了某种连续结构。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig15_latent_interpolation.jpg}
+    \caption{对输入向量做 interpolation 时，generator 输出的人脸会连续变化；这显示 latent space 中存在可平滑移动的语义方向。\protect\footnotemark}
+    \label{fig:latent-interpolation}
+\end{figure}
+\footnotetext{视频画面时间区间：约 36:01--36:52；字幕附近说明把两个输入向量做内插，会看到两张图片之间连续变化。}
+
+\subsection{从第一代 GAN 到 BigGAN}
+
+2014 年第一篇 GAN 论文中的结果，在今天看来质量并不惊人，但当时已经证明「对抗训练确实能产生图片」。几年后，BigGAN 等模型可以产生复杂、高分辨率、接近真实的图片，但仍可能有细节破绽，例如结构不对称、物体局部异常、概念混合等。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig16_first_gan.jpg}
+    \caption{最早 GAN 论文中的生成样本质量有限，但它证明了 adversarial training 可以让模型学会生成图像。\protect\footnotemark}
+    \label{fig:first-gan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 37:31--38:16；字幕附近提到 GAN 由 Ian Goodfellow 等人在 2014 年提出，并展示当时的第一批生成结果。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig17_biggan_examples.jpg}
+    \caption{BigGAN 能产生更复杂、更高质量的图像，但仔细看仍可能出现结构破绽或幻想式组合。\protect\footnotemark}
+    \label{fig:biggan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 38:04--38:55；字幕附近说明 BigGAN 可产生高质量图像，但有时仍会出现不对称、局部异常或混合概念。}
+
+\begin{warningbox}{不要把 GAN 理解成「万能画图机」}
+    GAN 强在学习资料分布并采样，但训练可能不稳定，也可能产生模式崩溃、细节破绽或语义混合。高质量结果来自模型结构、训练技巧、资料规模和计算资源的共同作用。
+\end{warningbox}
+
+\subsection{本章小结}
+
+GAN 的训练效果会随 generator 和 discriminator 的交替更新逐渐改善。高质量 GAN 不只是把噪声变图片，而是让隐空间中的连续向量对应到资料分布中的合理样本。第一代 GAN 证明了概念，后续 StyleGAN、Progressive GAN、BigGAN 等方法把生成质量大幅推进。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲给出 GAN 的基本概念。Generator 学习把简单随机分布映射为复杂资料分布；discriminator 学习判断样本是真实还是生成；训练时两者交替更新，形成 adversarial learning。
+
+\subsection{概念总表}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{@{}L{0.23\textwidth}L{0.32\textwidth}L{0.33\textwidth}@{}}
+        \toprule
+        概念 & 作用 & 需要注意的点 \\
+        \midrule
+        随机向量 $z$ & 提供生成过程的随机性，使同一条件下可产生多种结果。 & 分布通常选简单可采样的形式，语义结构由 generator 学出来。 \\
+        Generator & 把 $z$ 或条件输入映射到样本空间，产生 fake sample。 & 目标不是复制训练样本，而是让生成分布接近真实分布。 \\
+        Discriminator & 输入样本并输出真伪分数。 & 它既是评审，也是 generator 的训练信号来源。 \\
+        训练 $D$ & 固定 $G$，用真实图和假图训练真伪分类器。 & 假图来自当前 generator，因此训练资料会随 $G$ 改变。 \\
+        训练 $G$ & 固定 $D$，让 $G(z)$ 得到更高真图分数。 & 梯度穿过 $D$ 回到 $G$，但 $D$ 的参数不更新。 \\
+        \bottomrule
+    \end{tabular}
+    \caption{GAN 第一讲中的核心概念。}
+    \label{tab:gan-concepts}
+\end{table}
+
+\subsection{这堂课最重要的直觉}
+
+第一，生成模型要处理的是分布，而不是单一答案。随机变量 $z$ 不是可有可无的噪声，而是让模型表达多种合理输出的来源。
+
+第二，GAN 的训练信号来自 discriminator。Generator 没有被直接告诉「这张图应该长什么样」，它只知道怎样让当前 discriminator 更相信自己产生的图是真的。
+
+第三，GAN 是动态系统。若 discriminator 太弱，generator 学不到有用信号；若 discriminator 太强，generator 也可能拿不到有效梯度。后续关于 GAN 理论和训练技巧的讨论，都会围绕这个动态平衡展开。
+
+\begin{importantbox}{和下一讲的衔接}
+    本讲主要讲操作流程：什么是 generator、什么是 discriminator、如何交替训练。下一讲会进一步讨论 GAN 背后的理论问题：这个对抗游戏到底在优化什么，什么时候生成分布会接近真实分布。
+\end{importantbox}
+
+\subsection{延伸}
+
+GAN 的思想后来影响了许多生成式模型和表示学习方法。即使今天 diffusion model 和 autoregressive model 在很多生成任务上更常见，GAN 的核心问题仍值得学习：如何比较两个分布，如何从不可微的人类感受中构造可训练信号，如何让一个模型通过另一个模型给出的反馈学习。
+
+本讲可以用一句话压缩：Generator 负责提出样本，discriminator 负责挑毛病；挑毛病越精准，提出样本的一方就被迫变得越好。
+
+\end{document}

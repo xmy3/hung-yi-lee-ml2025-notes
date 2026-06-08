@@ -1,0 +1,618 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}
+
+% ===== Highlight boxes =====
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+% ===== Code listings =====
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+% ===== Front-page metadata =====
+\newcommand{\notetitle}{深度学习基本概念简介}
+\newcommand{\notesubtitle}{李宏毅《机器学习》2025 · 第一节（下）}
+\newcommand{\noteauthors}{基于李宏毅老师课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili 搬运）}
+\newcommand{\videoduration}{约 58 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=2}
+
+\begin{document}
+
+\pagestyle{empty}
+
+% ===== Cover page =====
+\begin{center}
+    \vspace*{3cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.5cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{1.5cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{1cm}
+    \begin{tcolorbox}[width=0.8\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+
+% ===== TOC =====
+\tableofcontents
+\newpage
+
+\pagestyle{plain}
+
+% =====================================================================
+\section{回顾：线性模型的局限}
+% =====================================================================
+
+在上一节课中，我们介绍了机器学习的基本框架：定义一个带有未知参数的函数（Step 1）、定义损失函数（Step 2）、优化参数使损失最小（Step 3）。我们用线性模型 $y = b + w x_1$ 完成了三步流程。
+
+但线性模型有一个本质性的限制——\textbf{Model Bias}（模型偏差）。注意：这里的 ``Model Bias'' 与参数 $b$（y轴截距，也叫bias）是不同的概念。Model Bias指的是模型本身的结构限制了它能表达的函数空间。
+
+\begin{importantbox}{Model Bias（模型偏差）}
+    模型偏差（Model Bias）指的是：由于模型形式的限制，无论你怎么调整参数，都无法准确模拟真实的数据关系。它是模型结构本身的局限性，与参数 $b$（截距/bias）是不同的概念。
+\end{importantbox}
+
+如图1所示，线性模型只能表示一条直线：$x_1$ 越大，$y$ 就越大。但现实中的数据关系往往不是这样。可能 $x_1$ 小于某个值时，$y$ 随 $x_1$ 增大；而 $x_1$ 超过某个峰值后，$y$ 反而下降（``物极必反''）。无论你怎么调整 $w$ 和 $b$，永远制造不出那条红色的复杂曲线。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.60\textwidth]{figures/fig01_linear_limit.jpg}
+    \caption{线性模型（蓝色直线）无法拟合真实的数据关系（红色曲线），这种限制称为 Model Bias。}
+    \label{fig:linear_limit}
+    \footnotetext{视频画面时间区间：00:01:30--00:02:30。}
+\end{figure}
+
+\begin{knowledgebox}{模型能力与偏差}
+    \textbf{线性模型} $y = b + w x_1$：
+    \begin{itemize}
+        \item 只能表示 $x_1$ 与 $y$ 之间的直线关系
+        \item $x_1$ 越大 → $y$ 越大（单调关系）
+        \item 无法表示非线性、非单调的关系
+    \end{itemize}
+    这就产生了 Model Bias——由于模型形式过于简单，无法拟合真实世界的复杂规律。
+\end{knowledgebox}
+
+\section{用分段线性曲线逼近任意函数}
+
+\subsection{Piecewise Linear Curve（分段线性曲线）}
+
+我们能否写出一个更复杂、更有弹性的函数来减少 Model Bias？
+
+关键观察：红色的复杂曲线可以看作是一个\textbf{常数}加上一群\textbf{蓝色函数}的组合。这个蓝色函数的特点是：输入小于某个阈值时是水平线，大于另一个阈值时也是水平线，中间有一个斜坡——我们暂且称它为``蓝色函数''（它的正式学名是 Hard Sigmoid）。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig02_piecewise.jpg}
+    \caption{红色曲线 = 常数项 + 蓝色函数1 + 蓝色函数2 + 蓝色函数3。每个蓝色函数（Hard Sigmoid）在不同位置贡献不同的斜率。}
+    \label{fig:piecewise}
+    \footnotetext{视频画面时间区间：00:04:00--00:06:30。}
+\end{figure}
+
+\begin{importantbox}{分段线性曲线（Piecewise Linear Curve）}
+    \textbf{定义：} 由多段线段首尾相连组成的曲线（呈锯齿状），每个转折点处的斜率发生变化。
+
+    \textbf{核心性质：}
+    \begin{enumerate}
+        \item 只要取点足够多、位置适当，Piecewise Linear Curve 可以\textbf{逼近任意连续曲线}
+        \item 每个 Piecewise Linear Curve 都可以表示为：\textbf{常数项 + 一组 Hard Sigmoid 之和}
+    \end{enumerate}
+
+    这意味着：只要有足够多的蓝色函数，理论上可以表达任何复杂的 $x$ 与 $y$ 之间的关系！
+\end{importantbox}
+
+\subsection{Sigmoid函数——从离散到平滑}
+
+Hard Sigmoid（蓝色函数）的数学表达式写起来不太方便（需要分段定义）。但我们可以用一个平滑的\textbf{Sigmoid 函数}来逼近它。
+
+\begin{knowledgebox}{Sigmoid函数}
+    Sigmoid 函数的数学表达式：
+    \[
+    y = \frac{c}{1 + e^{-(b + w x_1)}} = c \cdot \sigma(b + w x_1)
+    \]
+
+    其中 $\sigma(z) = \frac{1}{1 + e^{-z}}$ 为 Logistic 函数。
+    ``Sigmoid'' 意为 S 型（S-shaped），因其曲线形状似字母 S。
+\end{knowledgebox}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.60\textwidth]{figures/fig03_sigmoid_formula.jpg}
+    \caption{Sigmoid 函数 $y = c \cdot \sigma(b + w x_1)$：用平滑的 S 型曲线逼近 Hard Sigmoid。}
+    \label{fig:sigmoid}
+    \footnotetext{视频画面时间区间：00:08:50--00:10:20。}
+\end{figure}
+
+三个参数分别控制 Sigmoid 曲线的三个特性（如图4）：
+\begin{itemize}
+    \item \textbf{$w$ —— 控制斜率}：改变斜坡的陡峭程度
+    \item \textbf{$b$ —— 控制水平位移}：将曲线左右移动
+    \item \textbf{$c$ —— 控制高度}：改变曲线的幅值
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig04_sigmoid_params.jpg}
+    \caption{参数 $w$、$b$、$c$ 对 Sigmoid 函数形状的影响：$w$ 改斜率，$b$ 改左右位移，$c$ 改高度。}
+    \label{fig:sigmoid_params}
+    \footnotetext{视频画面时间区间：00:11:50--00:12:30。}
+\end{figure}
+
+\subsection{多特征扩展模型}
+
+现在我们可以写出一个带有未知参数、富有弹性的函数：
+
+\[
+y = b + \sum_{i=1}^{n} c_i \cdot \sigma(b_i + w_i x_1)
+\]
+
+对于多个特征（如：前28天的观看人数），扩展为：
+
+\[
+y = b + \sum_{i=1}^{n} c_i \cdot \sigma\!\left(b_i + \sum_{j=1}^{m} w_{ij} x_j\right)
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig05_flexible_model.jpg}
+    \caption{多 Sigmoid 模型：$y = b + \sum_i c_i \cdot \sigma(b_i + \sum_j w_{ij} x_j)$。不同 $c_i$、$b_i$、$w_{ij}$ 组合出不同形状的 Sigmoid，叠加后逼近任意连续函数。}
+    \label{fig:flexible_model}
+    \footnotetext{视频画面时间区间：00:13:45--00:15:00。}
+\end{figure}
+
+其中：
+\begin{itemize}
+    \item $i$：Sigmoid 函数的编号（$i = 1, 2, \ldots, n$）
+    \item $j$：特征（feature）的编号（$j = 1, 2, \ldots, m$）
+    \item $w_{ij}$：第 $i$ 个 Sigmoid 中，给第 $j$ 个特征的权重
+    \item $c_i$：第 $i$ 个 Sigmoid 的缩放系数
+    \item $b_i$：第 $i$ 个 Sigmoid 的偏置
+    \item $b$：整体的常数项
+\end{itemize}
+
+\begin{importantbox}{从线性到非线性的核心思想}
+    线性模型（$y = b + wx$）→ 多特征线性模型（$y = b + \sum_j w_j x_j$）→ 多 Sigmoid 模型（$y = b + \sum_i c_i \cdot \sigma(b_i + \sum_j w_{ij} x_j)$）
+
+    每一次改进都在增加模型能表达的函数空间，从而减少 Model Bias。
+\end{importantbox}
+
+\section{模型的矩阵/向量表示}
+
+上面的求和表达式有太多上标下标，看起来让人头疼。用线性代数可以将其简洁地表达。
+
+\subsection{网络结构图}
+
+以一个简单的例子说明：假设有 3 个特征（$x_1, x_2, x_3$）和 3 个 Sigmoid 函数（$i=1,2,3$）。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/fig06_network_diagram.jpg}
+    \caption{模型的图示化表示：输入 $x_1, x_2, x_3$ 通过不同的权重 $w_{ij}$ 连接到 3 个 Sigmoid 函数，输出加权求和得到 $y$。}
+    \label{fig:network}
+    \footnotetext{视频画面时间区间：00:17:20--00:19:20。}
+\end{figure}
+
+每个 Sigmoid 括号里面做的事情是：
+\begin{align*}
+    r_1 &= b_1 + w_{11}x_1 + w_{12}x_2 + w_{13}x_3 \\
+    r_2 &= b_2 + w_{21}x_1 + w_{22}x_2 + w_{23}x_3 \\
+    r_3 &= b_3 + w_{31}x_1 + w_{32}x_2 + w_{33}x_3
+\end{align*}
+
+然后每个 $r_i$ 通过 Sigmoid 函数：$a_i = \sigma(r_i)$，最后输出 $y = b + c_1 a_1 + c_2 a_2 + c_3 a_3$。
+
+\subsection{线性代数表示}
+
+上述运算可以用矩阵和向量简洁表示：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/fig07_matrix_form.jpg}
+    \caption{线性代数表示：$\boldsymbol{r} = \boldsymbol{W}\boldsymbol{x} + \boldsymbol{b}$，$\boldsymbol{a} = \sigma(\boldsymbol{r})$，$y = \boldsymbol{c}^T\boldsymbol{a} + b$。}
+    \label{fig:matrix_form}
+    \footnotetext{视频画面时间区间：00:21:00--00:24:30。}
+\end{figure}
+
+\begin{knowledgebox}{矩阵形式的完整推导}
+    设输入向量 $\boldsymbol{x} \in \mathbb{R}^{m}$，有 $n$ 个 Sigmoid 单元：
+    \[
+    \underbrace{\boldsymbol{x}}_{m \times 1} \longrightarrow
+    \underbrace{\boldsymbol{r}}_{n \times 1} = \underbrace{\boldsymbol{W}}_{n \times m} \boldsymbol{x} + \underbrace{\boldsymbol{b}}_{n \times 1}
+    \longrightarrow
+    \underbrace{\boldsymbol{a}}_{n \times 1} = \sigma(\boldsymbol{r})
+    \longrightarrow
+    y = \boldsymbol{c}^T \boldsymbol{a} + b
+    \]
+
+    将所有未知参数（$\boldsymbol{W}$、$\boldsymbol{b}$、$\boldsymbol{c}$、$b$）拉直拼成一个长向量，记作 $\boldsymbol{\theta}$：
+    \[
+    \boldsymbol{\theta} = [W_{11}, W_{12}, \ldots, b_1, b_2, \ldots, c_1, c_2, \ldots, b]^T
+    \]
+\end{knowledgebox}
+
+\begin{warningbox}{注意区分两个 $b$}
+    图中绿色的 $\boldsymbol{b}$ 是一个向量（$b_1, b_2, b_3$），对应每个 Sigmoid 的偏置；灰色的 $b$ 是最后的标量常数项。两者是不同的参数，靠底色区分。
+\end{warningbox}
+
+\section{损失函数与梯度下降优化}
+
+\subsection{损失函数 $L(\boldsymbol{\theta})$}
+
+当模型参数很多时，我们不再逐一列出每个参数，而是用 $\boldsymbol{\theta}$ 统一表示所有未知参数。损失函数写作 $L(\boldsymbol{\theta})$——问：如果 $\boldsymbol{\theta}$ 是某一组数值，这种设定有多不好？
+
+给定一组 $\boldsymbol{\theta}$：
+\begin{enumerate}
+    \item 把参数值代入模型，对每条训练数据计算出预测值 $y$
+    \item 计算预测值与真实标签 $\hat{y}$ 之间的差距 $e_n = |y - \hat{y}|$（或 $(y - \hat{y})^2$）
+    \item 将所有训练数据的误差求和平均：$L(\boldsymbol{\theta}) = \frac{1}{N}\sum_{n=1}^{N} e_n$
+\end{enumerate}
+
+\subsection{梯度下降的向量形式}
+
+优化目标：找到使 $L(\boldsymbol{\theta})$ 最小的 $\boldsymbol{\theta}^*$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig08_gradient_update.jpg}
+    \caption{梯度下降更新规则：$\boldsymbol{\theta}^1 = \boldsymbol{\theta}^0 - \eta \cdot \boldsymbol{g}$，其中 $\boldsymbol{g} = \nabla L(\boldsymbol{\theta}^0)$ 为梯度向量。}
+    \label{fig:gd}
+    \footnotetext{视频画面时间区间：00:33:00--00:35:30。}
+\end{figure}
+
+\begin{knowledgebox}{梯度（Gradient）}
+    梯度 $\boldsymbol{g} = \nabla L(\boldsymbol{\theta}^0)$ 是一个向量，其每个分量是对应参数对 $L$ 的偏导数：
+    \[
+    \boldsymbol{g} = \begin{bmatrix}
+        \frac{\partial L}{\partial \theta_1}, &
+        \frac{\partial L}{\partial \theta_2}, &
+        \ldots, &
+        \frac{\partial L}{\partial \theta_{1000}}
+    \end{bmatrix}^T
+    \]
+
+    符号 $\nabla L(\boldsymbol{\theta}^0)$ 表示在 $\boldsymbol{\theta} = \boldsymbol{\theta}^0$ 处计算所有参数对 $L$ 的偏导数，得到梯度向量。
+\end{knowledgebox}
+
+更新规则（向量形式）：
+\[
+\boldsymbol{\theta}^{t+1} = \boldsymbol{\theta}^{t} - \eta \cdot \nabla L(\boldsymbol{\theta}^{t})
+\]
+
+如果 $\boldsymbol{\theta}$ 有 1000 个参数，则 $\boldsymbol{\theta}^t$、$\boldsymbol{g}$、$\boldsymbol{\theta}^{t+1}$ 都是 1000 维向量。更新逻辑与两个参数的版本完全一致。
+
+\subsection{Batch训练：Epoch 与 Update}
+
+在实际训练中，数据量 $N$ 较大时不会将所有数据一次性算梯度，而是分组处理：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig09_batch_epoch.jpg}
+    \caption{Batch 训练示意图：将 $N$ 笔数据随机分成若干 Batch，每个 Batch 算一次梯度并更新参数。}
+    \label{fig:batch}
+    \footnotetext{视频画面时间区间：00:37:30--00:39:30。}
+\end{figure}
+
+\begin{importantbox}{关键概念区分}
+    \begin{itemize}
+        \item \textbf{Batch（批次）：} 将全部 $N$ 笔数据随机分成若干组，每组 $B$ 笔数据称为一个 Batch
+        \item \textbf{Update（更新）：} 每用一个 Batch 计算梯度并更新一次参数，即为一次 Update
+        \item \textbf{Epoch（轮次）：} 把所有的 Batch 都遍历一遍，即看完所有数据一次，称为一个 Epoch
+    \end{itemize}
+
+    \textbf{例子：} $N=10000$，$B=10$，则一个 Epoch 有 $10000/10 = 1000$ 次 Update。\\
+    \textbf{例子：} $N=1000$，$B=100$，则一个 Epoch 有 $1000/100 = 10$ 次 Update。
+\end{importantbox}
+
+所以当有人说 ``我做了一个 Epoch 的训练''，你实际上不知道他更新了几次参数——可以是 1000 次，也可以是 10 次，取决于 Batch Size 的大小。
+
+\begin{warningbox}{为什么不直接用全部数据算梯度？}
+    全量梯度下降（Batch GD）每次迭代都需要计算所有 $N$ 笔数据的梯度，当 $N$ 很大时计算量极大。使用 Batch 划分后每次只需计算 $B$ 笔数据，计算更快、也更适合 GPU 并行。更深层的原因（随机梯度的噪声有助于泛化）将在后续课程中讲解。
+\end{warningbox}
+
+Batch Size $B$ 也是人手动设定的，属于\textbf{超参数}（Hyperparameter）。截至目前，我们已知的超参数有：
+\begin{itemize}
+    \item Learning Rate $\eta$（学习率）
+    \item Sigmoid 的数量 $n$
+    \item Batch Size $B$
+\end{itemize}
+
+\section{ReLU——另一种激活函数}
+
+除了 Sigmoid，还有另一种常见的激活函数——\textbf{ReLU}（Rectified Linear Unit，修正线性单元）。
+
+\begin{knowledgebox}{ReLU 函数}
+    ReLU 的数学表达式：
+    \[
+    y = c \cdot \max(0,\, b + w x_1)
+    \]
+
+    含义：取 $0$ 和 $b + w x_1$ 中较大的那个作为输出。
+    \begin{itemize}
+        \item 若 $b + w x_1 < 0$，输出为 $0$
+        \item 若 $b + w x_1 > 0$，输出为 $b + w x_1$
+    \end{itemize}
+\end{knowledgebox}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{figures/fig10_relu.jpg}
+    \caption{ReLU 函数：$y = c \cdot \max(0, b + w x_1)$。左边水平，右边斜坡，形似一条``折线''。}
+    \label{fig:relu}
+    \footnotetext{视频画面时间区间：00:41:20--00:42:30。}
+\end{figure}
+
+\textbf{Hard Sigmoid 与 ReLU 的关系：} 两个 ReLU 叠加在一起，就可以构成一个 Hard Sigmoid（即蓝色函数）。
+
+这意味着：你可以选择用 Sigmoid 来逼近 Hard Sigmoid（间接），也可以直接用更多的 ReLU 来代替（直接）。将模型中的 $\sigma(\cdot)$ 替换为 $\max(0, \cdot)$ 即可：
+\[
+y = b + \sum_{i=1}^{2n} c_i \cdot \max\!\left(0,\; b_i + \sum_{j} w_{ij} x_j\right)
+\]
+（需要大约 2 倍的 ReLU 数量来达到与 Sigmoid 相同的表达能力，因为两个 ReLU 合成一个 Hard Sigmoid。）
+
+Sigmoid 和 ReLU 在机器学习中统称为\textbf{激活函数}（Activation Function）。它们是今天最常见的两种激活函数。李宏毅老师在实验中选择 ReLU，因为``显然 ReLU 比较好''——至于为什么，将在后续课程揭晓。
+
+\section{从浅层到深层——深度学习}
+
+\subsection{多层堆叠（Deep Stacking）}
+
+我们不需要只在输入和输出之间放一层 Sigmoid/ReLU。可以反复多做几次：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/fig12_deep_stacking.jpg}
+    \caption{深层网络架构：$\boldsymbol{x} \to \boldsymbol{a} \to \boldsymbol{a}' \to \ldots \to y$。每一层都有自己的 $\boldsymbol{W}$ 和 $\boldsymbol{b}$（参数各不相同）。}
+    \label{fig:deep}
+    \footnotetext{视频画面时间区间：00:45:30--00:47:00。}
+\end{figure}
+
+\[
+\boldsymbol{a} = \sigma(\boldsymbol{W}\boldsymbol{x} + \boldsymbol{b}), \qquad
+\boldsymbol{a}' = \sigma(\boldsymbol{W}'\boldsymbol{a} + \boldsymbol{b}'), \qquad
+y = \boldsymbol{c}^T \boldsymbol{a}' + b
+\]
+
+每次乘上一个新的 $\boldsymbol{W}$、加上新的 $\boldsymbol{b}$、通过激活函数，就多了一层。做几层？这又是一个超参数。
+
+\subsection{神经网络的命名学}
+
+\begin{importantbox}{名词起源：从运算到神经元}
+    \begin{itemize}
+        \item \textbf{Neuron（神经元）：} 每个 Sigmoid / ReLU 叫做一个神经元，因为它在形式上被类比为大脑中的神经元
+        \item \textbf{Neural Network（神经网络）：} 很多神经元串联起来就是神经网络
+        \item \textbf{Hidden Layer（隐藏层）：} 一排神经元叫一层，因为它在输入和输出之间，称为隐藏层
+        \item \textbf{Deep Learning（深度学习）：} 有很多隐藏层的网络就叫深度网络，这套技术就叫深度学习
+    \end{itemize}
+\end{importantbox}
+
+有趣的历史背景：Neural Network 这个名字在 1980--90 年代因为过度吹捧而声名狼藉，写在论文上会被拒稿。后来为了重振旗鼓，换上了 ``Deep Learning'' 这个新名字——本质上就是把很多层 Sigmoid/ReLU 堆叠起来的技术。
+
+\textbf{历史上的深度网络：}
+\begin{itemize}
+    \item \textbf{AlexNet}（2012，8层）：ImageNet 错误率 16.4\%
+    \item \textbf{VGG}（2014，19层）：错误率降至 7.3\%
+    \item \textbf{GoogleNet}（2014，22层）：错误率 6.7\%
+    \item \textbf{ResNet}（2015，152层）：比台北101还高！
+\end{itemize}
+
+\section{实验结果}
+
+\subsection{ReLU 数量与深度的实验}
+
+李宏毅老师用真实的 YouTube 频道观看人次数据做了对比实验（输入：前 56 天的观看人数）：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/fig11_exp_results.jpg}
+    \caption{不同模型配置在训练数据和测试数据上的 Loss 对比。}
+    \label{fig:exp}
+    \footnotetext{视频画面时间区间：00:44:10--00:47:20。}
+\end{figure}
+
+\begin{table}[H]
+    \centering
+    \caption{不同模型在训练集（2020年）和测试集（2021年）上的 Loss（单位：千人次）}
+    \label{tab:results}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{模型} & \textbf{训练 Loss} & \textbf{测试 Loss} & \textbf{说明} \\
+        \midrule
+        Linear（56天） & 0.32k & 0.46k & 基线：一条直线 \\
+        1层 10 ReLU   & $\sim$0.32k & $\sim$0.46k & 10个神经元不够 \\
+        1层 100 ReLU  & 0.28k & 0.43k & 显著改善 \\
+        1层 1000 ReLU & 更低 & 0.43k（改善不大） & 边际效益递减 \\
+        \textbf{2层（各100 ReLU）} & \textbf{0.18k} & \textbf{0.42k} & \textbf{深度带来质的飞跃！} \\
+        \textbf{3层（各100 ReLU）} & \textbf{0.14k} & \textbf{0.38k} & \textbf{持续进步} \\
+        4层（各100 ReLU） & 0.10k & \textbf{0.44k} & $\leftarrow$ 过拟合！ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{核心发现：}
+\begin{enumerate}
+    \item 从 1 层到 2 层，训练 Loss 从 0.28k 骤降到 0.18k——\textbf{深度带来了质变}
+    \item 3 层进一步降到 0.14k，测试 Loss 也是最低的 0.38k
+    \item 4 层在训练集上继续提升（0.10k），但测试集反而变差（0.44k）——这是\textbf{过拟合}！
+\end{enumerate}
+
+\subsection{预测效果可视化}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/fig13_prediction_curve.jpg}
+    \caption{3 层网络的预测曲线（蓝色）与真实观看人次（红色）的对比。模型准确捕捉到了每周的低谷周期，但未能预测除夕当天的骤降。}
+    \label{fig:pred_curve}
+    \footnotetext{视频画面时间区间：00:47:30--00:49:10。}
+\end{figure}
+
+从图13可以看到：
+\begin{itemize}
+    \item 3 层网络准确预测了每个\textbf{周五/周六的低谷}（模型学会了周期性模式）
+    \item 但模型\textbf{漏掉了除夕当天的低点}，晚了约一天才预测出低谷
+    \item 这不能怪模型——它只知道前 56 天的观看人数，不知道那天是除夕
+\end{itemize}
+
+\section{过拟合与模型选择}
+
+\subsection{什么是过拟合（Overfitting）}
+
+\begin{importantbox}{过拟合（Overfitting）}
+    过拟合是指：模型在训练数据上表现越来越好，但在没见过的数据（测试数据）上表现反而变差的现象。
+
+    \textbf{判断标准：} 训练 Loss 下降 $\neq$ 测试 Loss 下降。当训练 Loss 持续改善而测试 Loss 恶化时，就发生了过拟合。
+\end{importantbox}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/fig14_overfitting.jpg}
+    \caption{3 层 vs 4 层：训练 Loss 4 层更好，但测试 Loss 3 层更好。这就是过拟合——更复杂的模型不一定更好。}
+    \label{fig:overfitting}
+    \footnotetext{视频画面时间区间：00:53:30--00:55:00。}
+\end{figure}
+
+\subsection{模型选择的原则}
+
+假设今天是 2 月 26 日，我们要预测今天的观看人数。应该选 3 层网络还是 4 层网络？
+
+\textbf{正确答案是选 3 层。} 因为：
+\begin{itemize}
+    \item 4 层在训练数据上表现更好（Loss 0.10k vs 0.14k）
+    \item 但我们\textbf{在意的是没见过的数据}（2月26日）
+    \item 3 层在测试数据上的表现更好（Loss 0.38k vs 0.44k）
+    \item 所以应该选择在\textbf{验证/测试集上表现最好的模型}，而非训练集
+\end{itemize}
+
+在课堂上大多数同学正确选择了 3 层，说明大家有很好的直觉。模型选择的系统方法将在下周课程详细讲解。
+
+\subsection{关于 ``为什么是 Deep 而不是 Fat''}
+
+一个值得深思的问题：如果一排足够多的 Sigmoid/ReLU 就可以逼近任意连续函数，那\textbf{为什么要把网络做深，而不是简单地把一层做宽（Fat）}？
+
+\begin{knowledgebox}{Deep vs. Fat —— 一个开放问题}
+    理论上，一个足够宽的隐藏层确实可以表达任意函数。但实践表明，\textbf{深度网络（Deep）}比\textbf{肥胖网络（Fat）}效果更好。
+
+    更深层的原因涉及：
+    \begin{itemize}
+        \item 层次化的特征提取：浅层学简单模式，深层学抽象概念
+        \item 参数效率：深度结构用更少的参数表达更复杂的函数
+        \item 训练效率与泛化能力
+    \end{itemize}
+
+    这是后续课程将深入讨论的话题。
+\end{knowledgebox}
+
+\section{本章小结}
+
+本节承接上节，将一个简单的线性模型逐步演化为我们今天所知的\textbf{深度学习}框架：
+
+\begin{importantbox}{从线性模型到深度学习的演化路径}
+    \textbf{Step 1 —— 定义模型}（逐层演化，模型表达能力依次增强）：
+    \[
+    \begin{aligned}
+    \text{线性：} &\ \ y = b + wx_1 \\[3pt]
+    \text{多特征：} &\ \ y = b + \sum_j w_j x_j \\[3pt]
+    \text{非线性：} &\ \ y = b + \sum_i c_i \cdot \sigma\!\Big(b_i + \sum_j w_{ij} x_j\Big) \\[3pt]
+    \text{深度：} &\ \ \text{将上式多层堆叠（每层各有 }\boldsymbol{W}\text{、}\boldsymbol{b}\text{）}
+    \end{aligned}
+    \]
+
+    \textbf{Step 2 —— 损失函数：} $L(\boldsymbol{\theta})$，计算预测值与真实值的差距
+
+    \textbf{Step 3 —— 优化：} $\boldsymbol{\theta}^{t+1} = \boldsymbol{\theta}^{t} - \eta \cdot \nabla L(\boldsymbol{\theta}^{t})$（梯度下降，Batch 训练）
+\end{importantbox}
+
+\begin{knowledgebox}{本节关键概念清单}
+    \begin{center}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{概念} & \textbf{英文} & \textbf{说明} \\
+        \midrule
+        模型偏差 & Model Bias & 模型结构限制导致无法拟合真实关系 \\
+        分段线性曲线 & Piecewise Linear Curve & 多段线段组成的曲线，可逼近任意连续函数 \\
+        Hard Sigmoid & Hard Sigmoid & 蓝色函数的形式名称，一个带斜坡的阶跃函数 \\
+        S 型函数 & Sigmoid & $c / (1 + e^{-(b+wx)})$，平滑逼近 Hard Sigmoid \\
+        激活函数 & Activation Function & Sigmoid/ReLU 等非线性函数的统称 \\
+        修正线性单元 & ReLU & $c \cdot \max(0, b+wx)$，另一种激活函数 \\
+        参数向量 & $\boldsymbol{\theta}$ & 所有未知参数拼成的长向量 \\
+        梯度 & Gradient $\boldsymbol{g}$ & 所有参数对 Loss 偏导数的向量 \\
+        批次 & Batch & 用于梯度计算的一小组数据 \\
+        轮次 & Epoch & 遍历全部数据一次 \\
+        过拟合 & Overfitting & 训练好但测试差的现象 \\
+        超参数 & Hyperparameter & 人手动设定的参数（$\eta$, $n$, $B$, 层数等） \\
+        隐藏层 & Hidden Layer & 输入与输出之间的神经元层 \\
+        深度学习 & Deep Learning & 有很多隐藏层的神经网络 \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+\end{knowledgebox}
+
+\subsection{下一讲预告}
+
+\begin{itemize}
+    \item 为什么 ReLU 比 Sigmoid 好？激活函数的选择
+    \item 如何系统地选择模型（3层 vs 4层的决策方法）
+    \item Deep 为什么比 Fat 好？深度学习的理论依据
+    \item 反向传播（Backpropagation）——高效计算梯度的算法
+\end{itemize}
+
+李宏毅老师还提供了一个关于反向传播（Backpropagation）的补充视频链接，它本质上是比一步一步算偏导数更高效的梯度计算方法——与本节讲的梯度下降原理并无不同。
+
+\vspace{1cm}
+
+\begin{center}
+    \rule{0.5\textwidth}{0.5pt}
+    \vspace{0.3cm}
+
+    \textbf{本节完 · 下一节：深度学习训练技巧与模型选择}
+
+    课程视频：\href{\videourl}{\videourl}
+
+    \vspace{0.3cm}
+    \rule{0.5\textwidth}{0.5pt}
+\end{center}
+
+\end{document}

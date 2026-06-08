@@ -1,0 +1,605 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{生成式对抗网络 GAN（三）}
+\newcommand{\notesubtitle}{生成器效能评估与条件式生成}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 49 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=20}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.4cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{为什么 GAN 仍然难以训练}
+% =====================================================================
+
+上一讲从理论上解释了原始 GAN、WGAN、gradient penalty 与 spectral normalization 等稳定化手段。本讲开头先强调一个现实判断：即使有了这些方法，GAN 也仍然以难训练闻名。难点不只是某个 loss 不好调，而是 generator 与 discriminator 之间存在高度耦合的共同演化关系。
+
+Discriminator 的任务是区分真实图片与生成图片；generator 的任务是产生足以欺骗 discriminator 的假图片。两者的能力必须接近，训练过程才会持续提供有效信号。如果 discriminator 太弱，generator 不需要真正进步就能得到高分；如果 discriminator 太强，generator 看到的梯度可能贫乏或不稳定；如果其中一方在某一步没有继续改善，另一方也会失去可学习的目标。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_gan_training_match.jpg}
+    \caption{GAN 的训练依赖 generator 与 discriminator 互相匹配、互相推动；任何一方停止进步，另一方也容易跟着停滞。\protect\footnotemark}
+    \label{fig:gan-match}
+\end{figure}
+\footnotetext{视频画面时间区间：约 01:18--03:45；字幕说明 discriminator 若不能分辨真伪，generator 失去改善目标，而 generator 若不能产生更真实图片，discriminator 也无法继续进步。}
+
+\subsection{两方互动不是普通监督学习}
+
+普通监督学习常常可以用一个固定资料集、固定标签和固定 loss 来描述。虽然也会遇到学习率、初始化、正则化等问题，但模型面对的目标至少相对稳定。GAN 则不同：discriminator 的决策边界会随着 generator 改变；generator 的训练信号又来自当前版本的 discriminator。换言之，训练目标本身是动态的。
+
+这带来几个实践后果：
+
+\begin{itemize}
+    \item \textbf{超参数敏感。} 不是只调一次网络就结束，generator 与 discriminator 的学习率、更新频率、batch size、正则化强度都可能影响互动节奏。
+    \item \textbf{短期 loss 不一定等于生成质量。} Discriminator loss 或 generator loss 的下降可能只是对方变弱或进入某种局部策略，并不保证样本更好。
+    \item \textbf{失败会连锁传播。} 其中一方的训练失败会改变另一方看到的环境，进而让整体过程偏离目标。
+\end{itemize}
+
+\begin{importantbox}{GAN 难训的本质}
+    GAN 的困难不只是 ``network 很深'' 或 ``loss 很难优化''。更核心的是：它要同时维持两个模型的竞争平衡。一个模型的训练品质会立刻改变另一个模型的训练信号，因此训练 GAN 更像是在控制一个互动系统，而不是单独最小化一个静态函数。
+\end{importantbox}
+
+\subsection{训练技巧有用，但不是银弹}
+
+课程提到，网络上可以找到大量 GAN training tips。它们当然可能有用，例如使用 spectral normalization、调整 discriminator 更新次数、使用较大的 batch、做 label smoothing 或 data augmentation 等。但这些技巧的效果往往依赖资料、架构和目标，不一定可以机械套用。对学习者来说，更重要的是理解为什么这些技巧可能有帮助：它们通常都在试图维持梯度、限制 discriminator 过强、改善两方更新节奏，或避免生成分布坍缩。
+
+\subsection{本章小结}
+
+GAN 的训练不是 generator 单方面变好，也不是 discriminator 单方面变强，而是两者必须保持适当张力。课程用 ``棋逢敌手'' 来形容这个关系：一方太弱、太强或突然停滞，都会让另一方失去有效学习信号。这也解释了为什么后面讨论评估指标时，不能只看一两个训练曲线，而必须回到生成样本的质量、多样性和泛化能力。
+
+% =====================================================================
+\section{GAN 用于序列生成的特殊困难}
+% =====================================================================
+
+图像生成中，generator 输出连续像素值，discriminator 的分数可以沿着网络反向传播回 generator。序列生成表面上也可以套用 GAN：用 decoder 当 generator 产生文字，再用 discriminator 判断文本是真实语料还是生成语料。然而在真正训练时，离散 token 会让反向传播变得困难。
+
+\subsection{把 decoder 看成 generator}
+
+在语言生成任务中，decoder 每一步输出一个 token 的机率分布，再通过 sampling、argmax 或 beam search 等方式得到实际 token。GAN 的高层流程仍然类似：discriminator 读入一段文字并给分；decoder/generator 调整参数，希望生成的文字被 discriminator 判断为真实文字。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_sequence_gan_loop.jpg}
+    \caption{序列生成中的 GAN：decoder 产生 token 序列，discriminator 对整段序列给分，generator 希望提高这个分数。\protect\footnotemark}
+    \label{fig:sequence-gan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 04:48--05:41；字幕说明 decoder 扮演 generator，discriminator 判断文字是真实语料还是机器产生。}
+
+如果只看这个流程，序列 GAN 和图像 GAN 的差异似乎不大。但关键问题出现在 ``从机率分布到离散 token'' 的步骤。Generator 参数发生微小变化时，输出分布可能也只发生微小变化；只要最大机率的 token 没变，discriminator 看到的离散序列就完全没变，输出分数也不会变。于是 generator 的小变化无法反映到目标函数上，梯度就难以定义或几乎没有信号。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig03_sequence_nondifferentiable.jpg}
+    \caption{离散 token 选择使序列 GAN 难以直接微分：分布有小变化，但 argmax 后 token 不变，discriminator 的输入和输出也不变。\protect\footnotemark}
+    \label{fig:sequence-nondiff}
+\end{figure}
+\footnotetext{视频画面时间区间：约 07:04--07:56；字幕说明 decoder 参数微调后最大 token 可能不变，导致 discriminator 分数不变，无法直接做 gradient descent。}
+
+\subsection{为什么不能简单类比 CNN 的 max pooling}
+
+课程中留下了一个思考问题：CNN 里也有 max pooling，为什么仍可以训练？关键在于 max pooling 虽然不可处处微分，但在多数位置可以把梯度传给当前最大值所在的输入单元；它仍在连续张量内部传递数值。序列生成的 token 选择则更像从连续机率分布跳到离散符号，符号一旦确定，后续 discriminator 看到的是类别编号或嵌入后的离散选择。这个离散选择把 ``参数的小变化'' 截断了。
+
+更准确地说，问题不只是 ``max'' 这个操作本身，而是生成文本通常涉及从分布中取样或选取符号。取样动作的输出不是连续可微的像素，而是某个 token 的身份。除非使用 Gumbel-Softmax、straight-through estimator、policy gradient 或其他估计方法，否则很难把 discriminator 的分数稳定传回 token 选择之前的 decoder 参数。
+
+\begin{warningbox}{序列 GAN 的常见误解}
+    不能把 ``有 max 所以不能训练'' 理解得太粗糙。真正的障碍是离散符号选择使 generator 的连续参数变化无法平滑地反映到 discriminator 输入上。连续图像像素的小变化会被 discriminator 看见；离散 token 的小概率变化经常在取样后被抹掉。
+\end{warningbox}
+
+\subsection{强化学习式处理：能做，但更难}
+
+一种常见做法是把序列生成当作 reinforcement learning 问题：generator 是 policy，每一步选 token 是 action，discriminator 最后的分数是 reward。这样不需要直接对 token 选择微分，而是用 policy gradient 等方法估计 ``选择某个 token 对最终 reward 的影响''。
+
+课程的评价很直接：reinforcement learning 本来就难训，GAN 也难训，两者相加会非常困难。这也是为什么语言 GAN 很长一段时间通常需要预训练。先用最大似然或其他监督方式让 decoder 有基本语言能力，再用 adversarial objective 微调，会比从随机初始化开始可靠得多。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig04_scratchgan_tips.jpg}
+    \caption{ScratchGAN 标榜可以从随机初始化训练 language GAN，但课程强调其成功依赖大量超参数搜索和技巧。\protect\footnotemark}
+    \label{fig:scratchgan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 09:19--10:20；字幕提到 ScratchGAN 可从 scratch 训练 language GAN，但关键在于大量调参和多种 training tips。}
+
+\subsection{本章小结}
+
+GAN 应用于序列生成时，最大的额外困难来自离散 token。图像 GAN 可以把 discriminator 的梯度传回连续像素输出；文本 GAN 在 sampling 或 argmax 后，generator 参数的小变化可能不会改变实际 token，从而让梯度消失或难以估计。强化学习方法可以绕过不可微操作，但会引入更高方差和更困难的训练问题。因此，序列 GAN 往往需要预训练、技巧和大量调参。
+
+% =====================================================================
+\section{更多生成模型与 latent optimization}
+% =====================================================================
+
+课程在 GAN 之后短暂提到其他生成模型，例如 VAE 与 flow-based model。这里的重点不是展开这些模型，而是说明：生成模型并不只有 GAN 一条路线；选择 GAN 是因为它在高质量图像生成上曾长期表现突出，但这不意味着其他模型更容易训练或不重要。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{figures/fig05_vae_flow_models.jpg}
+    \caption{除了 GAN，课程也指出 VAE 与 flow-based model 是重要的生成模型分支，可作为进一步学习方向。\protect\footnotemark}
+    \label{fig:vae-flow}
+\end{figure}
+\footnotetext{视频画面时间区间：约 11:33--12:25；字幕说明若想深入研究生成模型，可以继续学习 VAE 与 flow-based model。}
+
+\subsection{为什么课程仍以 GAN 为主}
+
+从课程定位看，讲 GAN 的原因有两层。第一，GAN 是许多图像生成系统的关键思想，理解 generator/discriminator 互动对于后续学习 diffusion、adversarial training 和表示学习也有帮助。第二，GAN 在图像品质上曾经具有很强的代表性。课程提到，VAE 或 flow-based model 也可以生成图像，但若目标是非常锐利、逼真的图像，传统上 GAN 的表现往往更突出。
+
+这并不表示 VAE 或 flow-based model 比 GAN 简单。它们有较明确的 likelihood 或变换结构，但实践中也需要平衡多个 loss 项、架构限制和数值稳定性。``看起来目标函数比较明确'' 不等于 ``训练一定容易''。
+
+\subsection{能否用 supervised learning 训练 generator}
+
+课程提出一个自然疑问：既然 generator 是把随机向量 $z$ 变成图片，能不能直接给每张训练图片随机配一个 latent vector，然后用 supervised learning 训练一个网络，让它从该 vector 重建对应图片？
+
+形式上，这可以写成
+\[
+    \min_{\theta,\{z_i\}}
+    \sum_{i=1}^{N}
+    \ell\bigl(G_{\theta}(z_i), x_i\bigr),
+\]
+其中 $x_i$ 是第 $i$ 张训练图片，$z_i$ 是分配给它的 latent code，$G_\theta$ 是生成网络，$\ell$ 可以是像素重建误差或感知误差。
+
+如果 $z_i$ 完全随机且固定，模型很可能训练不好：latent 空间没有结构，相邻 latent 不一定对应相近图片，网络要学习的是一堆任意配对。较合理的方向是同时优化 latent code 与 generator，或设计特殊方法安排 latent 空间，这类思想对应 Generative Latent Optimization（GLO）等工作。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_latent_optimization.jpg}
+    \caption{Latent optimization 的思路：为训练图片安排或优化 latent vector，再训练网络从 latent vector 生成对应图片。\protect\footnotemark}
+    \label{fig:latent-optimization}
+\end{figure}
+\footnotetext{视频画面时间区间：约 13:36--15:17；字幕讨论能否用 supervised learning 训练 generator，并指出需要特殊方法安排 latent vectors，例如 GLO 与 Gradient Origin Networks。}
+
+\begin{knowledgebox}{latent space 需要结构}
+    一个好的生成模型不只是记住 ``某个向量对应某张图''。它还希望 latent 空间具有可插值、可采样、可泛化的结构：相近的 $z$ 生成相近语义，随机采样的 $z$ 大概率落在合理区域。若 latent code 与图像只是任意配对，模型可能只是在背表，而不是学到可用的生成分布。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+GAN 是生成模型的重要路线，但不是唯一路线。VAE、flow-based model 和 latent optimization 都从不同角度处理 ``如何从简单分布产生复杂资料'' 的问题。课程在这里提醒我们：生成模型的核心不是某个固定架构，而是如何建立一个可采样、可泛化、可评价的分布映射。
+
+% =====================================================================
+\section{Generator 的质量评估}
+% =====================================================================
+
+训练出 generator 之后，下一步问题是：如何判断它好不好？这比分类任务困难得多。分类可以看 accuracy，回归可以看误差；生成任务没有唯一标准答案。一张生成图是否 ``好''，既涉及视觉质量，也涉及多样性、语义覆盖、是否抄袭训练资料，以及是否符合条件。
+
+\subsection{人类评估的问题}
+
+最直觉的做法是找人看生成图片。早期生成模型论文常常在最后展示几张图片，用视觉效果说服读者。但这有明显问题：
+
+\begin{itemize}
+    \item \textbf{昂贵。} 大规模人工评分需要成本。
+    \item \textbf{不稳定。} 不同评审者标准不同，同一评审者在不同时间也可能偏好变化。
+    \item \textbf{不公平。} 作者可能挑选最好看的样本，读者看到的是 cherry-picked 结果。
+    \item \textbf{难比较。} 不同论文展示的图片数量、数据集、训练预算不同，仅靠肉眼很难做严谨比较。
+\end{itemize}
+
+因此需要自动化指标。课程先从 ``用现成图像分类器判断单张图质量'' 讲起。
+
+\subsection{用分类器置信度估计图像质量}
+
+假设有一个已经训练好的图像分类器，例如 Inception Net 或 VGG。把 generator 产生的图片 $y$ 输入分类器，得到类别分布 $P(c|y)$。如果这个分布很集中，说明分类器很确定这张图像属于某个类别，图像可能比较清楚、像真实物体；如果分布很平坦，说明分类器困惑，图像可能模糊、混乱或不像任何真实类别。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig07_quality_classifier.jpg}
+    \caption{用现成图像分类器评估单张生成图质量：类别分布越集中，通常表示分类器越确信图中对象，视觉质量可能越高。\protect\footnotemark}
+    \label{fig:quality-classifier}
+\end{figure}
+\footnotetext{视频画面时间区间：约 17:35--19:07；字幕说明将生成图片输入图像分类系统，若输出分布集中，代表分类器较确信图像内容，可能表示质量较高。}
+
+这个想法可以捕捉 ``单张图是否清楚''，但它并不能判断 generator 是否覆盖了真实分布的多样性。一个 generator 如果只会产生一类非常清楚的图片，分类器也会给出高置信度；但这样的 generator 并不理想。
+
+\subsection{Mode collapse：高质量但低多样性}
+
+Mode collapse 指 generator 反复产生少数几种样本。单看一张样本可能不错，但生成一批样本后会发现来来去去都是相似结果。课程用二次元头像例子说明：训练到后期，某一张脸越来越多，最后几乎所有输出都变成同一张脸，只是在发色等局部属性上变化。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig08_mode_collapse.jpg}
+    \caption{Mode collapse：生成分布集中在真实分布的一小块区域，单张样本可能看起来不错，但整体多样性严重不足。\protect\footnotemark}
+    \label{fig:mode-collapse}
+\end{figure}
+\footnotetext{视频画面时间区间：约 19:19--20:32；字幕说明 generator 可能只会产生少数几张图，二次元头像训练中会出现同一张脸越来越多的现象。}
+
+直觉上，mode collapse 可以理解为 generator 找到了 discriminator 的某个盲点。只要某类样本能稳定骗过 discriminator，generator 就可能反复利用这条策略，而不是覆盖整个真实分布。课程还提到，即使是强大的模型和大量调参，也未必能完全避免 collapse；有些实践只能通过保存 checkpoint，在 collapse 发生前停止训练。
+
+\begin{warningbox}{高置信度不代表好 generator}
+    如果 generator 只产生一张非常清楚的图片，分类器可能每次都非常确信，质量指标看起来不错。但生成模型真正追求的是分布匹配：既要单张样本像真图，也要整体样本覆盖真实资料的变化范围。
+\end{warningbox}
+
+\subsection{Mode dropping：更隐蔽的覆盖不足}
+
+Mode dropping 比 mode collapse 更难发现。Collapse 往往肉眼可见：输出一批图，发现都差不多。Mode dropping 则可能生成一批看起来多样的样本，但只覆盖了真实资料的一部分。例如生成的人脸有男女、左右朝向等变化，看似丰富；下一轮或更仔细观察后才发现肤色、年龄、姿态或其他属性范围明显不足。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig09_mode_dropping.jpg}
+    \caption{Mode dropping：生成资料看起来有变化，但只覆盖真实资料分布的一部分，遗漏某些重要属性或族群。\protect\footnotemark}
+    \label{fig:mode-dropping}
+\end{figure}
+\footnotetext{视频画面时间区间：约 22:19--23:56；字幕用人脸生成例子说明 mode dropping 可能隐藏在看似合理的多样性之下，例如肤色覆盖不足。}
+
+从评估角度看，mode dropping 提醒我们：只看生成样本内部的多样性还不够，还要比较它与真实数据分布的覆盖关系。一个生成器可以在一个子分布内变化丰富，却完全忽略另一个真实子分布。
+
+\subsection{Diversity 与 Inception Score}
+
+为了量化多样性，可以让 generator 产生许多图片 $y^1,\ldots,y^N$，分别送入分类器得到 $P(c|y^n)$，再对这些分布取平均：
+\[
+    P(c)
+    =
+    \frac{1}{N}
+    \sum_{n=1}^{N} P(c|y^n).
+\]
+这里 $P(c|y^n)$ 是第 $n$ 张生成图片的类别分布，$P(c)$ 是整批生成图片的平均类别分布，$N$ 是生成图片数量。
+
+如果平均后的 $P(c)$ 很平坦，说明生成图片覆盖了很多类别，多样性可能较高；如果 $P(c)$ 很集中，说明大多数图片都被分类器判为同一类别，多样性可能较低。Inception Score 将单张图片的高置信度和整体类别分布的高多样性结合起来，常见写法是
+\[
+    \mathrm{IS}
+    =
+    \exp\left(
+    \mathbb{E}_{y\sim P_G}
+    \mathrm{KL}\bigl(P(c|y)\,\Vert\,P(c)\bigr)
+    \right).
+\]
+其中 $P_G$ 是 generator 诱导的生成分布，$\mathrm{KL}$ 衡量单张图片类别分布与整体平均类别分布之间的差异。好的情况是：单张图片的 $P(c|y)$ 集中，表示质量高；整批图片的 $P(c)$ 分散，表示多样性大，因此 KL 值较大，IS 较高。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig10_diversity_inception_score.jpg}
+    \caption{用分类器输出估计多样性：单张图要有集中分布，整批图的平均分布要尽量均匀；Inception Score 试图综合这两点。\protect\footnotemark}
+    \label{fig:diversity-is}
+\end{figure}
+\footnotetext{视频画面时间区间：约 24:33--26:48；字幕说明平均分类分布越均匀代表多样性越大，并提到 Inception Score 结合 quality 与 diversity。}
+
+但课程也指出，Inception Score 不一定适合所有任务。若作业目标是生成二次元头像，把它们丢进 ImageNet 训练的 Inception Net，输出类别可能并不能反映发色、眼睛、脸型等真正关心的变化。指标依赖分类器，而分类器的类别体系可能与生成任务的语义不匹配。
+
+\subsection{本章小结}
+
+Generator 评估至少要同时考虑质量与多样性。分类器置信度可以估计单张图是否清楚，但会被 mode collapse 欺骗；平均类别分布可以估计多样性，但依赖分类器类别是否适合任务。Inception Score 把两者合并，却仍有任务适配问题。生成模型评估的核心难题在于：我们想评价的是一个分布，而不是某几张好看的样本。
+
+% =====================================================================
+\section{FID 与评估指标的陷阱}
+% =====================================================================
+
+课程接着介绍作业中会使用的 Fréchet Inception Distance（FID）。FID 是今天生成模型论文中很常见的指标之一。它不直接看分类器最后输出的类别，而是取分类器中间层特征，将真实图片与生成图片映射到同一 feature space 后比较两组特征分布。
+
+\subsection{从图片到 feature vector}
+
+把一张图片送入 Inception Network，不取 softmax 后的类别，而取进入 softmax 前的 hidden representation。这个向量通常有上千维，可以看成对图片内容的高层语义表示。即使两张图片最后都被分类为 ``人脸''，它们在这个 feature vector 上仍可能因为发色、姿态、细节不同而分开。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig11_fid_feature_vector.jpg}
+    \caption{FID 不使用最后分类类别，而是使用 Inception Network 的中间层特征向量表示图片。\protect\footnotemark}
+    \label{fig:fid-feature}
+\end{figure}
+\footnotetext{视频画面时间区间：约 27:17--28:09；字幕说明将生成图片送入 Inception Network，取进入 softmax 之前的 hidden layer 输出作为图片表示。}
+
+对真实图片集合得到一组特征向量，对生成图片集合也得到一组特征向量。FID 将这两组高维特征分别近似为高斯分布：
+\[
+    f(x_{\mathrm{real}})\sim \mathcal{N}(\mu_r,\Sigma_r),
+    \qquad
+    f(x_{\mathrm{gen}})\sim \mathcal{N}(\mu_g,\Sigma_g).
+\]
+其中 $f(\cdot)$ 是特征抽取网络，$\mu_r,\Sigma_r$ 是真实图片特征的均值与协方差，$\mu_g,\Sigma_g$ 是生成图片特征的均值与协方差。
+
+FID 的常见公式为
+\[
+    \mathrm{FID}
+    =
+    \lVert \mu_r-\mu_g\rVert_2^2
+    +
+    \mathrm{Tr}
+    \left(
+    \Sigma_r+\Sigma_g
+    -
+    2(\Sigma_r\Sigma_g)^{1/2}
+    \right).
+\]
+公式中的第一项比较两组特征中心是否接近，第二项比较两组特征协方差形状是否接近。FID 是距离，越小表示生成特征分布越接近真实特征分布。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig12_fid_gaussian_distance.jpg}
+    \caption{FID 将真实图像与生成图像的特征分别拟合为高斯分布，并计算两者的 Fréchet distance；数值越小通常越好。\protect\footnotemark}
+    \label{fig:fid-gaussian}
+\end{figure}
+\footnotetext{视频画面时间区间：约 28:42--30:58；字幕说明红点是真实图片特征、蓝点是生成图片特征，FID 计算两组高斯之间的距离，且需要大量 samples 才较稳定。}
+
+\subsection{FID 的优点与限制}
+
+FID 相比 Inception Score 有一个重要优点：它直接比较真实资料与生成资料，而不是只看生成资料自己的分类结果。这样可以更好地捕捉分布偏移。若生成图片虽然清楚但与真实图片的整体 feature distribution 不一致，FID 会变大。
+
+但 FID 也有明显假设和限制：
+
+\begin{itemize}
+    \item \textbf{高斯假设。} FID 假设 feature vectors 可以用高斯分布近似。真实特征分布未必高斯，这只是实用近似。
+    \item \textbf{样本量需求。} 均值和协方差估计需要大量样本。样本太少时，FID 波动会很大。
+    \item \textbf{特征抽取器依赖。} FID 依赖 Inception 或其他网络的表示。如果特征抽取器与任务不匹配，指标也会偏。
+    \item \textbf{不能检测所有失败。} FID 低不代表 generator 一定真正学到了生成机制。
+\end{itemize}
+
+课程提到作业不会只看 FID，还会结合动画人脸侦测数量等任务特定指标。这个设计体现了一个原则：生成模型评估常常需要多个互补指标，单一指标容易被钻空子。
+
+\subsection{大规模比较：Are GANs Created Equal?}
+
+课程引用 ``Are GANs Created Equal? A Large-Scale Study'' 说明不同 GAN objective 的比较。该研究在多个数据集上测试不同 GAN 方法，并用不同 random seed 得到分布式结果。图中每个方法不是一个点，而是一段分布，表示不同随机种子和训练设置会带来显著差异。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig13_gans_created_equal.jpg}
+    \caption{不同 GAN 方法在多组数据集上的 FID 分布比较；课程提醒不能从图中简单得出 ``所有 GAN 都一样'' 的结论。\protect\footnotemark}
+    \label{fig:gans-created-equal}
+\end{figure}
+\footnotetext{视频画面时间区间：约 31:05--33:58；字幕讨论该研究比较多种 GAN objective、random seed 与 learning rate，并提醒网络架构固定会影响结论解释。}
+
+这里有两个值得注意的结论。第一，GAN 方法在不同 random seed 下差异很大，训练稳定性本身就是重要指标。第二，课程提醒不能把研究标题理解为 ``所有 GAN 研究都没有意义''。如果实验固定了网络架构，只搜索 random seed 和 learning rate，那么结果可能无法反映某种 GAN objective 在其他架构下的优势。例如 WGAN 早期强调对网络架构更鲁棒，这类性质未必能从单一架构比较中完全看出来。
+
+\subsection{Memory GAN：低 FID 的反例}
+
+评估指标最危险的地方是：模型可能优化了指标，却没有完成我们真正想要的任务。课程用 memory GAN 说明这一点。如果 generator 只是把训练资料背下来，甚至直接输出与训练集一样的图片，那么生成分布与真实训练分布会非常接近，FID 可能很小。但这显然不是我们想要的 generator，因为训练资料本来就在手上，直接从训练集 sample 就可以得到同样结果。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig14_memory_gan.jpg}
+    \caption{Memory GAN 的评估陷阱：若生成图片直接复制或简单翻转训练资料，FID 可能很小，但模型没有真正学会产生新的样本。\protect\footnotemark}
+    \label{fig:memory-gan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 34:34--36:09；字幕指出若生成资料与真实资料相同或只是左右翻转，FID 与相似度检查都可能无法完整揭示问题。}
+
+进一步地，课程还提出 ``左右翻转'' 的情况：如果 generator 学到把所有训练图片水平翻转，肉眼看起来合理，FID 也可能不错，简单的逐图相似度检查却不一定发现它只是做了固定变换。这说明生成模型评估不仅要看距离，还要看新颖性、覆盖性、语义合理性和任务目标。
+
+\begin{importantbox}{评估指标的正确使用方式}
+    指标不是目标本身，而是目标的代理。FID、Inception Score、人脸侦测数量都只能观察生成质量的一部分。真正可靠的评估往往需要：自动指标、人工检查、训练集相似度分析、条件匹配检查、下游任务验证等多种证据一起使用。
+\end{importantbox}
+
+\subsection{本章小结}
+
+FID 通过比较真实图片与生成图片在 feature space 中的高斯分布，提供了比单纯分类置信度更有力的分布级评估。但它仍依赖高斯近似、样本数量和特征抽取器，也无法保证模型没有记忆训练集。生成模型评估本身就是研究问题；低指标值只能说明模型在某个代理指标上表现好，不能自动等价为真正优秀的 generator。
+
+% =====================================================================
+\section{Conditional Generation：让生成结果可控}
+% =====================================================================
+
+到目前为止，generator 的输入主要是随机向量 $z$。这能产生多样样本，却不方便控制输出。Conditional generation 要解决的是：给定条件 $x$，例如文字描述、类别标签、草图、声音或另一张图片，让 generator 根据条件与随机向量一起生成目标 $y$。
+
+\subsection{Text-to-image 的基本设定}
+
+以文字生图为例，条件 $x$ 可以是 ``red eyes''、``red hair, green eyes'' 等文字描述，随机向量 $z$ 控制同一条件下的变化。模型希望学到：
+\[
+    y = G(x,z).
+\]
+其中 $x$ 是条件，$z$ 是随机噪声，$y$ 是生成图片。固定 $x$、改变 $z$，应该得到不同但都符合条件的图片；固定 $z$、改变 $x$，输出语义应该跟着条件改变。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig15_text_to_image_examples.jpg}
+    \caption{Text-to-image 条件生成：文字条件控制属性，随机向量 $z$ 控制同一属性下的具体样貌变化。\protect\footnotemark}
+    \label{fig:text-to-image}
+\end{figure}
+\footnotetext{视频画面时间区间：约 37:06--39:05；字幕说明输入红眼睛、红发绿眼等条件时，模型应产生符合条件但彼此不同的角色。}
+
+文字如何输入 generator 并没有唯一标准。传统做法可能用 RNN 编码文字，再把向量传入 generator；今天也可以使用 transformer encoder，将文字编码成向量或 token features。课程强调的是概念：只要 generator 能读入条件并利用条件，具体编码方式可以随模型设计变化。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig16_conditional_generator.jpg}
+    \caption{Conditional generator 的形式化表示：由条件 $c$ 和随机向量 $z$ 共同决定输出 $y=G(c,z)$。\protect\footnotemark}
+    \label{fig:conditional-generator}
+\end{figure}
+\footnotetext{视频画面时间区间：约 39:05--39:18；字幕说明 conditional GAN 中 generator 有两个输入：从 normal distribution sample 的 $z$ 与文字条件 $x$。}
+
+\subsection{为什么 discriminator 也必须看条件}
+
+如果 discriminator 只看图片 $y$，它只能判断图片是否真实，不能判断图片是否符合条件。这样 generator 可能学会无视 $x$：不管输入什么文字，都产生一张清晰好看的图片，只要能骗过 discriminator 就行。这显然不是 conditional generation 的目标。
+
+因此 conditional GAN 中 discriminator 也要读入条件，形式上可以写为 $D(x,y)$。它输出的分数不只是 ``图片像不像真实图片''，还包括 ``图片与条件是否匹配''。只有当图片真实且符合条件时，discriminator 才应该给高分。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig17_conditional_discriminator.jpg}
+    \caption{Conditional discriminator 同时读入条件 $x$ 与图片 $y$，判断图片是否真实以及是否与条件匹配。\protect\footnotemark}
+    \label{fig:conditional-discriminator}
+\end{figure}
+\footnotetext{视频画面时间区间：约 40:19--41:10；字幕说明只看图片的 discriminator 会让 generator 忽略文字条件，因此 discriminator 必须同时看 $x$ 与 $y$。}
+
+一个基本的 conditional GAN objective 可以写成：
+\[
+    \min_G \max_D
+    \mathbb{E}_{(x,y)\sim P_{\mathrm{data}}}
+    [\log D(x,y)]
+    +
+    \mathbb{E}_{x\sim P_{\mathrm{data}},\,z\sim P_z}
+    [\log(1-D(x,G(x,z)))].
+\]
+这里第一项让真实配对 $(x,y)$ 得到高分，第二项让生成配对 $(x,G(x,z))$ 得到低分，而 generator 试图让第二项中的生成图片骗过 discriminator。
+
+\subsection{负样本不只是假图，还包括错配图}
+
+课程特别强调，实作上只用 ``真实配对为正、生成图片为负'' 往往不够。Discriminator 还需要看到另一类负样本：图片本身是真实图片，但文字条件与图片不匹配。例如图片是黄头发角色，却配上 ``red eyes'' 或其他不对应描述。这样 discriminator 才会真正学习条件匹配，而不是只学习图片真假。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.84\textwidth]{figures/fig18_matching_negative_pairs.jpg}
+    \caption{Conditional GAN 的 discriminator 需要三类信号：真实匹配为正，生成图片为负，真实但条件错配的 pair 也应为负。\protect\footnotemark}
+    \label{fig:matching-negatives}
+\end{figure}
+\footnotetext{视频画面时间区间：约 41:50--42:50；字幕说明除了 positive examples 与生成图片负样本，还应加入文字和真实图片乱配的负样本。}
+
+\begin{importantbox}{条件生成的核心约束}
+    Conditional GAN 的目标不是 ``生成一张好图''，而是 ``生成一张既好又符合条件的图''。因此 discriminator 必须评估两个维度：视觉真实性与条件一致性。错配负样本是让 discriminator 学会第二个维度的关键。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Conditional generation 让 generator 从无条件采样变成可控生成。Generator 接收条件 $x$ 与随机变量 $z$，discriminator 也必须同时接收 $x$ 与 $y$，否则 generator 会无视条件。训练时除了真实配对和生成负样本，还需要真实图片与错误条件组成的错配负样本，才能逼迫模型学习条件语义。
+
+% =====================================================================
+\section{Image Translation 与更多条件生成应用}
+% =====================================================================
+
+Conditional generation 不只用于文字生图，也可以用于图像到图像、声音到图像、甚至静态头像到动态说话头的生成。共同点是：输入条件提供约束，随机性或模型内部表示提供变化空间。
+
+\subsection{Image-to-image translation 与 pix2pix}
+
+在 image-to-image translation 中，条件 $x$ 本身是一张图片，输出 $y$ 是另一种风格或模态的图片。例如建筑平面图到外观图、黑白图到彩色图、素描到真实照片、白天到夜晚、有雾到无雾等。Pix2pix 是这类 supervised image translation 的经典例子。
+
+若只用 supervised learning，例如最小化像素级 $L_1$ 或 $L_2$ 误差，输出常常模糊。原因是同一个输入可能对应多个合理输出，像素误差会鼓励模型预测这些可能性的平均值，而平均值在图像上往往就是模糊结果。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig19_pix2pix_supervised.jpg}
+    \caption{Image translation 可以用 supervised learning 做，但单独使用像素损失时输出容易模糊，因为多个合理答案被平均。\protect\footnotemark}
+    \label{fig:pix2pix-supervised}
+\end{figure}
+\footnotetext{视频画面时间区间：约 43:50--44:40；字幕说明 image-to-image 可以用监督学习，但文献中单纯监督学习常得到模糊输出。}
+
+GAN 的 discriminator 可以补上 ``看起来像真实图片'' 的约束。对于 pix2pix，discriminator 同时看输入条件图和输出图，判断这对图片是否真实匹配。这样 generator 不只要接近标准答案，还要产生视觉上锐利、真实的细节。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig20_pix2pix_gan_discriminator.jpg}
+    \caption{Pix2pix 中的 discriminator 同时检查条件图片与生成图片；GAN loss 提升真实感，但通常还要结合监督损失避免过度想象。\protect\footnotemark}
+    \label{fig:pix2pix-gan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 45:19--46:10；字幕说明 GAN 输出更真实，但可能生成输入没有的细节，因此文献中常结合 GAN 与 supervised learning。}
+
+课程指出，单独用 GAN 也有问题：generator 可能 ``想象力过度丰富''，生成输入中没有的结构。例如建筑图左上角没有东西，输出却在屋顶上加了类似烟囱或窗户的物体。实践中常把 adversarial loss 与 supervised loss 结合：
+\[
+    \mathcal{L}_G
+    =
+    \mathcal{L}_{\mathrm{adv}}
+    +
+    \lambda\,\mathcal{L}_{\mathrm{sup}}.
+\]
+其中 $\mathcal{L}_{\mathrm{adv}}$ 鼓励图片真实，$\mathcal{L}_{\mathrm{sup}}$ 鼓励输出接近 paired ground truth，$\lambda$ 控制两者权重。前者减少模糊，后者限制乱加内容。
+
+\subsection{Sound-to-image：声音作为条件}
+
+声音也可以作为条件。视频天然提供音画配对资料：每一帧画面附近都有对应音频片段。收集大量视频后，可以训练 conditional GAN 根据声音想象画面，例如听到水声生成溪流或瀑布，听到快艇声生成水面快艇。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig21_sound_to_image.jpg}
+    \caption{Sound-to-image 条件生成：声音强度变化可对应生成画面中的水花、速度感等视觉变化，但结果也可能不稳定。\protect\footnotemark}
+    \label{fig:sound-to-image}
+\end{figure}
+\footnotetext{视频画面时间区间：约 46:26--49:04；字幕说明可从视频中收集声音与画面配对资料，训练模型根据声音生成场景；课程也提醒有些结果是 cherry-picked，很多生成仍不知所云。}
+
+这个例子说明条件生成不要求条件一定是标签或文字。只要存在可学习的配对关系，条件可以是文本、类别、图片、草图、语音、音乐、动作、深度图等。但条件越弱、配对噪声越大，模型越容易生成模糊或不可靠结果。
+
+\subsection{Talking head generation}
+
+课程最后展示了 talking head generation：给定一张静态肖像，让人物产生说话或表情变化。这里条件可以包括原始头像、驱动视频、关键点、语音或动作表示。它仍属于 conditional generation：输出不是任意视频，而是受输入身份和动作条件约束的视频。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig22_talking_head_generation.jpg}
+    \caption{Talking head generation：以静态肖像或身份图像为条件，生成具有动作或表情变化的图像序列。\protect\footnotemark}
+    \label{fig:talking-head}
+\end{figure}
+\footnotetext{视频画面时间区间：约 49:04--49:35；字幕以蒙娜丽莎说话为例，说明 conditional GAN 可用于会动的肖像生成。}
+
+\subsection{从 paired data 到 unpaired data}
+
+本讲主要讨论 paired conditional generation，也就是训练资料中有条件与目标的成对样本：文字配图片、草图配照片、声音配画面。视频末尾转向下一主题 ``Learning from Unpaired Data''。这预告了一个更困难的问题：如果没有成对资料，只有两个资料域各自的样本，能否学习从一个域转换到另一个域？这正是后续 CycleGAN 等方法要解决的方向。
+
+\subsection{本章小结}
+
+条件生成的应用范围很广。Image translation 说明 GAN 可以补足监督学习的模糊问题，但也需要监督损失约束细节；sound-to-image 说明条件可以来自跨模态信号，但配对噪声会影响可靠性；talking head generation 则展示了条件生成在动态内容上的潜力。共同原则是：条件负责控制语义，随机性负责提供变化，discriminator 负责同时检查真实感与条件一致性。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲从 GAN 的训练困难出发，转向生成器评估与 conditional generation。它补上了前两讲中较少讨论的一点：即使我们知道 GAN 的理论目标，也会面对两个现实问题。第一，训练出来的 generator 到底好不好？第二，如何让 generator 不只是随机生成，而是按条件生成？
+
+核心脉络可以压缩成四句话：
+
+\begin{enumerate}
+    \item GAN 难训，因为 generator 与 discriminator 必须保持动态平衡；任何一方停滞都会影响另一方。
+    \item 序列 GAN 更难，因为离散 token 选择切断了普通反向传播，常需要强化学习式估计或预训练。
+    \item 生成模型评估是分布级问题，不能只看单张样本；quality、diversity、FID、新颖性和条件匹配都需要考虑。
+    \item Conditional GAN 的关键是让 discriminator 同时看条件与输出，并加入错配负样本，避免 generator 无视条件。
+\end{enumerate}
+
+对实践者来说，本讲最重要的提醒是：指标要服务于目标，而不能取代目标。FID 小、Inception Score 高、分类器信心强，都只是在某个角度上支持 ``生成结果较好'' 的证据。若模型只是记忆训练集、遗漏重要模式、无视条件，指标仍可能被欺骗。
+
+\begin{knowledgebox}{进一步思考}
+    后续学习生成模型时，可以把本讲作为评估清单：样本是否清楚？分布是否多样？是否覆盖真实资料的重要模式？是否只是记忆训练集？若有条件，输出是否真的遵守条件？这些问题不只适用于 GAN，也适用于 VAE、flow、diffusion 和现代多模态生成模型。
+\end{knowledgebox}
+
+下一讲从 ``paired data'' 走向 ``unpaired data''。当我们没有一一对应的输入输出样本时，模型必须依靠循环一致性、分布匹配或其他结构假设来学习跨域转换。这会把 conditional generation 的问题推进到更接近真实应用的场景：资料往往不完美，监督往往不完整，而模型仍要从有限信号中学出可控转换。
+
+\end{document}

@@ -1,0 +1,496 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{语音与影像上的神奇自督导式学习模型}
+\newcommand{\notesubtitle}{Self-supervised Learning for Speech and Image}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 1 小时 21 分 58 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=27}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从文字自督导到语音与影像}
+% =====================================================================
+
+本讲把前面几讲的自督导式学习从文字推广到语音和影像。核心问题是：文字里的 BERT、GPT 可以靠未标注文本学到可迁移表示；那么语音和影像能不能也靠大量未标注数据学到通用表示，再迁移到下游任务？
+
+\subsection{复习：文字版自督导的使用方式}
+
+文字里的典型流程是：先用未标注文本训练 BERT，再把 BERT 的输出接到下游模型。以情感分类为例，BERT 先把输入句子转换成一串 contextual representation，再由下游模型判断正面或负面。下游任务可以是分类、问答、序列标注等；BERT 负责提供强表示，下游模型负责读取这些表示。
+
+\framefig{0.88}{figures/fig01_text_ssl_review.jpg}
+{文字版自督导的典型用法：先用未标注文本训练 BERT，再把 BERT 表示交给下游模型}
+{约 00:02:15--00:02:30}
+
+这个框架有两个关键点。第一，预训练资料不需要人工标签，只需要大量自然文本。第二，预训练目标不一定等于下游目标；BERT 预训练时做填空，下游却可以做情感分类、问答或推理。自督导式学习的价值正在这里：用容易取得的资料构造训练信号，学到可迁移表示。
+
+\subsection{语音版 BERT：从未标注语音学表示}
+
+课程接着做类比：如果有大量未标注语音讯号，能不能训练出「speech version of BERT」？这里的输入不再是 token，而是语音波形或声学特征序列。模型输出一串语音表示，像 BERT 输出文字表示一样，供后续任务使用。
+
+\framefig{0.88}{figures/fig02_speech_ssl_question.jpg}
+{语音自督导的目标是用未标注语音训练 speech version of BERT，使模型学到可迁移语音表示}
+{约 00:03:45--00:04:00}
+
+预训练完成后，可以把 speech BERT 的输出交给 speech recognition 模型，得到文本结果。它也可以用于 speaker identification、emotion recognition、keyword spotting 等任务。关键思想和文字一样：先用大量未标注资料学表示，再用少量标注资料适配任务。
+
+\framefig{0.88}{figures/fig03_speech_downstream_transfer.jpg}
+{Speech BERT 的表示可以输入下游模型，例如把语音讯号转换成文字的语音辨识任务}
+{约 00:05:00--00:05:15}
+
+\subsection{SUPERB：语音表示的综合评测}
+
+语音表示是否通用，需要 benchmark 检验。SUPERB（Speech processing Universal PERformance Benchmark）把语音任务分成多类：content、speaker、paralinguistic、semantic、synthesis 等。它不只看语音辨识，也看说话人、情绪、意图、语音增强与分离等任务。
+
+\framefig{0.90}{figures/fig04_superb_benchmark.jpg}
+{SUPERB 用多种下游任务评估语音自督导表示，覆盖内容、说话人、语义、合成等维度}
+{约 00:08:15--00:08:30}
+
+\begin{knowledgebox}{为什么语音 benchmark 要很宽}
+    语音讯号同时包含「说了什么」「谁说的」「怎么说的」「语气情绪」「录音环境」等信息。一个好的语音自督导模型不应该只服务语音辨识，还应该能迁移到说话人辨识、情绪辨识、语音增强、语音转换等不同任务。
+\end{knowledgebox}
+
+\subsection{影像版自督导：不只用于分类}
+
+影像自督导的下游任务同样很多，包括 image recognition、object detection、semantic segmentation、visual navigation 等。课程强调，影像自督导不是只为了分类，而是为了学到能够服务多种视觉任务的 representation。
+
+\framefig{0.90}{figures/fig05_image_ssl_tasks.jpg}
+{影像自督导表示可迁移到辨识、侦测、语义分割与视觉导航等多种任务}
+{约 00:12:00--00:12:15}
+
+近年来 visual self-supervised representation learning 的表现持续提升，在部分设定中甚至超过 supervised learning 基线。图中的横轴是论文时间，纵轴是相对监督式学习的表现；不同颜色代表不同任务或评测方式。课程用这张图说明：自督导不再只是「没有标签时的替代品」，而是可以成为强大的通用预训练方法。
+
+\framefig{0.88}{figures/fig06_visual_ssl_performance.jpg}
+{Visual SSL 方法持续进步，在多项视觉任务上逼近甚至超过监督式学习基线}
+{约 00:15:15--00:15:30}
+
+\begin{importantbox}{本讲的五类方法}
+    课程把语音和影像自督导方法整理成五类：generative approaches、predictive approaches、contrastive learning、bootstrapping approaches、extra regularization。它们都在回答同一个问题：没有人工标签时，怎样构造一个足够有用、又不会太容易的训练目标。
+\end{importantbox}
+
+\subsection{本章小结}
+
+文字、语音和影像的自督导式学习有共同骨架：先在大量未标注资料上预训练，再把表示迁移到下游任务。但三种模态的资料结构不同。文字是离散 token，语音是连续时间讯号，影像是空间结构与像素细节。因此同样叫「自督导」，具体训练目标会很不一样。
+
+% =====================================================================
+\section{Generative Approaches：遮住一部分，再还原它}
+% =====================================================================
+
+第一类方法是 generative approaches。它的直觉和 BERT/GPT 很接近：模型看到输入的一部分，要生成或还原被遮住、被省略、未来会出现的内容。文字中可以预测 token；语音和影像也可以做类似事情，但难点在于连续讯号和高维细节。
+
+\subsection{从 BERT/GPT 到语音 masking}
+
+课程用 BERT 系列和 GPT 系列做引子。BERT 式方法遮住一部分输入并重建，GPT 式方法根据过去预测未来。把这套思想搬到语音，就是遮住部分声学特征，要求模型根据上下文还原。
+
+\framefig{0.82}{figures/fig07_generative_approaches.jpg}
+{Generative approaches 对应文字中的 BERT/GPT 系列：遮住一部分或根据过去预测未来}
+{约 00:16:15--00:16:30}
+
+以 Mockingjay 为例，输入语音中有些 frame 被 mask，模型要学习重建原始声学特征。它类似 BERT 的 masked language modeling，但预测对象不是词表中的 token，而是连续声学向量。
+
+\framefig{0.90}{figures/fig08_speech_masking_reconstruction.jpg}
+{语音 masking 方法遮住部分声学特征，并训练模型重建被遮住的部分}
+{约 00:18:30--00:18:45}
+
+语音和文字不同：相邻声学特征非常平滑。如果只遮住很小片段，模型可能靠左右邻近 frame 的局部连续性轻易猜出答案，学不到高层语义。因此语音 masking 常遮连续片段，或遮特定维度，迫使模型利用更宽的上下文。
+
+\framefig{0.88}{figures/fig09_speech_masking_strategies.jpg}
+{语音 masking 需要更有挑战性的遮罩策略，例如遮连续时间片段或遮特定维度}
+{约 00:21:45--00:22:00}
+
+\begin{warningbox}{重建目标不能太容易}
+    如果被遮住的信息可以靠局部平滑性直接插值出来，模型可能只学到低层讯号规律，而不是语音内容、说话人或语义。自督导目标的设计要避免「题目太简单」，否则 representation 的迁移价值会有限。
+\end{warningbox}
+
+\subsection{Predicting future：语音版 GPT}
+
+GPT 式思路是根据过去预测未来。语音中也可以要求模型根据前面的声学片段预测未来 frame。课程提醒，和文字 next token prediction 不同，语音中通常要预测更远的未来，例如 $n\geq 3$，才比较有意义；因为预测紧邻 frame 太容易。
+
+\framefig{0.88}{figures/fig10_speech_predicting_future.jpg}
+{语音 predicting future 根据过去声学特征预测未来，通常需要预测较远的 frame 才有挑战性}
+{约 00:24:30--00:24:45}
+
+\subsection{影像上的生成式方法}
+
+影像也可以做生成式目标。Image GPT 和 masked image modeling 把影像切成 patch 或像素序列，再做 autoregressive 或 masked prediction。预训练后，可以用 linear probe 或 fine-tuning 检验表示是否能用于分类。
+
+\framefig{0.90}{figures/fig11_image_gpt_bert.jpg}
+{影像中的 GPT/BERT 式方法把图像转换成 patch 或像素序列，再做生成或遮罩预测}
+{约 00:26:00--00:26:15}
+
+但课程也指出，语音和影像包含大量难以生成的细节。像素、纹理、背景、噪声和声学细节未必都和下游任务有关。如果目标是精确重建原始输入，模型可能把容量花在低层细节，而不是学可迁移的抽象语义。
+
+\begin{importantbox}{Generative approach 的优缺点}
+    优点是训练目标自然，资料本身就提供答案；缺点是重建高维连续讯号可能太困难，也可能迫使模型关注和下游任务无关的细节。语音和影像中的 generative objective 往往需要 masking 策略、离散化或降维设计配合。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Generative approaches 的共同思想是「遮住或省略一部分，让模型补回来」。文字中补 token，语音中补声学特征或未来 frame，影像中补像素或 patch。它们最直观，但在语音和影像上必须小心：目标太容易，模型学不到高层表示；目标太细，模型又可能被低层重建牵着走。
+
+% =====================================================================
+\section{Predictive Approaches：设计一个不需人工标签的前置任务}
+% =====================================================================
+
+第二类方法是 predictive approaches。它们不一定要求重建原始输入，而是人为设计一个可自动产生标签的任务，让模型为了解这个任务学到有用 representation。关键在于：任务要能由资料本身生成标签，同时又和语义结构有关。
+
+\subsection{影像：预测旋转角度}
+
+一个经典例子是 predicting rotation。把同一张图旋转 $0^\circ$、$90^\circ$、$180^\circ$、$270^\circ$，模型要预测旋转角度。标签不需要人工标注，因为旋转角度是我们自己施加的变换；但模型若要判断方向，必须理解影像中的结构。
+
+\framefig{0.82}{figures/fig12_image_rotation_prediction.jpg}
+{Predicting rotation 用自动生成的旋转角度作为标签，训练模型理解影像结构}
+{约 00:29:15--00:29:30}
+
+\subsection{影像：预测局部上下文关系}
+
+另一类任务是 context prediction。给模型两个 patch，让它预测它们在原图中的相对位置。这个任务迫使模型理解局部区域之间的空间关系，例如某块区域应该在另一块区域的上方、下方或旁边。
+
+\framefig{0.82}{figures/fig13_image_context_prediction.jpg}
+{Context prediction 让模型根据局部 patch 预测相对位置，从空间关系中学习视觉表示}
+{约 00:31:30--00:31:45}
+
+课程也提到，语音中有类似想法：不一定直接还原完整连续讯号，而是预测简化后的结构、类别或上下文关系。这样可以避开精细生成的困难。
+
+\subsection{Predict simplified objects：先简化，再预测}
+
+语音和影像可以先做 feature extraction 或 clustering，把连续、复杂的输入变成较简单的离散目标，再让模型预测这些目标。语音中的 HuBERT、BEST-RQ，影像中的 DeepCluster，都可以放在这个思路下理解。
+
+\framefig{0.88}{figures/fig14_predict_simplified_objects.jpg}
+{Predict simplified objects 先把输入特征聚类或离散化，再训练模型预测简化后的目标}
+{约 00:34:30--00:34:45}
+
+这类方法的要点不是「聚类本身很神奇」，而是聚类把困难的原始讯号重建问题变成较稳定的类别预测问题。模型不用复原每个细节，只需预测抽象后的类别或 cluster index，更容易学到下游有用的结构。
+
+\begin{knowledgebox}{Predictive approach 和 generative approach 的区别}
+    Generative approach 常要求模型还原输入本身；predictive approach 则设计一个代理任务，例如旋转角度、patch 相对位置、cluster index。后者不一定保留全部低层细节，但可能更直接鼓励模型学习结构性信息。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Predictive approaches 的重点是「设计任务」。标签不来自人工，而来自我们对输入做的变换或简化。旋转预测、上下文预测、cluster 预测都属于这类方法。好的 predictive objective 要在两件事之间平衡：足够容易训练，但不能容易到只靠低层捷径；足够贴近语义，但不需要人工标签。
+
+% =====================================================================
+\section{Contrastive Learning：拉近正样本，推远负样本}
+% =====================================================================
+
+第三类方法是 contrastive learning。它不要求模型生成输入，也不一定设计显式类别标签，而是定义相似与不相似：同一资料的不同视图应该接近，不同资料的视图应该远离。
+
+\subsection{基本思想}
+
+Contrastive learning 需要 positive pair 和 negative pair。Positive pair 通常来自同一资料的不同变换，例如同一图片的两个增强版本；negative pair 来自不同资料。训练目标是让 positive pair 的表示尽量接近，让 negative pair 尽量远。
+
+\framefig{0.88}{figures/fig15_contrastive_learning_basic.jpg}
+{Contrastive learning 让 positive pair 的表示接近，让 negative pair 的表示远离}
+{约 00:37:15--00:37:30}
+
+常见的 InfoNCE 形式可以写成：
+
+$$
+\mathcal{L}_{i}
+=-\log
+\frac{\exp(\operatorname{sim}(z_i,z_i^+)/\tau)}
+{\exp(\operatorname{sim}(z_i,z_i^+)/\tau)
++\sum_{j=1}^{K}\exp(\operatorname{sim}(z_i,z_j^-)/\tau)}
+$$
+
+符号说明：
+\begin{itemize}
+    \item $z_i$：当前样本的表示。
+    \item $z_i^+$：positive sample 的表示。
+    \item $z_j^-$：第 $j$ 个 negative sample 的表示。
+    \item $\operatorname{sim}(\cdot,\cdot)$：相似度函数，常用 dot product 或 cosine similarity。
+    \item $\tau$：temperature，控制 softmax 的尖锐程度。
+\end{itemize}
+
+\subsection{SimCLR：用资料增强制造正样本}
+
+SimCLR 的做法是对同一张图做随机裁切、颜色扰动、模糊等 data augmentation，得到两个不同视图，把它们当作 positive pair。不同图像的增强版本则作为 negative pair。模型必须学到对增强不敏感、对语义差异敏感的表示。
+
+\framefig{0.90}{figures/fig16_simclr_positive_negative.jpg}
+{SimCLR 通过资料增强建立 positive pair，并把不同资料作为 negative pair}
+{约 00:39:45--00:40:00}
+
+这个做法的关键在 augmentation。增强不能太弱，否则任务太容易；也不能太强，否则 positive pair 的语义可能被破坏。课程提到，如果增强后看起来和原图差太多，模型被迫拉近不该相近的表示，训练目标会变得不合理。
+
+\subsection{MoCo：memory bank 与 momentum encoder}
+
+MoCo 关注 negative samples 的组织方式。它用 queue 或 memory bank 存放大量负样本表示，并用 momentum encoder 产生稳定的 key representation。这样可以在较小 batch 下获得更多 negative examples。
+
+\framefig{0.88}{figures/fig17_moco_memory_momentum.jpg}
+{MoCo 使用 memory bank 或 momentum encoder，让 contrastive learning 获得更多稳定的 negative samples}
+{约 00:41:15--00:41:30}
+
+\subsection{语音：CPC 与 wav2vec 系列}
+
+语音中的 CPC 与 wav2vec 可以看成 contrastive learning for speech。模型根据前文表示预测未来表示，并在候选向量中区分真正未来片段和负样本。它不一定直接重建波形，而是通过对比目标学习能预测未来结构的 representation。
+
+\framefig{0.90}{figures/fig18_speech_contrastive_cpc_wav2vec.jpg}
+{CPC 与 wav2vec 通过区分真实未来片段和负样本，学习语音表示}
+{约 00:44:15--00:44:30}
+
+VQ-wav2vec 进一步引入 quantization，把连续语音表示转换成离散 token。离散 token 可以作为后续 BERT-like 模型的输入，形成「先离散化，再做 masked prediction」的路线。
+
+\framefig{0.90}{figures/fig19_vq_wav2vec_quantization.jpg}
+{VQ-wav2vec 把连续语音表示量化成离散 token，使语音可进入类似 BERT 的训练流程}
+{约 00:46:00--00:46:15}
+
+Discrete BERT 把 VQ-wav2vec 产生的离散 token 当成输入，再用 BERT 架构做遮罩预测。这条线把语音问题转成更接近文字问题：先把连续声音离散化，再对离散序列做自督导。
+
+\framefig{0.90}{figures/fig20_discrete_bert.jpg}
+{Discrete BERT 固定前级 VQ-wav2vec encoder，再用 BERT 架构处理离散语音 token}
+{约 00:47:15--00:47:30}
+
+\subsection{wav2vec 2.0：连续输入与量化目标}
+
+wav2vec 2.0 把特征 encoder、context network 与 quantized target 联合训练。输入仍然是连续语音特征，部分位置被 mask；目标端则使用量化后的离散目标，通过 contrastive loss 区分正确目标和负样本。
+
+\framefig{0.90}{figures/fig21_wav2vec2_joint_training.jpg}
+{wav2vec 2.0 将连续输入、遮罩 context encoder 与量化目标结合起来共同训练}
+{约 00:49:45--00:50:00}
+
+课程强调两个设计点：连续输入很关键，量化目标也会改善 performance。换句话说，wav2vec 2.0 不是简单地「全部离散化」或「全部连续化」，而是在输入端保留连续声学细节，在目标端用量化类别提供更稳定的对比信号。
+
+\framefig{0.90}{figures/fig22_wav2vec2_design_notes.jpg}
+{wav2vec 2.0 的经验结论：连续输入很关键，量化目标有助于提升表现}
+{约 00:52:15--00:52:30}
+
+\subsection{把 BERT 也看成对比学习}
+
+课程给出一个有趣视角：BERT 的 masked token prediction 也可以被看成一种分类或对比。被 mask 的位置要在词表中选择正确 token，正确 token 是 positive，其他 token 是 negative。差别在于，文字的负样本集合是有限词表；语音的负样本空间是连续且巨大。
+
+\framefig{0.88}{figures/fig23_bert_as_contrastive.jpg}
+{BERT 的 masked token prediction 可被视为在词表中区分正确 token 与其他 token}
+{约 00:55:45--00:56:00}
+
+分类和 contrastive 的形式也很接近。分类模型把表示和每个类别的 embedding 比较，再做 softmax；contrastive learning 把表示和正负样本 embedding 比较。二者都在学习相似度，只是「候选集合」的来源不同。
+
+\framefig{0.88}{figures/fig24_classification_vs_contrastive.jpg}
+{分类与对比学习都可看成相似度比较：分类比较类别 embedding，对比学习比较正负样本 embedding}
+{约 00:58:30--00:58:45}
+
+\subsection{负样本选择并不简单}
+
+在文字分类里，负样本可以是词表中的其他 token，数量有限；在语音里，只要不是当前被 mask 的声音片段，理论上都可能是负样本，空间近乎无限。负样本太容易，模型学不到细粒度区分；负样本太难，可能把本应相近的语义拉远。
+
+\framefig{0.88}{figures/fig25_speech_negative_space.jpg}
+{语音中的 negative examples 数量难以穷举，和文字词表分类不同}
+{约 01:02:15--01:02:30}
+
+图中展示了负样本选择的困境：负样本应该够难，但又不能难到把同类或语义相近资料当成必须远离的对象。这个问题促使后续方法尝试避开 negative examples。
+
+\framefig{0.86}{figures/fig26_negative_example_selection.jpg}
+{Negative examples 既要足够困难，又不能把应相近的样本强行推远}
+{约 01:06:15--01:06:30}
+
+\begin{warningbox}{Contrastive learning 的隐含假设}
+    Contrastive learning 假设 positive pair 真的应该接近，negative pair 真的应该远离。但在真实语音和影像中，两个不同样本可能共享语义、说话人、场景或内容。负样本选择若不当，会把有用的相似性破坏掉。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Contrastive learning 用相似度学习取代显式生成：正样本靠近，负样本远离。SimCLR 强调增强，MoCo 强调负样本队列和 momentum encoder，CPC/wav2vec 系列把这种思想搬到语音。它的关键难点是负样本：没有好负样本，任务太容易；负样本太强或语义冲突，训练目标又会伤害 representation。
+
+% =====================================================================
+\section{Bootstrapping 与 Extra Regularization：没有负样本也能学吗}
+% =====================================================================
+
+既然 negative examples 难选，课程接着介绍不依赖负样本的路线。这里有两类：bootstrapping approaches 通过 teacher/student 或 predictor 避免 collapse；extra regularization 则显式加入统计约束，让表示既保持不变性，又避免全部塌缩成同一个向量。
+
+\subsection{Bootstrapping：只用正样本的风险}
+
+Bootstrapping approaches 想避开 negative examples，只要求同一资料的两个增强视图表示接近。这听起来简单，但会遇到 collapse：如果 encoder 对所有输入都输出同一个向量，那么所有 positive pair 都非常接近，loss 很低，却完全没有学到有用表示。
+
+\framefig{0.82}{figures/fig27_bootstrapping_title.jpg}
+{Bootstrapping approaches 试图在不使用 negative examples 的情况下学习表示}
+{约 01:07:30--01:07:45}
+
+\framefig{0.86}{figures/fig28_bootstrap_collapse.jpg}
+{只拉近 positive pair 会产生 collapse 风险：所有输入都输出同一向量也能满足目标}
+{约 01:09:00--01:09:15}
+
+\subsection{Predictor、copy 与 stop-gradient}
+
+BYOL、SimSiam 等方法用不对称结构避免 collapse。图中一边是 encoder，另一边包含 predictor；训练时只更新某一侧，再把参数复制或移动平均到另一侧。这个不对称设计和 stop-gradient 是关键，否则模型容易塌缩。
+
+\framefig{0.88}{figures/fig29_bootstrap_predictor_copy.jpg}
+{Bootstrapping 方法用 predictor、copy 或 stop-gradient 建立不对称训练，避免表示塌缩}
+{约 01:11:15--01:11:30}
+
+课程提供了另一个理解角度：bootstrapping 类似 knowledge distillation。Teacher 固定或慢速更新，student 学习接近 teacher 的输出；随着训练进行，student 又逐渐成为新的 teacher。Data2vec 也可用这种 teacher/student 框架理解。
+
+\framefig{0.88}{figures/fig30_bootstrap_distillation_view.jpg}
+{Bootstrapping 可被理解为 teacher/student 式知识蒸馏：student 追随 teacher，teacher 再随 student 更新}
+{约 01:14:45--01:15:00}
+
+总结页把影像和语音中的代表方法放在一起：影像中有 BYOL、SimSiam；语音中有 Data2vec，student 从 teacher 的多层表示中学习。核心是不用负样本，也能通过结构设计和 teacher/student 关系学表示。
+
+\framefig{0.88}{figures/fig31_byol_data2vec_summary.jpg}
+{BYOL、SimSiam 与 Data2vec 都可看作不依赖负样本的 bootstrapping 方法}
+{约 01:16:15--01:16:30}
+
+\subsection{Extra regularization：直接防止 collapse}
+
+另一条路线是 extra regularization。Barlow Twins、VICReg 这类方法仍让 positive pair 接近，但额外加入 variance、invariance、covariance 等约束，明确防止表示塌缩。
+
+\framefig{0.82}{figures/fig32_extra_regularization_title.jpg}
+{Extra regularization 方法不靠 negative examples，而靠额外统计约束避免 collapse}
+{约 01:18:00--01:18:15}
+
+Invariance 要求同一资料的不同增强视图表示接近；variance 要求每个表示维度在 batch 中有足够变动，不能所有样本都输出同一个常数。若 variance 太小，就代表模型塌缩。
+
+\framefig{0.86}{figures/fig33_variance_invariance.jpg}
+{Invariance 拉近 positive pair；variance 要求各维度有足够变化，从而避免所有表示相同}
+{约 01:19:15--01:19:30}
+
+Covariance regularization 进一步要求不同维度之间不要高度相关，特别是 off-diagonal covariance 接近 0。这样做鼓励表示维度携带互补信息，而不是多个维度重复同一件事。
+
+\framefig{0.88}{figures/fig34_covariance_regularization.jpg}
+{Covariance regularization 要求不同表示维度去相关，避免信息冗余并帮助防止 collapse}
+{约 01:20:30--01:20:45}
+
+可以用一个简化目标理解 VICReg/Barlow Twins 的精神：
+
+$$
+\mathcal{L}
+= \lambda_{\mathrm{inv}}\mathcal{L}_{\mathrm{inv}}
++ \lambda_{\mathrm{var}}\mathcal{L}_{\mathrm{var}}
++ \lambda_{\mathrm{cov}}\mathcal{L}_{\mathrm{cov}}
+$$
+
+符号说明：
+\begin{itemize}
+    \item $\mathcal{L}_{\mathrm{inv}}$：让同一资料的两个视图表示接近。
+    \item $\mathcal{L}_{\mathrm{var}}$：要求每个维度有足够 variance，防止常数输出。
+    \item $\mathcal{L}_{\mathrm{cov}}$：让不同维度去相关，减少冗余。
+    \item $\lambda_{\mathrm{inv}},\lambda_{\mathrm{var}},\lambda_{\mathrm{cov}}$：三项损失的权重。
+\end{itemize}
+
+\subsection{本章小结}
+
+Bootstrapping 和 extra regularization 都试图绕开 negative examples。前者用不对称结构、teacher/student、stop-gradient 或 moving average 让模型不塌缩；后者直接加 variance/covariance 等统计约束。它们说明，自督导学习不一定非要靠负样本，但必须有机制阻止「所有输入都变成同一个表示」。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+课程最后用表格把五类方法在影像和语音中的代表模型对应起来：generative、predictive、contrastive、bootstrapping、regularization。真正重要的不是背模型名，而是理解每类方法怎样从未标注资料中制造学习信号。
+
+\framefig{0.88}{figures/fig35_concluding_summary_table.jpg}
+{课程总结：五类自督导方法在影像和语音中都有对应代表模型}
+{约 01:21:00--01:21:15}
+
+\subsection{五类方法的概念压缩}
+
+\begin{center}
+\begin{tabular}{L{2.8cm} L{5.0cm} L{5.2cm}}
+\toprule
+方法类别 & 核心问题 & 代表想法 \\
+\midrule
+Generative & 遮住或省略一部分后，能否还原？ & Masking、reconstruction、future prediction \\
+Predictive & 能否设计自动标签的前置任务？ & Rotation prediction、context prediction、cluster prediction \\
+Contrastive & 哪些样本应接近，哪些应远离？ & SimCLR、MoCo、CPC、wav2vec 系列 \\
+Bootstrapping & 不用负样本时如何避免 collapse？ & BYOL、SimSiam、Data2vec、teacher/student \\
+Regularization & 如何显式约束表示不塌缩？ & Barlow Twins、VICReg、variance/covariance \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{跨模态迁移的真正难点}
+
+文字、语音和影像都能做自督导，但不能简单复制训练目标。文字是离散 token，BERT 可以直接在词表上分类；语音是连续、平滑、时间相关的讯号，遮一个很短片段可能太容易，预测原始波形又太细；影像是高维空间讯号，像素重建可能浪费容量在低层细节。每个模态都要重新设计「什么被遮住」「预测什么」「正负样本如何定义」「如何避免 collapse」。
+
+\subsection{实践上的选择}
+
+如果任务需要保留细节，例如增强、分离或生成，generative objective 可能合适。如果希望 representation 更抽象，predictive 或 contrastive 方法往往更直接。如果负样本可自然取得，contrastive learning 很强；如果负样本难定义，bootstrapping 或 regularization 会更有吸引力。若目标是建立一个通用 backbone，就需要像 SUPERB 或多视觉任务评测那样，确认表示是否真的迁移到不同类型任务。
+
+\begin{importantbox}{最终 takeaway}
+    自督导式学习的核心不是「没有标签也训练模型」这么简单，而是把资料自身转化成有信息量的训练目标。语音和影像上的 SSL 方法之所以丰富，是因为不同模态的结构不同：有时要还原，有时要预测，有时要对比，有时要防止 collapse。理解这些目标如何制造学习信号，比记住单个模型名更重要。
+\end{importantbox}
+
+\end{document}

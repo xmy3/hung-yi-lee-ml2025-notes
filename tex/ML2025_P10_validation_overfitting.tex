@@ -1,0 +1,267 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\sloppy
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\Dtrain}{\mathcal{D}_{train}}
+\newcommand{\Dval}{\mathcal{D}_{val}}
+\newcommand{\Dtest}{\mathcal{D}_{test}}
+\newcommand{\Dall}{\mathcal{D}_{all}}
+\newcommand{\HH}{\mathcal{H}}
+\newcommand{\Hval}{\mathcal{H}_{val}}
+
+\newcommand{\notetitle}{为什么用了 Validation Set 仍会过拟合？}
+\newcommand{\notesubtitle}{李宏毅《机器学习》2025 · Model Selection 也会 Overfit}
+\newcommand{\noteauthors}{基于李宏毅老师课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 9 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=10}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.5cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.4cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.82\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{问题：Validation Set 不是免死金牌}
+% =====================================================================
+
+这段短讲回答一个常见疑问：已经切了 validation set，没有直接用 training loss 选模型，为什么上传 leaderboard 或遇到 testing set 时还是 overfitting？
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_validation_question.jpg}
+    \caption{本讲问题：我用了 validation set，但模型仍然 overfitted？画面依据：约 00:00--00:40。}
+    \label{fig:question}
+\end{figure}
+
+许多人初学 validation 时，会把它理解成一种绝对防护：只要没有拿 testing set 调参数，只要用 validation set 选模型，就不会 overfit。课堂的重点是修正这个理解：\textbf{validation set 能降低风险，但它本身也可能被过度使用。}
+
+直觉上，training set 会被模型拟合；validation set 则被我们拿来选模型。若我们只在少数几个模型之间选择，validation set 通常很可靠；但若我们在大量模型、超参数、架构、训练技巧之间反复试，validation set 也会成为被优化的对象。
+
+\begin{importantbox}{一句话}
+    用 validation set 选模型，本质上是在 validation set 上做 model selection。Model selection 也是一种优化；只要优化，就有 overfitting 的可能。
+\end{importantbox}
+
+% =====================================================================
+\section{标准流程：先训练每个模型，再用 Validation 选择}
+% =====================================================================
+
+假设有三个模型家族：
+\[
+    \HH_1,\quad \HH_2,\quad \HH_3.
+\]
+每个模型先在 training set 上训练，得到各自的最佳函数：
+\[
+    h_1^*=\argmin_{h\in\HH_1}L(h,\Dtrain),\qquad
+    h_2^*=\argmin_{h\in\HH_2}L(h,\Dtrain),\qquad
+    h_3^*=\argmin_{h\in\HH_3}L(h,\Dtrain).
+\]
+接下来不直接看它们在 $\Dtrain$ 上的 loss，而是在 validation set 上评估：
+\[
+    L(h_1^*,\Dval),\quad
+    L(h_2^*,\Dval),\quad
+    L(h_3^*,\Dval).
+\]
+若第三个最小，例如
+\[
+    L(h_1^*,\Dval)=0.9,\quad
+    L(h_2^*,\Dval)=0.7,\quad
+    L(h_3^*,\Dval)=0.5,
+\]
+就选择 $h_3^*$，再把它送到 testing set 或真实环境中。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_validation_selection.jpg}
+    \caption{Validation 的标准流程：每个模型先用 $\Dtrain$ 训练，再用 $\Dval$ 比较 $h_i^*$ 的 loss；最低者送往 testing set。画面依据：约 01:35--02:25。}
+    \label{fig:val_selection}
+\end{figure}
+
+这里的 $\Dtest$ 被视为 $\Dall$ 的近似：我们真正关心的是所有未来资料上的表现，但 $\Dall$ 不可得，所以用 testing set 估计。
+
+\begin{knowledgebox}{Validation 和 Testing 的角色差异}
+    Validation set 可以参与模型选择，例如调 learning rate、层数、regularization、early stopping。Testing set 则应该尽量只用于最终评估。如果你看了 testing result 后又回头改模型，testing set 就被卷入选择过程，评估会变得乐观。
+\end{knowledgebox}
+
+% =====================================================================
+\section{关键转念：Validation 选择本身也是 Training}
+% =====================================================================
+
+把前面得到的三个已训练函数收集成一个新的候选集合：
+\[
+    \Hval=\{h_1^*,h_2^*,h_3^*\}.
+\]
+用 validation set 选模型，其实就是解下面这个问题：
+\[
+    h^*
+    =
+    \argmin_{h\in\Hval}L(h,\Dval).
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig03_hval_argmin.jpg}
+    \caption{把 validation 选择写成 argmin：$\Hval=\{h_1^*,h_2^*,h_3^*\}$，再从中选出 $\Dval$ 上 loss 最小的 $h^*$。画面依据：约 02:55--03:35。}
+    \label{fig:hval_argmin}
+\end{figure}
+
+这与一般训练的形式完全一样：一般训练是在某个候选函数集合 $\HH$ 里，找一个让 $\Dtrain$ 上 loss 最小的函数；validation 选择是在 $\Hval$ 里，找一个让 $\Dval$ 上 loss 最小的函数。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig04_validation_as_training.jpg}
+    \caption{用 validation set 选模型，可被视为在 $\Dval$ 上对 $\Hval$ 做带引号的 ``training''。画面依据：约 03:45--05:20。}
+    \label{fig:val_as_training}
+\end{figure}
+
+当然，这里的 training 不是用 gradient descent 更新神经网络参数，而是在少数候选模型中挑一个。但数学结构一样：都是根据一组有限资料，选择在这组资料上表现最好的候选函数。
+
+\begin{importantbox}{为什么这个转念重要？}
+    一旦把 validation 选择看成 training，就可以把 P08 的泛化理论直接搬过来：如果候选集合太大，或 validation set 太小，就可能抽到一组对 $\Hval$ 来说“不够代表真实分布”的 validation set，于是 validation loss 和真实 loss 出现落差。
+\end{importantbox}
+
+% =====================================================================
+\section{沿用 P08 的上界：坏 Validation Set 的机率}
+% =====================================================================
+
+P08 推导过：对候选集合 $\HH$ 与训练样本数 $N$，坏训练集机率有上界
+\[
+    P(\Dtrain \text{ is bad})
+    \le
+    |\HH|\cdot 2\exp(-2N\epsilon^2).
+\]
+现在把同样逻辑套到 validation 选择上。若 validation set 大小为 $N_{val}$，候选集合为 $\Hval$，则
+\[
+    P(\Dval \text{ is bad})
+    \le
+    |\Hval|\cdot 2\exp(-2N_{val}\epsilon^2).
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig05_validation_bound.jpg}
+    \caption{把 P08 的坏样本上界套到 validation：$\Dval$ 是否可靠，取决于 validation 样本数 $N_{val}$ 与候选集合大小 $|\Hval|$。画面依据：约 05:35--07:20。}
+    \label{fig:val_bound}
+\end{figure}
+
+这个式子直接解释了为什么 validation set 通常有用：如果我们只在少数几个模型之间选择，$|\Hval|$ 很小；只要 $\Dval$ 有一定大小，坏 validation set 的机率就不高。
+
+但它也解释了为什么 validation set 不是万能：如果你反复尝试大量架构和超参数，$\Hval$ 会变大。$|\Hval|$ 一大，坏 validation set 的机率上界也变大，validation loss 就可能被 overfit。
+
+\begin{warningbox}{反复试模型会扩大 $\Hval$}
+    每试一次模型、每改一次超参数、每看一次 validation result 后再调整设计，都在扩大实际被 validation set 选择过的候选集合。即使代码里没有显式写出 $\Hval$，实验过程本身已经在构造它。
+\end{warningbox}
+
+% =====================================================================
+\section{什么时候 Validation 也会 Overfit？}
+% =====================================================================
+
+课堂举了一个极端例子：如果你要调十层网络，每层 neuron 数从 1 到 1000 都试一遍，那么候选架构数可能达到
+\[
+    1000^{10}.
+\]
+再用同一个 validation set 从这些模型里挑一个，$\Hval$ 就非常大。此时你很可能选到一个在 validation set 上偶然表现好的模型，而它在 testing set 上不一定好。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_large_hval_overfit.jpg}
+    \caption{若 $|\Hval|$ 很大，即使用 validation set 选模型，也仍有较高机率让 $\Dval$ 被 overfit。画面依据：约 07:30--08:50。}
+    \label{fig:large_hval}
+\end{figure}
+
+这并不是说不要用 validation set。正确结论是：
+\begin{itemize}
+    \item validation set 应该用于模型选择，但不要无限制反复试；
+    \item 若要大规模调参，validation set 需要足够大，或使用交叉验证、nested validation、独立 holdout 等更严格评估方式；
+    \item 最终 testing set 应尽量保持干净，只在最后报告一次。
+\end{itemize}
+
+\begin{knowledgebox}{实践中的判断}
+    如果 validation performance 越调越好，但 public leaderboard 或最终 test performance 没有同步改善，就要怀疑自己正在 overfit validation。此时应减少搜索空间、增加验证资料、重新切分资料，或保留一个完全没参与模型选择的最终测试集。
+\end{knowledgebox}
+
+% =====================================================================
+\section{本讲综合}
+% =====================================================================
+
+P10 的核心很短，但非常实用：
+\[
+    \text{validation set 不是不参与训练；它参与的是模型选择层面的训练。}
+\]
+
+训练集用于选择模型内部参数；validation set 用于选择模型、超参数或实验方案。只要某个资料集被拿来做选择，它就可能被 overfit。过拟合不是只发生在 gradient descent 里，也会发生在人的实验循环里。
+
+\begin{importantbox}{最终结论}
+    Validation 能防止你直接 overfit training set，但不能防止你 overfit validation set 本身。是否会发生，取决于 $\Dval$ 的大小与你实际比较过的候选模型数 $|\Hval|$。候选越多、验证集越小，validation overfitting 风险越高。
+\end{importantbox}
+
+\end{document}

@@ -1,0 +1,470 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{生成式对抗网络 GAN（四）}
+\newcommand{\notesubtitle}{Cycle GAN：从 Unpaired Data 学习跨域转换}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 24 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=21}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.4cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 Paired Data 到 Unpaired Data}
+% =====================================================================
+
+GAN 系列最后一讲讨论一个常被称为 ``unsupervised learning'' 的应用：从不成对资料中学习跨域转换。此前的 supervised learning 通常有成对样本 $(x,y)$，网络学的是从输入 $x$ 到目标 $y$ 的映射。可是很多真实任务中，我们只有一堆 $x$ 和一堆 $y$，但不知道哪一个 $x$ 应该对应哪一个 $y$。
+
+\subsection{半监督方法仍常需要少量成对资料}
+
+课程先回顾作业三与作业五中的两个做法：pseudo labeling 与 back translation。它们都能利用未标注资料，但并不是完全不需要成对资料。Pseudo labeling 需要先训练出一个还不错的模型，才能给未标注样本产生可用伪标签；back translation 也需要一个反向翻译模型，才能把目标域资料转换回来源域。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_unpaired_data_need_paired.jpg}
+    \caption{Pseudo labeling 与 back translation 可以利用未标注资料，但通常仍需要某种初始模型或少量 paired data。\protect\footnotemark}
+    \label{fig:need-paired}
+\end{figure}
+\footnotetext{视频画面时间区间：约 01:48--02:17；字幕说明作业三与作业五的方法或多或少仍需要成对资料或先训练好的模型。}
+
+本讲关心的是更极端的情况：完全没有成对资料。我们有 $X$ domain 的样本，也有 $Y$ domain 的样本，但没有任何 $(x,y)$ pair 告诉模型某张 $X$ 图片应该变成哪张 $Y$ 图片。
+
+\subsection{影像风格转换为什么常常没有 pair}
+
+课程用 ``真人头像转二次元头像'' 解释 unpaired data 的现实性。我们可以收集许多真人头像，也可以收集许多二次元头像，但很难得到严格成对资料：同一个人的真人照片和由画师绘制的二次元版本。若要人工产生成对资料，成本极高，也不现实。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_image_style_transfer_unpaired.jpg}
+    \caption{Image style transfer 的典型 unpaired 设置：Domain $X$ 有真人照片，Domain $Y$ 有二次元头像，但二者没有一一对应关系。\protect\footnotemark}
+    \label{fig:style-transfer-unpaired}
+\end{figure}
+\footnotetext{视频画面时间区间：约 03:04--03:50；字幕说明真人照片转二次元头像很难取得成对资料，因此需要从 unpaired data 学习。}
+
+目标可以写成：学习一个映射
+\[
+    G_{X\to Y}: X \to Y,
+\]
+使得输入真人头像 $x\sim p_X$ 后，输出 $G_{X\to Y}(x)$ 看起来像来自 $Y$ domain 的二次元头像，同时又保留输入人物的关键内容。
+
+\begin{importantbox}{Unpaired learning 的核心困难}
+    没有成对资料时，我们只知道两个 domain 各自长什么样，不知道某个 $x$ 应该对应哪个 $y$。因此模型既要学会让输出落在目标 domain，又要避免把输入内容完全丢掉。CycleGAN 的设计正是围绕这两个约束展开。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Unpaired data 的困难不在于没有任何资料，而在于没有对应关系。真人头像和二次元头像都可以大量收集，但没有 ``这张真人图对应这张二次元图'' 的监督信号。CycleGAN 要解决的问题就是：在只知道两个 domain 的边缘分布 $p_X$ 与 $p_Y$ 时，学习一个有意义的跨域映射。
+
+% =====================================================================
+\section{直接套用 GAN 为什么不够}
+% =====================================================================
+
+一个自然想法是：既然普通 GAN 可以把高斯噪声变成真实图片，那么现在也可以把来源 domain 的图片当作 generator 输入，让 generator 输出目标 domain 图片。输入分布不必一定是高斯，只要能 sample 即可。真人头像资料库本身就是一个可采样的 $p_X$。
+
+\subsection{把 X Domain 当作输入分布}
+
+普通无条件 GAN 里，generator 从 $z\sim p_z$ 开始，生成 $G(z)$；discriminator 判断生成图片是否来自真实图片分布。现在把 $z$ 换成 $x\sim p_X$，训练 $G_{X\to Y}(x)$，再用一个 $D_Y$ 判断输出是否像 $Y$ domain 图片。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig03_domain_mapping_distribution.jpg}
+    \caption{把来源 domain $X$ 的样本当作 generator 输入，希望网络把它映射到目标 domain $Y$。\protect\footnotemark}
+    \label{fig:domain-mapping}
+\end{figure}
+\footnotetext{视频画面时间区间：约 03:50--04:40；字幕说明可把 generator 输入从高斯分布改成 $X$ domain 图片分布，输出目标为 $Y$ domain 图片。}
+
+对应的 adversarial loss 可写为
+\[
+    \mathcal{L}_{\mathrm{GAN}}(G_{X\to Y},D_Y)
+    =
+    \mathbb{E}_{y\sim p_Y}[\log D_Y(y)]
+    +
+    \mathbb{E}_{x\sim p_X}
+    [\log(1-D_Y(G_{X\to Y}(x)))].
+\]
+这里 $D_Y$ 只负责判断输入图片是否属于 $Y$ domain；$G_{X\to Y}$ 则希望骗过 $D_Y$。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig04_naive_gan_domain_y_discriminator.jpg}
+    \caption{朴素做法：训练 $G_{X\to Y}$ 输出目标 domain 图片，并用 $D_Y$ 判断图片是否属于 $Y$。\protect\footnotemark}
+    \label{fig:naive-gan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 05:35--06:24；字幕说明可以训练 discriminator 分辨 $Y$ domain 图片和非 $Y$ domain 图片，看起来似乎与普通 GAN 类似。}
+
+\subsection{问题：generator 可以无视输入}
+
+这个朴素做法的问题是，$D_Y$ 只检查输出是否像 $Y$ domain，却不检查输出是否和输入 $x$ 有关。于是 generator 完全可以把输入图片当作普通 noise：不管输入是谁，都输出某张很像二次元头像的图片。只要 $D_Y$ 被欺骗，loss 就会认为它做得不错。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig05_generator_ignores_input.jpg}
+    \caption{只用 $D_Y$ 会导致 generator 无视输入：输出像目标 domain 即可，但不一定保留来源图片内容。\protect\footnotemark}
+    \label{fig:ignore-input}
+\end{figure}
+\footnotetext{视频画面时间区间：约 06:48--07:40；字幕说明 generator 可能忽略输入，只生成一张像二次元头像的图片，这不是想要的转换。}
+
+这与上一讲 conditional GAN 的问题很像：若 discriminator 不看条件，generator 就可能无视条件。但 conditional GAN 的解决方案需要 paired data，让 discriminator 学会判断 $(x,y)$ 是否匹配。现在没有 paired data，无法直接告诉 discriminator 哪个真人头像应对应哪个二次元头像。
+
+\begin{warningbox}{目标 domain 约束不等于内容约束}
+    ``输出属于 $Y$ domain'' 只保证风格或分布像 $Y$，不保证输出和输入有语义关系。Unpaired translation 需要额外约束让模型保留输入内容，否则它会退化成普通生成模型。
+\end{warningbox}
+
+\subsection{本章小结}
+
+直接把来源图片输入 generator，并用目标 domain discriminator 监督输出，是一个合理起点，但不够。它只能约束输出分布，不约束输入输出之间的对应关系。CycleGAN 的关键创新就是加入一个反向映射，让输出仍保留足够信息以重建输入。
+
+% =====================================================================
+\section{CycleGAN 的核心：Cycle Consistency}
+% =====================================================================
+
+CycleGAN 训练两个 generator：$G_{X\to Y}$ 把 $X$ domain 转成 $Y$ domain，$G_{Y\to X}$ 把 $Y$ domain 转回 $X$ domain。核心约束是：如果先从 $X$ 转到 $Y$，再从 $Y$ 转回 $X$，结果应该尽量接近原始输入。
+
+\subsection{从 X 到 Y 再回到 X}
+
+对任意 $x\sim p_X$，CycleGAN 希望
+\[
+    G_{Y\to X}\bigl(G_{X\to Y}(x)\bigr) \approx x.
+\]
+这里 $\approx$ 可以用图片层面的距离来衡量，例如 $L_1$ 距离：
+\[
+    \mathcal{L}_{\mathrm{cyc}}^X
+    =
+    \mathbb{E}_{x\sim p_X}
+    \left[
+    \left\|
+    G_{Y\to X}(G_{X\to Y}(x))-x
+    \right\|_1
+    \right].
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig06_cycle_consistency.jpg}
+    \caption{Cycle consistency：输入 $x$ 经 $G_{X\to Y}$ 转成目标 domain 后，再经 $G_{Y\to X}$ 转回，应尽量接近原始 $x$。\protect\footnotemark}
+    \label{fig:cycle-consistency}
+\end{figure}
+\footnotetext{视频画面时间区间：约 09:19--10:08；字幕说明两张图片可视为向量，要求经过两次转换后的输出与输入越接近越好。}
+
+为什么这个约束能阻止 generator 无视输入？如果 $G_{X\to Y}$ 输出一张与输入毫无关系的二次元头像，$G_{Y\to X}$ 很难从这张头像还原出原始真人照片。为了让反向 generator 能重建输入，正向 generator 必须在目标 domain 图片中保留输入的身份、姿态、眼镜、发型等信息。它可以改变风格，但不能随意丢掉内容。
+
+\subsection{双向 cycle 与两个 discriminator}
+
+CycleGAN 通常双向训练。除了 $x\to y\to x$，还要求对 $y\sim p_Y$：
+\[
+    G_{X\to Y}\bigl(G_{Y\to X}(y)\bigr) \approx y.
+\]
+于是完整 cycle loss 为
+\[
+    \mathcal{L}_{\mathrm{cyc}}
+    =
+    \mathbb{E}_{x\sim p_X}
+    \left[
+    \left\|
+    G_{Y\to X}(G_{X\to Y}(x))-x
+    \right\|_1
+    \right]
+    +
+    \mathbb{E}_{y\sim p_Y}
+    \left[
+    \left\|
+    G_{X\to Y}(G_{Y\to X}(y))-y
+    \right\|_1
+    \right].
+\]
+
+同时需要两个 discriminator：
+
+\begin{itemize}
+    \item $D_Y$ 判断 $G_{X\to Y}(x)$ 是否像真实 $Y$ domain 图片；
+    \item $D_X$ 判断 $G_{Y\to X}(y)$ 是否像真实 $X$ domain 图片。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig08_full_cyclegan_bidirectional.jpg}
+    \caption{完整 CycleGAN 同时包含两个 generator 与两个 discriminator：$X\to Y\to X$ 与 $Y\to X\to Y$ 两个方向都要满足 cycle consistency。\protect\footnotemark}
+    \label{fig:full-cycle}
+\end{figure}
+\footnotetext{视频画面时间区间：约 14:35--15:07；字幕说明反向方向也要训练，并加入 $D_X$ 判断橙色 generator 的输出是否像真实人脸。}
+
+综合起来，常见目标函数可以写为
+\[
+    \mathcal{L}
+    =
+    \mathcal{L}_{\mathrm{GAN}}(G_{X\to Y},D_Y)
+    +
+    \mathcal{L}_{\mathrm{GAN}}(G_{Y\to X},D_X)
+    +
+    \lambda\mathcal{L}_{\mathrm{cyc}}.
+\]
+其中 $\lambda$ 控制循环重建约束的强度。若 $\lambda$ 太小，模型可能忽略输入内容；若太大，模型可能过度保留原图，风格转换不足。
+
+\subsection{Cycle consistency 解决所有问题了吗}
+
+课程特别提醒：cycle consistency 并不能从理论上保证转换关系一定是我们想要的。极端情况下，两个 generator 可以约定某种奇怪编码。例如 $G_{X\to Y}$ 看到眼镜就把眼镜抹掉并改成一颗痣，$G_{Y\to X}$ 再看到痣就还原成眼镜；或者一个 generator 做左右翻转，另一个再翻回来。这些都可能满足 cycle consistency，却不代表输出语义正确。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig07_cycle_consistency_limit.jpg}
+    \caption{Cycle consistency 只要求可重建，并不严格保证转换关系就是人类想要的语义对应。\protect\footnotemark}
+    \label{fig:cycle-limit}
+\end{figure}
+\footnotetext{视频画面时间区间：约 11:49--12:39；字幕举例说明模型可能学到奇怪转换，只要第二个 generator 能还原即可。}
+
+实践中，这类极端情况不一定常见。课程的解释很有意思：网络往往 ``很懒''，如果保留眼镜比把眼镜编码成痣更简单，它就倾向于保留眼镜。也就是说，CycleGAN 的成功部分来自模型架构、优化偏好和数据分布共同形成的归纳偏置，而不只是 loss 的数学保证。
+
+\begin{importantbox}{CycleGAN 的约束分工}
+    Adversarial loss 负责让输出落在目标 domain；cycle consistency loss 负责让输出保留足够信息以重建输入。前者控制风格，后者控制内容。但二者合起来仍不是完美语义监督，只是一个强而实用的结构假设。
+\end{importantbox}
+
+\subsection{本章小结}
+
+CycleGAN 通过两个方向的 generator 与两个 discriminator，把 unpaired translation 拆成两个要求：输出要像目标 domain，且来回转换后能重建输入。Cycle consistency 大幅缓解了 generator 无视输入的问题，但不提供绝对语义保证。它是一种有效归纳偏置，而不是成对监督的完全替代品。
+
+% =====================================================================
+\section{相关模型与影像应用}
+% =====================================================================
+
+CycleGAN 的思想在 2017 年前后由多个团队几乎同时提出。课程提到 DiscoGAN、DualGAN 与 CycleGAN 的核心想法非常接近：通过双向映射与重建约束，从 unpaired data 中学习跨域转换。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig09_disco_dual_cycle_gan.jpg}
+    \caption{DiscoGAN、DualGAN 与 CycleGAN 在相近时间提出了非常类似的双向转换与 cycle consistency 思想。\protect\footnotemark}
+    \label{fig:related-gans}
+\end{figure}
+\footnotetext{视频画面时间区间：约 15:07--15:40；字幕说明 DiscoGAN、DualGAN 与 CycleGAN 的想法几乎一样，且在 2017 年相近时间出现。}
+
+\subsection{StarGAN：从双域到多域}
+
+CycleGAN 主要处理两个 domain 之间的转换，例如真人 $\leftrightarrow$ 二次元。若有 $k$ 个 domain，朴素做法可能需要为每一对 domain 训练不同转换器，复杂度接近 $k(k-1)$。StarGAN 的目标是用一个 generator 处理多种目标 domain，通过输入目标 domain label 来控制输出风格。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig10_stargan_multidomain.jpg}
+    \caption{StarGAN 将多域转换整合到一个模型中，避免为每一对 domain 单独训练 generator。\protect\footnotemark}
+    \label{fig:stargan}
+\end{figure}
+\footnotetext{视频画面时间区间：约 15:49--16:08；字幕说明 CycleGAN 只能在两种风格间转换，而 StarGAN 可扩展到多种风格。}
+
+这体现了一个工程方向：当 domain 数量增加时，不仅要考虑模型是否能转换，还要考虑参数共享、训练效率和多任务一致性。
+
+\subsection{SELFIE2ANIME：真实应用的效果与失败}
+
+课程展示了 SELFIE2ANIME 这类应用：上传真人照片，系统输出二次元风格头像。成功案例中，模型学到二次元风格的一些显著特征，例如眼睛变大、线条简化、皮肤和头发风格改变。但也会失败，例如五官比例不稳定或左右眼异常。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig11_selfie2anime_example.jpg}
+    \caption{SELFIE2ANIME 示例：模型能把真人照片转换为二次元风格，但实际效果仍可能受输入姿态、数据分布与模型能力限制。\protect\footnotemark}
+    \label{fig:selfie2anime}
+\end{figure}
+\footnotetext{视频画面时间区间：约 16:34--17:22；字幕说明模型学到眼睛变大等二次元特征，但某些输入也会出现失败结果。}
+
+\begin{warningbox}{应用展示需要看失败样本}
+    风格转换 demo 往往展示成功案例，但真实系统必须关心失败模式：身份是否保留，关键属性是否丢失，少数族群或罕见姿态是否崩坏，输出是否出现不自然结构。Unpaired learning 的评估不能只看几张好图。
+\end{warningbox}
+
+\subsection{本章小结}
+
+CycleGAN 属于一类更广泛的双向 unpaired translation 思想。DiscoGAN、DualGAN 与 CycleGAN 强调双域互转，StarGAN 扩展到多域共享，SELFIE2ANIME 展示了真实风格转换应用。它们共同说明：GAN 不只可以生成新样本，也可以在没有 pair 的情况下学习跨域映射。
+
+% =====================================================================
+\section{从影像到文字：Text Style Transfer}
+% =====================================================================
+
+同样的思想也能用于文字。文字风格转换的目标是：输入一个句子，输出语义大致相同但风格不同的句子。例如把负面句子转换为正面句子。这里的 generator 是 sequence-to-sequence model，可以用 RNN、Transformer 或其他文字生成模型实现。
+
+\subsection{资料只有两堆句子，没有对应句}
+
+要做负面 $\to$ 正面转换，可以收集一堆负面句子和一堆正面句子。课程举例：从论坛推文/嘘文中收集正负样本。难点在于没有成对资料：不知道某句负面话应该对应哪句正面话。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig12_text_style_transfer_data.jpg}
+    \caption{Text style transfer 的 unpaired 设置：收集正面句子与负面句子，但没有句子级对应关系。\protect\footnotemark}
+    \label{fig:text-style-data}
+\end{figure}
+\footnotetext{视频画面时间区间：约 18:04--18:55；字幕说明可收集一堆正面句子与一堆负面句子，但不知道某句应如何对应转换。}
+
+朴素 adversarial 目标仍然只保证输出像目标风格。例如负面句子输入 generator 后，discriminator 判断输出是否像正面句子。为了保留原句内容，也需要类似 cycle consistency 的重建约束：负面句子转成正面句子后，再由另一个 generator 转回负面句子，应接近原句。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig13_text_style_cycle_framework.jpg}
+    \caption{文字风格转换也可套用 CycleGAN：生成目标风格句子，同时用反向模型最小化 reconstruction error。\protect\footnotemark}
+    \label{fig:text-style-cycle}
+\end{figure}
+\footnotetext{视频画面时间区间：约 19:20--20:08；字幕说明句子重建相似度与离散文字输出会带来额外问题，实际需要相关方法处理。}
+
+\subsection{文字任务的额外困难}
+
+文字风格转换比图像更麻烦，原因至少有两个：
+
+\begin{itemize}
+    \item \textbf{句子相似度不如图片距离直接。} 图片可以看成像素向量，用 $L_1$ 或 $L_2$ 距离衡量重建；句子有离散 token、语义等价、同义改写等问题，不能简单用逐字相同衡量质量。
+    \item \textbf{输出离散 token。} 上一讲讨论过，sequence generator 接 discriminator 时会遇到不可微取样问题，因此常需要 reinforcement learning、soft relaxation 或其他梯度估计方法。
+\end{itemize}
+
+因此，``把 CycleGAN 套到文字'' 在概念上类似，但实践上更复杂。模型既要改变风格，又要保留内容，还要处理离散序列训练的高方差问题。
+
+\subsection{实验结果：有规律，也会犯怪错}
+
+课程展示了负面句转正面句的实际 demo。模型有时能做出看似聪明的转换，例如把 ``我都想去上班了，真够贱的！'' 转成 ``我都想去睡了，真帅的！''，似乎学到某些词和情绪的对应。但它也会出现很奇怪的规律，例如把 ``胃疼''、``肚子痛'' 这类腹部不舒服都转成 ``生日快乐''。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig14_text_style_transfer_results.jpg}
+    \caption{文字风格转换结果示例：模型能学到某些风格替换规律，但也可能产生语义奇怪、固定偏差的输出。\protect\footnotemark}
+    \label{fig:text-results}
+\end{figure}
+\footnotetext{视频画面时间区间：约 20:50--21:24；字幕说明模型虽然会犯错，但错误有固定规律，例如把腹部不适相关句子转成生日快乐。}
+
+这类结果很适合说明 unpaired learning 的特点：它能从分布信号中学到某些转换规律，但没有成对监督时，``内容保留'' 和 ``风格改变'' 的边界更难精确控制。模型可能满足目标风格，却用奇怪方式扭曲语义。
+
+\subsection{本章小结}
+
+Text style transfer 把 CycleGAN 的思想从图像推广到序列。它同样依赖目标风格 discriminator 与反向重建约束，但句子相似度和离散 token 训练让问题更复杂。实际结果可以有趣甚至有用，但也提醒我们：没有 paired supervision 时，模型学到的转换规律未必符合人类语义期待。
+
+% =====================================================================
+\section{更广泛的非监督跨域学习}
+% =====================================================================
+
+课程最后把同一思想扩展到更多任务：非监督摘要、非监督翻译、非监督语音辨识。它们看起来不同，但抽象结构相似：有两个 domain，各自有大量样本，却没有成对标注。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig15_more_unsupervised_tasks.jpg}
+    \caption{CycleGAN 式思想可以扩展到更多 unpaired 任务：摘要、翻译、语音辨识等都可被看成跨 domain 转换。\protect\footnotemark}
+    \label{fig:more-unsup}
+\end{figure}
+\footnotetext{视频画面时间区间：约 21:33--23:30；字幕依次说明 unpaired summarization、unsupervised translation 与 unsupervised ASR 的设定。}
+
+\subsection{非监督摘要}
+
+如果有一堆长文章，也有另一堆摘要，但摘要不是这些文章的对应摘要，就可以把长文章与摘要看成两个 domain。模型尝试学习从长文本 domain 到短摘要 domain 的转换，并通过反向转换或重建约束保留内容。
+
+这个设定很诱人，因为真实世界中 summary 数据可能比严格 paired summary 更容易收集。但它也非常困难：摘要不是简单风格转换，而是涉及信息选择、压缩、重组和事实一致性。Cycle consistency 只能提供弱约束，不能保证摘要忠实。
+
+\subsection{非监督翻译}
+
+非监督翻译假设有大量语言 A 句子和大量语言 B 句子，但没有平行语料。模型要学习 $A\leftrightarrow B$ 的翻译映射。抽象上，这与 $X\leftrightarrow Y$ 图像 domain 转换类似；实践上则还需要语言模型、词嵌入对齐、回译、自训练等技术。课程把它作为 ``同一想法可以扩展到文字 domain'' 的例子。
+
+\subsection{非监督语音辨识}
+
+语音辨识传统上需要声音与文字的成对标注：音频片段对应转写文本。非监督 ASR 则尝试只用一堆未标注声音与一堆文本，学习从 audio 到 text 的映射。课程提到这是实验室曾经挑战的方向：用类似 cycle 的想法 ``硬做''，观察机器能做到什么程度。
+
+\begin{knowledgebox}{跨域转换的共同抽象}
+    无论是图像风格转换、文字风格转换、摘要、翻译还是 ASR，都可以抽象为两个 domain 间的映射学习。Adversarial loss 负责匹配目标 domain 的边缘分布，cycle/reconstruction loss 负责保留输入信息。任务差异主要体现在 domain 表示、相似度定义、离散输出和评估标准上。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+CycleGAN 的意义不只是一种图像风格转换模型，而是一种跨域学习模板。只要能定义两个 domain、采样各自资料，并设计目标 domain 判别器与重建约束，就可以尝试从 unpaired data 中学习映射。但越往语言、摘要、语音等任务推广，语义保真和离散优化问题就越突出。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲完成了 GAN 系列的最后一块拼图：GAN 不仅能生成样本，也能在没有 paired data 的情况下帮助模型学习跨域转换。CycleGAN 的核心并不复杂：两个 generator、两个 discriminator、两个方向的 cycle consistency。但它背后的意义很深：当监督信号缺失时，我们可以通过结构约束把问题变得可学。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/fig16_gan_concluding_remarks.jpg}
+    \caption{GAN 系列从生成模型简介一路讲到 unpaired data learning，形成了从生成、理论、训练、评估到可控转换的完整线索。\protect\footnotemark}
+    \label{fig:gan-conclusion}
+\end{figure}
+\footnotetext{视频画面时间区间：约 23:30--23:40；课程在非监督 ASR 例子后收束 GAN 部分。}
+
+本讲的关键结论可以概括为：
+
+\begin{enumerate}
+    \item Unpaired learning 只有两个 domain 的样本，没有样本级对应关系。
+    \item 朴素 GAN 只能让输出像目标 domain，不能保证输出与输入有关。
+    \item Cycle consistency 要求 $x\to y\to x$ 与 $y\to x\to y$ 后能重建输入，从而逼迫模型保留内容。
+    \item Cycle consistency 不是理论上的完美语义保证，模型仍可能学到奇怪但可逆的编码。
+    \item 同一思想可以推广到 image translation、text style transfer、unsupervised translation、summarization 与 ASR。
+\end{enumerate}
+
+从更大的机器学习视角看，CycleGAN 是 ``用约束替代标签'' 的例子。没有 paired labels 时，我们不能直接告诉模型正确答案，只能告诉它哪些性质必须成立：输出要像目标 domain，转换回来要像原输入，两个方向要互相一致。这些性质如果设计得足够贴近任务，就能产生有用模型；如果设计得太弱，模型就可能利用漏洞。
+
+\begin{importantbox}{学习 CycleGAN 后该记住什么}
+    CycleGAN 的价值不在于 ``两个 GAN 拼起来''，而在于它展示了一种处理弱监督问题的思路：当没有成对监督时，寻找任务中的可逆性、一致性、分布匹配和结构偏置。现代生成模型、跨模态学习和自监督学习中，类似思想仍反复出现。
+\end{importantbox}
+
+这一讲也为后续课程铺路：真正复杂的学习问题往往不具备干净标签。模型要从不完整、不成对、甚至跨模态的数据中找结构。GAN 提供了一种强有力但也不稳定的工具；理解它的能力边界，比记住某个公式更重要。
+
+\end{document}

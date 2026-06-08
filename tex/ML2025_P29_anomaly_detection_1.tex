@@ -1,0 +1,384 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（一）：问题设定}
+\newcommand{\notesubtitle}{Anomaly Detection: Formulation, Applications and Data Settings}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 13 分 22 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=29}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{异常检测的基本问题}
+% =====================================================================
+
+异常检测（anomaly detection）关心的不是“把输入分成几个已知类别”，而是判断一个新输入是否像训练资料。若它和训练资料相似，就输出 normal；若它明显不同，就输出 anomaly。这里的“相似”是整个问题的核心，因为不同方法会用不同方式定义相似或不相似。
+
+\framefig{0.88}{figures/fig01_problem_formulation_similarity.jpg}
+{异常检测的问题定义：给定训练资料集合，学习一个函数判断新输入是否和训练资料相似}
+{00:03:30--00:03:45}
+
+\subsection{形式化表示}
+
+设训练资料为
+
+\[
+\mathcal{D}_{\mathrm{train}}=\{x^1,x^2,\ldots,x^N\}
+\]
+
+异常检测器可以被写成一个函数：
+
+\[
+A(x;\mathcal{D}_{\mathrm{train}})\in\{\mathrm{normal},\mathrm{anomaly}\}
+\]
+
+符号说明：
+\begin{itemize}
+    \item $\mathcal{D}_{\mathrm{train}}$：训练资料集合，通常主要描述“正常资料长什么样”。
+    \item $x$：测试时输入的新资料。
+    \item $A(\cdot)$：异常检测器，它需要判断 $x$ 是否和训练资料相似。
+\end{itemize}
+
+许多实际方法不会直接输出 normal 或 anomaly，而是先输出一个异常分数：
+
+\[
+s(x)=\operatorname{score}(x,\mathcal{D}_{\mathrm{train}})
+\]
+
+再用阈值 $\tau$ 做决策：
+
+\[
+A(x)=
+\begin{cases}
+\mathrm{normal}, & s(x)<\tau,\\
+\mathrm{anomaly}, & s(x)\ge \tau.
+\end{cases}
+\]
+
+符号说明：
+\begin{itemize}
+    \item $s(x)$：异常分数，越大通常表示越不像训练资料。
+    \item $\tau$：阈值，用来把连续分数转成离散判断。
+\end{itemize}
+
+\subsection{anomaly 不一定是坏事}
+
+中文里“异常”常带负面意味，但课程提醒，anomaly detection 不一定只是在找坏东西。它也可以叫 outlier detection、novelty detection 或 exception detection。Novelty 甚至带有“新奇”的正面色彩。模型真正要找的是“和训练资料不同”的东西，至于这种不同是危险、稀有、珍贵，还是只是没见过，要看具体应用。
+
+\begin{knowledgebox}{几个相关词的差别}
+    Anomaly 强调偏离常态；outlier 强调在统计分布中离群；novelty 强调新颖、未见过；exception 强调例外。它们常有重叠，但应用语境不同。课程使用 anomaly detection 作为总称。
+\end{knowledgebox}
+
+\subsection{最难的是“相似”的定义}
+
+如果资料是刷卡记录，相似可能表示消费金额、地点、时间、商户类型与过去习惯接近；如果资料是网络连线，相似可能表示封包行为、端口、协议、流量模式正常；如果资料是细胞影像，相似可能表示形状、纹理、细胞核大小等特征接近。相似不是一个固定概念，它由资料、任务和方法共同决定。
+
+\begin{importantbox}{异常检测的核心问题}
+    异常检测不是简单地问“这个样本属于哪一类”，而是问“这个样本是否属于训练资料所代表的正常模式”。因此，异常检测方法的差异，很大程度上就是它们定义 normal pattern 和 similarity 的方式不同。
+\end{importantbox}
+
+\subsection{本章小结}
+
+异常检测的基本输入是训练资料集合和测试样本，基本输出是 normal 或 anomaly。它的困难不在于写出这个二值输出，而在于定义“像训练资料”到底是什么意思。后续所有方法，无论是基于概率密度、距离、重建误差、分类器置信度，还是自编码器，都在回答同一个问题：怎样度量新样本和训练资料的关系。
+
+% =====================================================================
+\section{异常是相对于训练资料而言的}
+% =====================================================================
+
+课程接着强调：异常不是样本天然携带的绝对属性，而是相对于训练资料定义的。某个样本在一个训练集合下是 anomaly，换一个训练集合后可能就变成 normal。换句话说，异常检测不是在问“世界上什么东西异常”，而是在问“相对于我给你的正常资料，这个新东西是否异常”。
+
+\framefig{0.88}{figures/fig02_anomaly_depends_on_training_data.jpg}
+{异常的定义取决于训练资料：训练集合改变后，同一个测试输入可能从 normal 变成 anomaly，或反过来}
+{00:04:30--00:04:45}
+
+\subsection{训练资料决定 normal 的范围}
+
+如果训练资料只包含某一种角色，那么另一个相近角色也可能被判为 anomaly；如果训练资料包含一整类相关角色，那么不属于这类集合的对象才会被视为 anomaly。这个例子说明，正常集合的粒度会改变异常边界。
+
+同样道理可以迁移到实际任务。若训练资料只包含某一家店的刷卡行为，那么另一家店的消费可能显得异常；若训练资料包含某个人长期的所有消费习惯，那么只有明显偏离个人习惯的交易才异常。异常检测的范围取决于训练资料覆盖了什么。
+
+\subsection{正常分布、异常分布与决策边界}
+
+可以把训练资料想成对某个 normal distribution 的采样。异常检测器试图学出这个正常分布的支持区域或高密度区域。测试样本落在高密度区域，就更可能是 normal；落在低密度区域，就更可能是 anomaly。
+
+\[
+x\ \text{normal} \quad \Longleftrightarrow \quad x \in \text{high-density region of } p_{\mathrm{normal}}(x)
+\]
+
+这句话只是直觉，不要求我们一定显式估计完整概率密度。很多方法只是在近似这个想法：距离方法用“离训练样本近不近”，重建方法用“能不能被正常模型重建”，分类器方法用“是否被高置信度归入已知类别”。
+
+\begin{warningbox}{训练资料范围太窄会造成误报}
+    如果训练资料没有覆盖正常行为的多样性，模型会把许多其实正常但没见过的样本误判为 anomaly。异常检测系统的质量，不只取决于算法，也高度依赖训练资料是否能代表真正的正常范围。
+\end{warningbox}
+
+\subsection{本章小结}
+
+异常检测中的 normal 与 anomaly 是相对概念。训练资料定义了模型眼中的正常世界，测试样本是否异常取决于它和这个世界的关系。设计异常检测系统时，必须先问清楚训练资料代表的是哪一类正常、覆盖范围有多宽、测试时会不会遇到训练资料没有覆盖但仍然正常的情况。
+
+% =====================================================================
+\section{应用场景}
+% =====================================================================
+
+异常检测之所以重要，是因为现实中很多任务天然具有“正常资料很多、异常资料少或难以标注”的结构。课程列出三个典型应用：诈欺侦测、网络入侵侦测和癌细胞侦测。
+
+\framefig{0.88}{figures/fig03_applications_fraud_intrusion_cancer.jpg}
+{异常检测的典型应用包括诈欺侦测、网络入侵侦测和癌细胞侦测；这些任务都以正常资料为主要参照}
+{00:06:00--00:06:15}
+
+\subsection{诈欺侦测}
+
+在刷卡或交易场景中，训练资料往往是大量正常交易记录。测试时来了一笔新交易，系统要判断它是否像过去正常交易。异常可能来自金额异常、地点异常、交易时间异常、商户类型异常，或多个因素组合起来异常。
+
+这个任务困难在于，诈欺行为本身会变化。攻击者会适应系统，新的诈欺模式可能和过去被标记的异常不同。因此异常检测不能只记住“过去的诈欺长什么样”，还要能识别“不像正常交易”的行为。
+
+\subsection{网络入侵侦测}
+
+网络系统中，训练资料可以是正常连线、正常流量或正常服务请求。测试时出现新的连接或封包序列，模型要判断它是不是攻击行为。这里的异常可能表现为异常端口访问、异常流量峰值、异常请求频率，或异常协议组合。
+
+网络入侵侦测的难点是正常行为本身也很复杂。公司业务、用户行为、时间周期都会改变流量分布。如果模型太敏感，会产生大量误报；如果模型太宽松，又可能漏掉真正攻击。
+
+\subsection{医疗检测}
+
+医疗影像或细胞资料中，训练资料可能主要来自正常细胞。模型需要判断新细胞是否表现出异常形态。这里的异常可能是细胞核大小、边界形状、纹理、分裂频率等因素偏离正常范围。
+
+医疗应用特别强调风险权衡。漏报可能带来严重后果，误报也会造成额外检查和心理负担。因此阈值 $\tau$ 的选择不能只看准确率，还要结合召回率、误报率、临床成本和使用场景。
+
+\begin{importantbox}{共同结构}
+    这些应用看起来不同，但共享同一个结构：正常资料相对容易收集，异常资料稀少、昂贵、变化快或标签不可靠。因此模型不能只依赖大量已标注异常，而要学会刻画正常模式。
+\end{importantbox}
+
+\subsection{本章小结}
+
+诈欺侦测、网络入侵侦测和医疗检测都说明，异常检测的价值来自现实资料的不平衡：正常很多，异常少；正常相对稳定，异常形式多变；正常容易收集，异常难以穷举。异常检测的核心不是罗列所有异常，而是建立一个足够可靠的正常参照系。
+
+% =====================================================================
+\section{为什么不能简单当成二元分类}
+% =====================================================================
+
+看到 normal 和 anomaly 两个输出，很自然会想到二元分类：把正常资料设成 class 1，把异常资料设成 class 2，然后训练一个 binary classifier。课程先承认这是一个直觉上可行的想法，再解释为什么它通常不够。
+
+\framefig{0.86}{figures/fig04_binary_classification_baseline.jpg}
+{最直观的想法是把 normal 和 anomaly 当成两个类别，训练二元分类器}
+{00:07:15--00:07:30}
+
+\subsection{二元分类需要什么}
+
+标准二元分类需要两批有标签资料：
+
+\[
+\mathcal{D}_{\mathrm{normal}}=\{(x_i,0)\}, \qquad
+\mathcal{D}_{\mathrm{anomaly}}=\{(x_j,1)\}
+\]
+
+然后训练分类器
+
+\[
+C(x)\in\{0,1\}
+\]
+
+其中 0 表示 normal，1 表示 anomaly。若你真的有大量代表性的正常样本和大量代表性的异常样本，这当然可以做。问题是，异常检测的现实场景往往不满足这个条件。
+
+\subsection{异常类别不是一个封闭类别}
+
+课程用一个卡通角色集合说明：若 normal 是某一类对象，那么 anomaly 可以是任何不属于这一类的东西。这个“非正常集合”太大、太杂，不能被看成一个普通类别。你无法穷举所有非正常样本，也很难保证训练过的异常能代表未来会遇到的异常。
+
+\framefig{0.86}{figures/fig05_why_not_binary_classification.jpg}
+{把 anomaly 当成 class 2 的困难：非正常集合过大且开放，不能被视为一个可穷举类别}
+{00:08:30--00:08:45}
+
+普通分类的类别通常是封闭的。例如 class 1 和 class 2 都有稳定语义，训练样本能够代表测试样本。但 anomaly 的语义常常只是“不是 normal”。这是一种开放式补集，而不是一个紧凑类别。用有限异常样本训练出来的 class 2，很可能只学到少数已知异常，而不是所有未知异常。
+
+\subsection{异常资料常常难以收集}
+
+第二个困难是异常资料稀少。诈欺交易本来就比正常交易少；网络攻击可能类型多变且发生频率低；医疗异常样本可能昂贵、隐私敏感或标签不稳定。就算异常真的存在，它也未必已经被发现并标注。
+
+这导致异常检测经常处在一种尴尬状态：你有大量 normal data，却没有足够 anomaly data；你想发现未知异常，却无法预先收集所有未知异常。于是单纯二元分类不能覆盖问题本质。
+
+\begin{warningbox}{二元分类的隐藏假设}
+    二元分类假设两个类别都可采样、可标注、可代表未来测试分布。异常检测恰恰经常违反这些假设：异常稀少、开放、变化快，且未必有可靠标签。
+\end{warningbox}
+
+\subsection{本章小结}
+
+异常检测看起来像二元分类，但通常比二元分类更难。若异常样本充足且代表性强，二元分类可以作为方法之一；但在多数异常检测任务中，异常类别开放且难以收集，训练资料往往主要是正常样本。因此异常检测需要独立建模，而不能只说“把 normal 和 anomaly 分成两类”。
+
+% =====================================================================
+\section{异常检测的资料设定分类}
+% =====================================================================
+
+课程最后把异常检测问题按训练资料条件分成几类。这个分类非常重要，因为不同资料条件对应不同方法。有没有标签、训练资料是否干净、训练资料中是否混入少量异常，都会改变问题难度。
+
+\subsection{有标签：开放集识别}
+
+第一类是训练资料有标签，例如资料属于若干已知类别。普通 classifier 只能输出训练时见过的类别；但异常检测希望它在看到未知类别时能输出 unknown。这类问题称为 open-set recognition。
+
+\framefig{0.86}{figures/fig06_open_set_recognition.jpg}
+{有标签设定下的 open-set recognition：分类器除了输出已知类别，还要能识别 unknown}
+{00:11:00--00:11:15}
+
+Open-set recognition 和一般分类的差别在于测试空间是开放的。训练时没有任何样本被标成 unknown，但测试时模型却要知道“这个东西不属于我学过的任何类别”。这要求模型不只学会类别边界，还要知道自己知识范围的边界。
+
+\begin{knowledgebox}{closed-set 与 open-set}
+    Closed-set classification 假设测试样本一定来自训练类别之一；open-set recognition 允许测试样本来自未知类别。异常检测常常是 open-set 的，因为真正重要的样本可能正是训练时没见过的类型。
+\end{knowledgebox}
+
+\subsection{无标签且 clean：所有训练资料都正常}
+
+第二类是训练资料没有标签，但可以假设它们全部正常。这是较理想的 one-class 设定。模型只需要刻画正常资料的结构，测试样本如果偏离这个结构，就被判为 anomaly。
+
+在这个设定下，自编码器是常见方法之一。只用正常资料训练自编码器，让它学会重建正常样本。测试时，如果某个样本重建误差很大，就表示模型不熟悉这种输入，可能是异常。
+
+\[
+s(x)=\|x-g_\phi(f_\theta(x))\|^2
+\]
+
+符号说明：
+\begin{itemize}
+    \item $f_\theta$：encoder，把输入压成表示。
+    \item $g_\phi$：decoder，从表示重建输入。
+    \item $s(x)$：重建误差，常被用作异常分数。
+\end{itemize}
+
+\subsection{无标签且 polluted：训练资料中混入少量异常}
+
+第三类更现实：训练资料没有标签，而且不能保证全部正常。训练集合中可能混入少量异常，只是收集资料时不知道。课程用诈欺侦测说明：银行拿到大量交易记录，把它们当成正常交易学习，但其中可能已经混有少量诈欺交易。
+
+\framefig{0.86}{figures/fig07_clean_vs_polluted_training_data.jpg}
+{无标签异常检测可分为 clean 与 polluted：前者训练资料全正常，后者训练资料中混入少量异常}
+{00:13:00--00:13:15}
+
+Polluted 设定比 clean 设定更难。若模型把混入的异常也学成“正常模式”的一部分，测试时就可能漏掉类似异常。因此方法需要具备鲁棒性：不要被少量污染样本带偏，或者能在训练过程中降低可疑样本的影响。
+
+\begin{importantbox}{三类设定决定方法选择}
+    有标签时，可以讨论 open-set recognition；无标签且 clean 时，可以做 one-class modeling 或重建误差检测；无标签且 polluted 时，需要鲁棒异常检测，避免少量异常污染正常模型。
+\end{importantbox}
+
+\subsection{本章小结}
+
+异常检测不能只按“算法名字”学习，必须先看资料设定。训练资料有标签还是无标签？测试时是否可能出现未知类别？训练资料是否全正常？是否可能混入少量异常？这些问题决定了该用分类器、开放集识别、密度估计、自编码器、鲁棒学习，还是其他方法。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲完成的是异常检测的第一步：把问题讲清楚。给定训练资料，模型要判断新样本是否像训练资料；异常不是绝对属性，而是相对于训练资料的正常范围而言；实际应用中正常资料往往多，异常资料少、开放、难标注；因此异常检测不能简单等同于二元分类。
+
+\subsection{本讲核心压缩}
+
+\begin{center}
+\begin{tabular}{L{3.0cm} L{9.6cm}}
+\toprule
+概念 & 说明 \\
+\midrule
+Problem formulation & 给定训练资料，判断测试输入是否和训练资料相似。 \\
+Anomaly & 相对于训练资料而言的“不像”，不一定表示坏事。 \\
+Similarity & 异常检测的核心定义，不同方法用不同方式度量。 \\
+Applications & 诈欺侦测、网络入侵侦测、医疗异常检测等。 \\
+Binary classification limit & 异常集合开放且难以收集，不能总当作普通 class 2。 \\
+Open-set recognition & 有标签资料下，分类器需要能输出 unknown。 \\
+Clean/Polluted & 无标签资料下，训练集合可能全正常，也可能混有少量异常。 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{和自编码器的连接}
+
+上一讲介绍自编码器时说，中间表示和重建误差可以反映模型是否熟悉输入。本讲的异常检测正好给了它应用场景：若自编码器只在正常资料上训练，正常样本应容易重建，异常样本可能重建较差。于是重建误差可以成为 anomaly score。
+
+不过这只是众多方法之一。异常检测还可以基于概率密度、最近邻距离、单类分类器、开放集分类器、能量分数、对比表示或生成模型。选择哪一种方法，取决于训练资料是否有标签、是否 clean、异常是否可采样，以及应用能承受怎样的误报和漏报。
+
+\begin{importantbox}{最重要的一句话}
+    异常检测的第一原则是先确认资料设定，再谈方法。若没有弄清楚 normal 的定义、训练资料是否干净、异常是否可采样，算法选择很容易看似合理却和问题不匹配。
+\end{importantbox}
+
+\subsection{下一步要关注什么}
+
+后续课程会分别讨论有标签和无标签情境下的具体方法。学习这些方法时，可以始终把问题压回三个问题：模型如何定义相似？异常分数如何计算？阈值如何决定？只要这三个问题清楚，异常检测方法之间的差异就会变得容易比较。
+
+\end{document}

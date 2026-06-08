@@ -1,0 +1,392 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（五）：无标签设定与机率模型}
+\newcommand{\notesubtitle}{Unlabeled Anomaly Detection with Density-based Scoring}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 12 分 17 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=33}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{Case 2：没有标签时的异常检测}
+% =====================================================================
+
+前几讲讨论的设定大多还能借助分类器：训练资料有类别标签，模型可以先学会分类，再用 confidence score 判断输入是否来自已知分布。本讲进入另一种更困难、也很常见的设定：训练资料没有标签。我们手上只有一批样本
+\[
+\{x^1,x^2,\ldots,x^N\},
+\]
+但不知道每笔样本属于哪个类别，也没有对应的 $y$ 可以训练分类器。
+
+在这种情况下，异常检测的目标不再是“分类器是否有把握”，而是“新的输入 $x$ 是否像训练资料”。如果 $x$ 和训练资料相似，就把它当作 normal；如果 $x$ 明显不同，就把它当作 anomaly。课程把这称为没有标签的 case，也可以视为 unsupervised anomaly detection 的基本形式。
+
+\subsection{从分类问题变成相似性问题}
+
+有标签时，我们可以学习
+\[
+p(y\mid x)
+\]
+或训练一个 discriminative classifier。没有标签时，$y$ 不存在或不可用，所以无法直接定义“分类正确”这件事。此时更自然的目标是学习训练资料本身的分布：
+\[
+p(x).
+\]
+
+这代表我们关心的是某种输入在训练资料世界中出现的可能性。如果某个 $x$ 落在训练资料常见的区域，$p(x)$ 应该较大；如果它落在很少见的区域，$p(x)$ 应该较小。于是异常检测可以从 confidence threshold 转换成 density threshold：
+\[
+f(x)=
+\begin{cases}
+\mathrm{normal}, & P(x)\ge \lambda,\\
+\mathrm{anomaly}, & P(x)< \lambda.
+\end{cases}
+\]
+
+\begin{importantbox}{本讲核心变化}
+    有标签设定中，分数来自分类器 confidence；无标签设定中，分数来自资料分布或机率模型。前者问“模型认为它像哪一类”，后者问“这个输入本身常不常见”。
+\end{importantbox}
+
+\subsection{为什么需要无标签设定}
+
+很多实际应用中，正常行为资料容易收集，标签却很难取得。例如系统日志、用户行为、设备传感器、网络流量、交易记录等，通常可以累积大量样本，但不一定有人逐笔标注类别。更麻烦的是，异常类型可能非常多样，甚至未来才会出现，事先标出所有异常类别并不现实。
+
+因此，无标签异常检测通常采用一种弱假设：训练资料大多数来自正常行为。模型不需要知道每个正常样本属于哪个细分类，只需要把“常见的正常行为区域”刻画出来。未来输入如果远离这个区域，就被视为可疑。
+
+\subsection{本章小结}
+
+没有标签时，异常检测不能再依赖分类器 confidence。问题会转化为：给定一批训练样本，学习什么样的输入像训练资料，什么样的输入不像训练资料。这个转化把重点从 $p(y\mid x)$ 移到 $p(x)$，也为后面的机率模型和密度估计铺路。
+
+% =====================================================================
+\section{Twitch Plays Pokémon：从集体游戏到异常玩家}
+% =====================================================================
+
+课程用 Twitch Plays Pokémon 作为例子说明无标签异常检测。这个活动把宝可梦游戏直播到 Twitch 上，全世界玩家可以在聊天室输入上下左右、A、B 等指令，系统再根据大家的输入操控同一个游戏角色。参与人数最多时可达数万人，因此游戏过程会非常混乱。
+
+\framefig{0.86}{figures/fig01_twitch_plays_pokemon_gameplay.jpg}
+{Twitch Plays Pokémon：大量玩家同时在聊天室输入指令，共同操控同一个宝可梦游戏}
+{00:01:15--00:01:30}
+
+\subsection{为什么游戏会困难}
+
+如果所有玩家都想通关，集体投票本身已经很难协调。更困难的是，有些玩家可能不熟悉游戏，有些玩家只是觉得乱按很有趣，还有些玩家可能带有恶意，故意输入不利于通关的指令。这些玩家在网络语境中常被称为 troll，课程翻译成“网络小白”。
+
+从异常检测角度看，我们可以把多数认真通关的玩家视为 normal data，把明显不符合通关目标的玩家视为 anomaly。于是问题变成：在没有明确标签的情况下，能否从多数玩家行为中学习正常模式，再找出行为异常的玩家？
+
+\framefig{0.86}{figures/fig02_trolls_as_anomalies.jpg}
+{若假设多数玩家想完成游戏，他们的行为可作为正常训练资料；不想完成游戏或行为怪异的玩家可视为 anomaly}
+{00:05:00--00:05:15}
+
+\subsection{异常检测之后不一定要删除异常}
+
+课程里还有一个值得注意的小提醒：检测出 troll 之后，是否要移除他们，是另一个决策问题。有人可能认为如果没有这些混乱行为，Twitch Plays Pokémon 反而没有那么有趣；也有人可能认为正是混乱和阻挠构成了游戏的社群体验。
+
+这说明异常检测只负责给出“可疑程度”或“与多数行为是否相似”的判断，不自动决定后续处置。实际系统也一样：检测到异常交易，不一定马上封号；检测到异常设备信号，不一定马上停机；检测到异常玩家，也不一定马上踢出。后续动作需要结合任务目标、误报代价和用户体验。
+
+\begin{knowledgebox}{检测与处置要分开}
+    Anomaly detector 给出的是分数或警报，policy 才决定如何处理警报。把两者混在一起，容易让模型评估和业务决策互相污染。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Twitch Plays Pokémon 提供了一个生动的无标签异常检测场景：多数玩家行为构成训练资料，少数不符合通关目标或行为怪异的玩家可能是 anomaly。这个例子也提醒我们，异常检测不是道德审判或自动处罚，它只是把“与多数行为不相似”的样本找出来。
+
+% =====================================================================
+\section{把玩家表示成 feature vector}
+% =====================================================================
+
+机器学习模型不能直接处理“一个玩家”这个抽象对象。要使用 anomaly detection，首先需要把每个玩家表示成一个向量：
+\[
+x=\begin{bmatrix}x_1\\x_2\\ \vdots\end{bmatrix}.
+\]
+这一步叫 feature representation。它决定了模型看到的世界是什么样，也会影响后续异常分数是否有意义。
+
+\framefig{0.86}{figures/fig03_player_feature_vector.jpg}
+{把每个玩家表示成 feature vector，例如垃圾话比例、在无政府状态下发言的比例等}
+{00:06:30--00:06:45}
+
+\subsection{例子中的两个行为特征}
+
+课程举了两个可能的特征：
+\begin{itemize}
+    \item \textbf{垃圾话比例}：玩家在过去一段时间内输入了多少与游戏控制无关的内容。只有上下左右、A、B、Start 等指令会直接影响游戏，其他内容可视为无关讯息。
+    \item \textbf{无政府状态下发言比例}：Twitch Plays Pokémon 中存在不同控制模式。若某些玩家特别常在混乱模式下发言，可能反映其行为偏好。
+\end{itemize}
+
+因此，一个玩家可以被简化成二维向量：
+\[
+x=\begin{bmatrix}
+\text{垃圾话比例}\\
+\text{无政府状态发言比例}
+\end{bmatrix}.
+\]
+当然，真实系统可以加入更多特征，例如指令重复率、与当前游戏状态矛盾的输入比例、短时间高频发言、是否跟随多数玩家等。本讲只用二维特征，是为了方便在图上画出分布。
+
+\subsection{特征选择本身就是假设}
+
+特征不是中立的。选择“垃圾话比例”和“无政府状态发言比例”，就等于假设这些行为与 troll 倾向有关。如果真正的异常玩家很少发垃圾话，却总是在关键时刻输入错误方向，那么这两个特征可能抓不住他。反过来，一个正常玩家爱聊天，也可能被误判为异常。
+
+因此，无标签异常检测通常比有标签分类更依赖特征工程或 representation learning。没有标签帮我们纠正模型，特征设计就更需要结合领域理解。
+
+\begin{warningbox}{无标签不等于无假设}
+    虽然训练资料没有标签，但模型仍然依赖假设：哪些特征代表正常行为，哪些差异值得视为异常。若特征选错，密度模型再精密也会在错误空间里做判断。
+\end{warningbox}
+
+\subsection{本章小结}
+
+无标签异常检测的第一步是把对象变成向量。以玩家为例，可以用垃圾话比例和无政府状态发言比例描述行为。这个向量空间决定了后续“相似”与“不相似”的含义，因此特征设计是异常检测系统的重要组成部分。
+
+% =====================================================================
+\section{问题形式化：相似就是 normal，不相似就是 anomaly}
+% =====================================================================
+
+有了 feature vector 之后，我们可以正式写出本讲的问题。给定训练资料
+\[
+\{x^1,x^2,\ldots,x^N\},
+\]
+其中大多数样本被假设为正常。我们希望找到一个函数，判断新的输入 $x$ 是否和训练资料相似：
+\[
+g(x)=
+\begin{cases}
+\mathrm{normal}, & x \text{ similar to training data},\\
+\mathrm{anomaly}, & x \text{ different from training data}.
+\end{cases}
+\]
+
+\framefig{0.86}{figures/fig04_unsupervised_problem_formulation.jpg}
+{无标签异常检测的问题形式化：输入若类似训练资料则判为 normal，若不同于训练资料则判为 anomaly}
+{00:07:15--00:07:30}
+
+\subsection{与有标签设定的差异}
+
+有标签异常检测中，训练资料可能带有类别标签，分类器可以学会哪些输入属于已知类别。无标签设定中，我们没有 $y$，所以不能训练普通 classifier 来输出类别 confidence。这里的 anomaly detector 更像一个“相似性检测器”或“分布检测器”。
+
+这种差异可以整理如下：
+\begin{center}
+\begin{tabular}{L{3.2cm} L{4.8cm} L{4.8cm}}
+\toprule
+设定 & 可用资料 & 常见分数来源 \\
+\midrule
+有标签分类式异常检测 & $(x,y)$，正常类别标签 & 分类器 confidence，如最大 softmax \\
+有异常样本的设定 & 正常样本与部分异常样本 & 二元分类器或 cost-sensitive score \\
+无标签异常检测 & 只有 $\{x^1,\ldots,x^N\}$ & 资料密度、重建误差、距离或相似度 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+本讲聚焦密度式思路：估计某个输入在训练资料分布中出现的机率。如果训练资料代表正常行为，那么低机率样本就可能是异常。
+
+\subsection{相似性可以有不同定义}
+
+“相似”不是一个自动定义好的概念。它可以由距离决定，例如离训练样本很近就算相似；也可以由概率密度决定，例如落在高密度区域就算相似；还可以由重建误差决定，例如 autoencoder 重建不好就算不相似。课程在这里采用概率模型，是因为它可以把相似性变成一个清楚的数值 $P(x)$。
+
+概率视角的好处是可解释：我们可以说某类玩家行为在历史资料中出现得多不多。若一个玩家位于高密度区域，他更像多数玩家；若位于低密度区域，他更可疑。
+
+\subsection{本章小结}
+
+无标签异常检测可以被形式化为“是否类似训练资料”的问题。由于没有类别标签，模型不再输出类别 confidence，而要学习训练资料本身的结构。概率模型给出一种清楚做法：用 $P(x)$ 衡量输入是否常见，再根据阈值判断 normal 或 anomaly。
+
+% =====================================================================
+\section{用机率分数和阈值做异常检测}
+% =====================================================================
+
+课程接着把 confidence threshold 的形式迁移到无标签设定。过去我们用 $c(x)$ 表示分类器 confidence；现在没有分类器，就用概率模型给出的 $P(x)$ 表示样本在训练分布中出现的可能性。
+
+\framefig{0.86}{figures/fig05_probability_threshold_rule.jpg}
+{用机率模型生成 $P(x)$：若 $P(x)\ge\lambda$，判为 normal；若 $P(x)<\lambda$，判为 anomaly}
+{00:08:00--00:08:15}
+
+\subsection{密度阈值规则}
+
+规则可以写成：
+\[
+f(x)=
+\begin{cases}
+\mathrm{normal}, & P(x)\ge \lambda,\\
+\mathrm{anomaly}, & P(x)< \lambda.
+\end{cases}
+\]
+这里的 $\lambda$ 仍然是阈值，但它的意义和前几讲有所不同。前几讲阈值切的是分类器 confidence；本讲阈值切的是资料密度或机率。二者都把连续分数转换成二元决策，但分数来源不同。
+
+如果 $P(x)$ 很大，表示像 $x$ 这样的行为在训练资料中常见；如果 $P(x)$ 很小，表示它落在训练资料稀疏区域。异常检测的直觉就是：正常行为应该集中在高密度区域，异常行为更可能出现在低密度区域。
+
+\subsection{阈值仍然需要验证}
+
+虽然公式很简单，但 $\lambda$ 不是随意设定的。阈值太高，许多正常样本会被误报为异常；阈值太低，真正异常可能被放过。若有 development set，可以像前几讲一样调阈值；若没有异常标签，就只能结合业务容忍度，例如每天最多允许多少警报、希望抓住多极端的行为，或使用训练资料分数的低分位数作为初始阈值。
+
+\begin{importantbox}{密度阈值的解释}
+    $P(x)$ 不是在说“这个玩家是不是坏人”，而是在说“这种行为在训练资料中常不常见”。低 $P(x)$ 只代表行为罕见，是否需要处理仍取决于应用场景。
+\end{importantbox}
+
+\subsection{本章小结}
+
+无标签设定下，可以用机率模型估计 $P(x)$，再用阈值 $\lambda$ 把输入分成 normal 和 anomaly。这个规则和 confidence threshold 形式相似，但含义不同：它不是模型对类别的把握，而是输入在训练分布中的常见程度。
+
+% =====================================================================
+\section{二维行为分布的直观解释}
+% =====================================================================
+
+为了让 $P(x)$ 更直观，课程使用真实资料画出二维分布。横轴是“说垃圾话”的比例，纵轴是“无政府状态发言”的比例。每一个点代表一个玩家。训练资料形成一个云状分布，密集区域代表常见玩家行为，稀疏区域代表少见行为。
+
+\framefig{0.86}{figures/fig06_empirical_distribution_histogram.jpg}
+{二维玩家行为分布与边际直方图：玩家行为并非均匀散布，而是集中在某些高密度区域}
+{00:09:00--00:09:15}
+
+\subsection{从图上读出正常行为}
+
+图中可以看到，多数玩家集中在某些区域。例如垃圾话比例较低、无政府状态发言比例较高的区域有大量样本。这类行为在训练资料中常见，因此对应的 $P(x)$ 较大。反过来，如果某个玩家落在很少有点的位置，他的行为组合就比较罕见，$P(x)$ 较小。
+
+这里的直觉不需要先知道复杂机率模型。人眼看散点图时，也会自然觉得密集区域“正常”、孤立点“奇怪”。机率模型只是把这个直觉数值化，让系统能自动给每个玩家一个 anomaly score。
+
+\subsection{边际分布不等于联合分布}
+
+图中还画了两个方向的直方图，分别显示每个特征自己的分布。但异常检测通常不能只看单一特征。一个玩家在垃圾话比例上可能不极端，在无政府状态发言比例上也不极端，但两个特征组合起来却很少见。真正的 $P(x)$ 应该刻画联合分布：
+\[
+P(x)=P(x_1,x_2,\ldots,x_d).
+\]
+
+这点在高维资料中更重要。许多异常不是某一个特征特别大或特别小，而是特征组合不合常理。例如一个用户登录地点正常、时间也正常，但地点和时间的组合不正常；一笔交易金额不大、商户也常见，但组合起来很可疑。
+
+\subsection{本章小结}
+
+二维行为分布展示了密度式异常检测的核心直觉：训练资料密集处代表常见行为，稀疏处代表罕见行为。机率模型的任务，就是把这种“常见/罕见”的视觉判断变成每个输入的数值分数 $P(x)$。
+
+% =====================================================================
+\section{高密度与低密度：谁更异常}
+% =====================================================================
+
+课程最后用几个红点说明 $P(x)$ 的解释。落在密集区域的点对应 $P(x)$ large，比较可能是正常玩家；落在稀疏区域或边缘区域的点对应 $P(x)$ small，比较可能是异常玩家。
+
+\framefig{0.86}{figures/fig07_density_large_small_examples.jpg}
+{同一行为空间中的不同玩家：高密度区域 $P(x)$ large，稀疏区域 $P(x)$ small，更可能被判为 anomaly}
+{00:11:30--00:11:45}
+
+\subsection{为什么需要数值化分数}
+
+有些点肉眼看起来很容易判断：明显落在密集区域就是正常，明显远离所有点就是异常。但实际系统常遇到边界案例。课程举的直觉问题是：如果一个玩家垃圾话比例较高，但多数时间都在无政府状态下发言；另一个玩家垃圾话比例稍低，但无政府状态发言比例很低，到底谁更异常？
+
+这时就需要一个数值化方法，而不是只靠肉眼或规则。机率模型会根据整体资料分布给每个点一个分数。分数可以排序，也可以和阈值比较：
+\[
+\mathrm{score}(x)=-\log P(x)
+\]
+通常也是常用写法。因为 $P(x)$ 越小，$-\log P(x)$ 越大，越异常。
+
+\subsection{密度模型的实际挑战}
+
+本讲还没有展开具体机率模型，但这里已经可以看到几个挑战：
+\begin{itemize}
+    \item \textbf{高维困难}：特征维度越高，估计联合分布越难，资料也更稀疏。
+    \item \textbf{正常资料污染}：训练资料若混入较多异常，模型可能把异常行为也学成正常。
+    \item \textbf{特征尺度问题}：不同特征的尺度和分布不同，直接建模前通常需要标准化或变换。
+    \item \textbf{罕见不等于有害}：低密度行为可能只是少见，不一定需要处罚。
+\end{itemize}
+
+这些挑战说明，$P(x)$ 提供的是原则，不是免费答案。真正系统仍要选择合适的特征、密度模型、阈值和后续策略。
+
+\subsection{本章小结}
+
+高密度区域代表训练资料中常见行为，低密度区域代表罕见行为。为了比较边界案例，需要把直觉转换成数值分数，例如 $P(x)$ 或 $-\log P(x)$。密度式异常检测的目标，就是让每个输入都能获得一个可排序、可阈值化的异常分数。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+这一讲把异常检测从有标签分类器推进到无标签资料。核心思想很朴素：如果没有类别标签，就不要再问分类器是否有 confidence，而要问输入是否像训练资料。用数学语言说，就是从 $p(y\mid x)$ 转向 $p(x)$。
+
+Twitch Plays Pokémon 的例子说明了这个设定的实际含义。我们可以假设多数玩家想完成游戏，把他们的行为作为正常训练资料；再把每个玩家表示成 feature vector，例如垃圾话比例、无政府状态发言比例；最后用训练资料估计行为分布，给新玩家计算 $P(x)$。若 $P(x)$ 低于阈值，就把他标为可疑或 anomaly。
+
+本讲最重要的几条结论是：
+\begin{enumerate}
+    \item 无标签异常检测没有 $y$，因此不能依赖普通分类器的 confidence。
+    \item 训练资料通常被假设为多数正常，模型要学习正常资料分布。
+    \item Feature vector 决定了“相似”的含义，是系统成败的关键。
+    \item 概率模型用 $P(x)$ 数值化常见程度，低密度样本更可能是 anomaly。
+    \item 检测结果不等于处置策略，低密度只代表罕见，不自动代表应该删除或惩罚。
+\end{enumerate}
+
+和前几讲连起来看，异常检测有两条重要路线：若有标签和分类器，可以从 confidence score 出发；若没有标签，就要从资料分布出发。下一步通常会讨论如何真的估计 $P(x)$，例如用高斯模型、混合模型、非参数方法或神经生成模型。无论具体模型多复杂，基本逻辑都不变：正常资料定义高密度区域，异常检测寻找低密度输入。
+
+\end{document}

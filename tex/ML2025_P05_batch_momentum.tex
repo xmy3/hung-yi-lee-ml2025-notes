@@ -1,0 +1,485 @@
+\documentclass[a4paper]{article}
+
+% Basic packages
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}
+
+% ===== Highlight boxes =====
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title=#1, sharp corners
+}
+
+% ===== Code listings =====
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!60!black},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+    extendedchars=false
+}
+
+% ===== Front-page metadata =====
+\newcommand{\notetitle}{Batch 与 Momentum}
+\newcommand{\notesubtitle}{李宏毅《机器学习》2025 · 类神经网络训练不起来怎么办（二）}
+\newcommand{\noteauthors}{基于李宏毅老师课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili 搬运）}
+\newcommand{\videoduration}{约 31 分钟}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=5}
+
+\begin{document}
+
+\pagestyle{empty}
+
+% ===== Cover page =====
+\begin{center}
+    \vspace*{1.5cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.4cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.8cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.8cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.8cm}
+    \begin{tcolorbox}[width=0.8\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+
+% ===== TOC =====
+\tableofcontents
+\newpage
+
+\pagestyle{plain}
+
+% =====================================================================
+\section{引言：两个让训练跑得动的技巧}
+% =====================================================================
+
+上一节我们弄清楚了``梯度为零''的真相：训练停滞往往不是卡在 local minima，而是卡在 saddle point，而高维空间里其实总有路可走。但``理论上有路''不等于``实务上走得动''——直接算 Hessian、求特征向量来逃离，运算量大到没人真用。
+
+这一节就来补上两个\textbf{真正实用、运算量又小}的训练技巧：\textbf{Batch（批次）} 与 \textbf{Momentum（动量）}。它们都能帮助我们对抗 critical point，让 optimization 跑得更顺。
+
+\begin{knowledgebox}{本节的定位}
+    老师原本第一周并不打算讲 batch，因为它``不太符合一般人会采取的直觉做法''，怕讲了反而引出一堆问题。但既然作业的程式里已经用到了，索性先把它讲清楚。本节分两大块：\textbf{(1) 为什么要用 batch、不同 batch size 的利弊；(2) momentum 如何借``惯性''冲过 critical point。}
+\end{knowledgebox}
+
+\subsection{先厘清：什么是 Batch 与 Epoch}
+
+我们上次没有细讲一个事实：实际算微分时，\textbf{并不是真的拿所有 data 一起算出总 loss}。我们会把所有训练资料切成一个一个的 \textbf{batch}（有人叫 mini-batch，指的是同一件事；课程投影片里写 mini-batch）。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig01_review_batch.jpg}
+    \caption{Optimization with Batch 的完整流程：每次只拿 $B$ 笔资料（一个 batch）算出 $L^i$、求 gradient $\boldsymbol{g}^i$、update 一次参数，再换下一个 batch。看完所有 batch 一遍叫做一个 \textbf{epoch}；每个 epoch 开始前会做一次 \textbf{shuffle}，让每个 epoch 的 batch 划分都不同。\protect\footnotemark}
+    \label{fig:review_batch}
+\end{figure}
+\footnotetext{视频画面时间区间：00:00:57--00:02:05。}
+
+\begin{importantbox}{三个关键术语}
+    \begin{itemize}
+        \item \textbf{Batch（批次）}：每次 update 参数时实际拿来算 loss 与 gradient 的一小撮资料，大小记为 $B$。我们\textbf{不会}拿全部资料一起算，只拿一个 batch。
+        \item \textbf{Epoch（回合）}：把所有 batch 都看过一遍，称为一个 epoch。若有 $N$ 笔资料、batch size 为 $B$，则一个 epoch 含 $N/B$ 次 update。
+        \item \textbf{Shuffle（洗牌）}：常见做法是每个 epoch 开始前重新随机划分 batch，于是``哪些资料被分在同一个 batch''每个 epoch 都不一样。
+    \end{itemize}
+\end{importantbox}
+
+% =====================================================================
+\section{为什么要用 Batch：大 batch 与小 batch 的两极对比}
+% =====================================================================
+
+要理解 batch size 的影响，最好的办法是比较\textbf{两个最极端}的情形。设训练资料共 $N=20$ 笔：
+
+\begin{itemize}
+    \item \textbf{Batch size $=N$（Full Batch，等于没用 batch）}：必须看完全部 20 笔资料，才能算一次 loss、update 一次参数。
+    \item \textbf{Batch size $=1$}：每看一笔资料就 update 一次；一个 epoch 内会 update 20 次。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/fig02_small_vs_large.jpg}
+    \caption{两极对比。左（Full Batch）：``看完所有 examples''才更新一次，\textbf{蓄力时间长、但这一步走得稳、威力大}（Long time for cooldown, but powerful）。右（Batch size $=1$）：每笔资料更新一次，\textbf{冷却时间短、但每步方向曲曲折折、不稳}（Short time for cooldown, but noisy）。}
+    \label{fig:small_vs_large}
+\end{figure}
+\footnotetext{视频画面时间区间：00:02:51--00:05:20。}
+
+\begin{knowledgebox}{一个生动的比喻：蓄力 vs.\ 乱枪打鸟}
+    老师把两者比作游戏技能：
+    \begin{itemize}
+        \item \textbf{Full batch}：像是``蓄力''型大招——\textbf{技能冷却时间长}（要看完所有资料），但放出来\textbf{威力大、方向准}。
+        \item \textbf{Batch size $=1$}：像是``乱枪打鸟''——\textbf{冷却时间短}（看一笔就出手），但每一枪都\textbf{不太准}（loss 由单笔资料算出，很 noisy）。
+    \end{itemize}
+    乍看各有优劣。但这个直觉\textbf{忽略了一个关键因素——平行运算}。
+\end{knowledgebox}
+
+\subsection{平行运算改写了``冷却时间''：大 batch 单次更新并不慢}
+
+``大 batch 冷却时间长''这个直觉，只在\textbf{没有考虑平行运算}时才成立。实际上有 GPU 时，一个 batch 里的资料是\textbf{平行处理}的——1000 笔资料算 gradient 的时间，\textbf{绝不是} 1 笔的 1000 倍。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig03_time_per_update.jpg}
+    \caption{在 MNIST 手写数字辨识上实测``每次 update 所需时间''：横轴 batch size 从 1 到 1000，\textbf{耗时几乎一样}（蓝线几乎贴着 0）。结论：\textbf{Larger batch size does \emph{not} require longer time to compute gradient}。}
+    \label{fig:time_per_update}
+\end{figure}
+\footnotetext{视频画面时间区间：00:06:48--00:07:30。}
+
+\begin{knowledgebox}{MNIST：机器学习界的``果蝇''}
+    MNIST 是手写数字（0--9）分类资料集。老师称它为``机器学习的果蝇''——就像生物学家拿果蝇做实验一样，几乎每个刚入门的人第一个尝试的任务就是 MNIST。它小、快、好上手，特别适合用来做这种``batch size vs.\ 时间''的对照实验。
+\end{knowledgebox}
+
+但平行运算的能力\textbf{终究有极限}。当 batch size 大到上万、乃至六万时，GPU 一次要吞下这么多资料，算一个 batch 的时间就会随 batch size 明显上升了。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig04_parallel_gpu.jpg}
+    \caption{补上 batch size $=$ 10000、60000 的情形（Tesla V100 GPU）：1$\sim$1000 区间因\textbf{平行运算}几乎持平，超过约 1000 之后耗时才随 batch size 增长（\emph{unless batch size is too large}）。即便如此，V100 处理塞了 6 万笔资料的单个 batch，也能在约十秒内算完 gradient。}
+    \label{fig:parallel_gpu}
+\end{figure}
+\footnotetext{视频画面时间区间：00:07:48--00:08:25。}
+
+\begin{knowledgebox}{硬件的时代演进}
+    老师特意保留了历年的旧投影片：2015 年用 GTX 760、2017 年用 GTX 980，跑完 6 万笔资料的一个 batch 要\textbf{好几分钟}；而如今的 V100 只要\textbf{十秒}。同一个实验每年都做，正好见证了 GPU 算力的飞速进步。
+\end{knowledgebox}
+
+\subsection{反转：跑完一个 epoch，大 batch 反而更快}
+
+既然``单次 update 耗时''在 1$\sim$1000 区间几乎相同，那么决定胜负的就变成了\textbf{一个 epoch 要 update 几次}。这里大小 batch 的处境正好\textbf{反转}：
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig05_one_epoch.jpg}
+    \caption{``跑完一个 epoch（看完所有资料一遍）所需时间''：横轴 batch size，纵轴时间。\textbf{越小的 batch，一个 epoch 反而越久}——曲线在大 batch 处接近 0、在小 batch 处陡升。这与``单次 update 时间''那张图的趋势\textbf{恰好相反}。}
+    \label{fig:one_epoch}
+\end{figure}
+\footnotetext{视频画面时间区间：00:09:46--00:10:41。}
+
+\begin{importantbox}{一笔账：60000 次 vs.\ 60 次 update}
+    设训练资料 6 万笔：
+    \begin{itemize}
+        \item \textbf{Batch size $=1$}：一个 epoch 要 update \textbf{60000 次}。
+        \item \textbf{Batch size $=1000$}：一个 epoch 只需 update \textbf{60 次}。
+    \end{itemize}
+    既然单次 update 的耗时在两者间``根本差不多''，那么 60000 次与 60 次的总时间差距就\textbf{非常可观}。所以在有平行运算的前提下，\textbf{大 batch 跑完一个 epoch 反而更有效率}——这与未考虑平行运算时的直觉正好相反。
+\end{importantbox}
+
+到此，大 batch 原本``蓄力慢''的劣势，已经被平行运算\textbf{抵消甚至反超}。看起来大 batch 只剩优势了？且慢——
+
+% =====================================================================
+\section{神奇之处：Noisy 的 Gradient 反而对训练有帮助}
+% =====================================================================
+
+如果大 batch 单次更新不慢、一个 epoch 还更快、方向又更稳定，那它岂不是全面胜出？但\textbf{真正神奇的地方在于：小 batch 那种 noisy 的 gradient，反而能带来更好的训练结果}——这又一次和直觉相反。
+
+\subsection{实验现象：大 batch 的 training 结果反而更差}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig06_accuracy.jpg}
+    \caption{在 MNIST 与 CIFAR-10 上，正确率随 batch size 的变化（蓝：training，橙：validation）。\textbf{batch size 越大，正确率越低}。关键观察：连 \textbf{training accuracy} 都随 batch 增大而下降，所以这\textbf{不是 overfitting，而是 Optimization Fails}。}
+    \label{fig:accuracy}
+\end{figure}
+\footnotetext{视频画面时间区间：00:12:10--00:13:44。}
+
+\begin{importantbox}{这是 Optimization 问题，不是 Model Bias、也不是 Overfitting}
+    用的是\textbf{同一个模型}（同一个 network），它们能表示的函数集合一模一样，所以排除 model bias。而 training accuracy 本身就随大 batch 变差——既然在训练集上都没 train 好，就\textbf{不是 overfitting}，而是\textbf{大 batch 时 optimization 出了问题}。反过来，\textbf{小 batch 的 optimization 结果反而更好}。
+\end{importantbox}
+
+\subsection{为什么小 batch 的 optimization 更好？}
+
+一个有力的解释是：\textbf{每个 batch 的 loss function 略有差异}。
+
+\begin{itemize}
+    \item \textbf{Full batch}：自始至终沿着同一个 loss function $L$ 走，一旦走到 critical point（gradient $=0$），若不特别去算 Hessian，就\textbf{彻底卡住}。
+    \item \textbf{Small batch}：第一个 batch 用 $L^1$ 算 gradient，第二个 batch 用 $L^2$⋯⋯而 $L^1$ 与 $L^2$ 的形状\textbf{不一样}。即便在 $L^1$ 上卡住了（gradient $=0$），换到 $L^2$ \textbf{不一定还卡着}，于是又能继续把 loss 降下去。
+\end{itemize}
+
+\begin{knowledgebox}{Noisy 是一种``扰动救援''}
+    每个 batch 的 loss 略有不同，相当于在 error surface 上不断``换地图''。某张地图上的死路，在下一张地图上可能就通了。所以小 batch 的噪声，恰好成了帮助逃离 critical point 的扰动——\textbf{noisy 的 update 对 training 反而有帮助}。
+\end{knowledgebox}
+
+% =====================================================================
+\section{小 batch 连 Testing 都更好：Flat 与 Sharp Minima}
+% =====================================================================
+
+更神奇的是：就算想办法（如调大 batch 的 learning rate）把大、小 batch 都 train 到\textbf{相同的 training accuracy}，到了 \textbf{testing} 阶段，\textbf{小 batch 仍然更好}。这次才是真正的 overfitting 现象——发生在大 batch 上。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/fig07_testing_table.jpg}
+    \caption{出自 \emph{On Large-Batch Training for Deep Learning: Generalization Gap and Sharp Minima}（arXiv:1609.04836）。作者用 6 个不同 network（含 CNN、全连接网络）在不同资料集上实验：小 batch（SB $=256$）与大 batch（LB $=$ 资料量 $\times 0.1$）调到\textbf{相近的 Training Accuracy}，但 \textbf{Testing Accuracy 上小 batch 明显更高}——大 batch 出现了 generalization gap。}
+    \label{fig:testing_table}
+\end{figure}
+\footnotetext{视频画面时间区间：00:15:51--00:17:07。}
+
+\subsection{解释：好谷底（盆地）与坏谷底（峡谷）}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/fig08_flat_sharp.jpg}
+    \caption{Training loss 上有多个 local minima，loss 都趋近于零，但有``好坏''之分：位于\textbf{宽阔盆地}的是 \textbf{Flat Minima（好）}，位于\textbf{狭窄峡谷}的是 \textbf{Sharp Minima（坏）}。}
+    \label{fig:flat_sharp}
+\end{figure}
+\footnotetext{视频画面时间区间：00:17:42--00:19:08。}
+
+\begin{importantbox}{为什么 Flat Minima 泛化更好}
+    Training 与 testing 的 loss 曲线之间存在 \textbf{mismatch}（分布不同、或采样不同），可近似看作把 testing loss 相对 training loss \textbf{水平平移一点}。
+    \begin{itemize}
+        \item 在\textbf{平坦盆地（Flat Minima）}里：左右平移一点，loss 几乎不变 $\Rightarrow$ training 与 testing 的结果\textbf{差不多}。
+        \item 在\textbf{狭窄峡谷（Sharp Minima）}里：稍一平移，loss \textbf{天差地远} $\Rightarrow$ testing loss 暴涨，泛化差。
+    \end{itemize}
+\end{importantbox}
+
+\begin{knowledgebox}{小 batch 倾向落入盆地的直觉（尚待研究的猜想）}
+    很多人相信：\textbf{大 batch 倾向走进狭窄峡谷，小 batch 倾向落入宽阔盆地}。直觉是——小 batch 噪声大、每步方向随机，若峡谷很窄，一个不小心就\textbf{跳出去了}，只有足够宽的盆地才困得住它；而大 batch 顺着稳定的 gradient 走，更容易陷进小峡谷。\textbf{注意：这只是一个解释，并非人人认同，仍是开放的研究问题。}
+\end{knowledgebox}
+
+\subsection{小结：大 batch vs.\ 小 batch 全面对照}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig09_summary_table.jpg}
+    \caption{大、小 batch 的全面对照表。小 batch 在 Gradient 上更 noisy，却在 Optimization 与 Generalization 上更优；大 batch 单次更新（有平行运算时）不慢、一个 epoch 更快。\textbf{没有绝对的赢家。}}
+    \label{fig:summary_table}
+\end{figure}
+\footnotetext{视频画面时间区间：00:19:46--00:21:20。}
+
+\begin{knowledgebox}{对照表逐项解读}
+    \begin{center}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{比较项目} & \textbf{Small Batch} & \textbf{Large Batch} \\
+        \midrule
+        单次 update 时间（无平行运算） & 快 & 慢 \\
+        单次 update 时间（有平行运算） & 相同 & 相同（除非 batch 过大） \\
+        一个 epoch 的时间 & \textbf{慢} & \textbf{快}（占优） \\
+        Gradient 方向 & Noisy（不稳） & Stable（稳定） \\
+        Optimization 表现 & \textbf{更好} & 较差 \\
+        Generalization（泛化） & \textbf{更好} & 较差 \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+    一句话：\textbf{batch size 是一个需要你自己去调的 hyperparameter}，两端各有所长。
+\end{knowledgebox}
+
+\subsection{鱼与熊掌能否兼得？}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig10_fish_bear.jpg}
+    \caption{``Have both fish and bear's paws?''——能否既用大 batch 的平行运算来\textbf{加速训练}、又得到小 batch 那样\textbf{好的结果}？这是有可能的，已有大量论文探讨（如 76 分钟 train BERT、15 分钟 train ResNet-50、1 小时 train ImageNet 等）。}
+    \label{fig:fish_bear}
+\end{figure}
+\footnotetext{视频画面时间区间：00:21:34--00:22:30。}
+
+\begin{knowledgebox}{鱼与熊掌兼得：把 batch 开到极大}
+    ``鱼与熊掌''出自《孟子》，喻两件好事难以兼得。这些论文之所以能训练得飞快，正是\textbf{把 batch size 开得非常大}（例如第一篇里一个 batch 塞进 3 万笔 sample），用平行运算在极短时间内看过海量资料；同时再辅以\textbf{特别的方法}去弥补大 batch 可能带来的劣势。本节不展开，列出 reference 供参考。
+\end{knowledgebox}
+
+% =====================================================================
+\section{Momentum（动量）：用惯性冲过 critical point}
+% =====================================================================
+
+下课前的第二个技巧是 \textbf{Momentum}，它是另一个\textbf{对抗 saddle point 与 local minima} 的利器。它的灵感来自\textbf{物理世界}。
+
+\subsection{物理直觉：球不会被小坑卡住}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/fig11_physical_world.jpg}
+    \caption{``Consider the physical world''：把 error surface 想成真实斜坡、参数想成一颗球。普通 gradient descent 走到 critical point 就停（gradient $=0$）；但物理世界里的球\textbf{带有惯性}，从高处滚下来，即便遇到 saddle point 或小的 local minima，凭动量\textbf{也可能继续往前、甚至翻过小坡}。}
+    \label{fig:physical_world}
+\end{figure}
+\footnotetext{视频画面时间区间：00:22:50--00:23:52。}
+
+\begin{knowledgebox}{从``球''到``算法''}
+    一颗真实的球从斜坡滚下，\textbf{不会}被 saddle point 或浅坑卡住——惯性会推着它越过。Momentum 要做的，就是把这种``惯性''引入 gradient descent：让参数更新时\textbf{不只听当下的 gradient，还记得上一步的走向}。
+\end{knowledgebox}
+
+\subsection{先复习：Vanilla Gradient Descent}
+
+\begin{importantbox}{一般（Vanilla）梯度下降}
+    ``Vanilla''直译是``香草''，在这里就是``一般、普通''的意思。一般的 gradient descent：
+    \begin{enumerate}
+        \item 从初始参数 $\boldsymbol{\theta}^0$ 出发；
+        \item 计算 gradient $\boldsymbol{g}^0$；
+        \item 沿 gradient \textbf{反方向} update：$\boldsymbol{\theta}^1 = \boldsymbol{\theta}^0 - \eta\,\boldsymbol{g}^0$；
+        \item 到新位置再算 gradient、再沿反方向更新，如此反复。
+    \end{enumerate}
+    它唯一的依据就是\textbf{当下的 gradient}。
+\end{importantbox}
+
+\subsection{加上 Momentum：方向 = 负梯度 + 上一步方向}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig12_momentum_formula.jpg}
+    \caption{Gradient Descent + Momentum。每一步的移动量 $\boldsymbol{m}^i$ 不再只由 gradient 决定，而是 \textbf{``上一步的移动''减去``当前的 gradient''}：$\boldsymbol{m}^i = \lambda\,\boldsymbol{m}^{i-1} - \eta\,\boldsymbol{g}^{i-1}$。左图：实际移动（蓝实线）是 gradient 反方向（红）与上一步方向（蓝虚线）的\textbf{折中（向量和）}。}
+    \label{fig:momentum_formula}
+\end{figure}
+\footnotetext{视频画面时间区间：00:24:49--00:27:01。}
+
+加入 momentum 后的完整流程：
+
+\begin{align*}
+    &\text{起点 } \boldsymbol{\theta}^0,\quad \text{初始移动量 } \boldsymbol{m}^0 = \boldsymbol{0} \\
+    &\text{算 } \boldsymbol{g}^0,\quad \boldsymbol{m}^1 = \lambda\,\boldsymbol{m}^0 - \eta\,\boldsymbol{g}^0,\quad \boldsymbol{\theta}^1 = \boldsymbol{\theta}^0 + \boldsymbol{m}^1 \\
+    &\text{算 } \boldsymbol{g}^1,\quad \boldsymbol{m}^2 = \lambda\,\boldsymbol{m}^1 - \eta\,\boldsymbol{g}^1,\quad \boldsymbol{\theta}^2 = \boldsymbol{\theta}^1 + \boldsymbol{m}^2 \\
+    &\quad\vdots
+\end{align*}
+
+各符号含义：
+\begin{itemize}
+    \item $\boldsymbol{m}^i$：第 $i$ 步的\textbf{移动量（movement）}，即真正用来更新参数的方向。
+    \item $\boldsymbol{g}^{i-1}$：当前位置的 gradient；$-\eta\,\boldsymbol{g}^{i-1}$ 是它的反方向贡献，$\eta$ 是 \textbf{learning rate}。
+    \item $\lambda$（lambda）：\textbf{动量系数}，衡量``上一步方向''保留多少，是与 $\eta$ 并列、需要自己调的另一个 hyperparameter。
+    \item 第一步因 $\boldsymbol{m}^0=\boldsymbol{0}$，方向与普通 gradient descent 相同；\textbf{从第二步起}才真正体现出``参考上一步''的差异。
+\end{itemize}
+
+\subsection{另一种解读：$\boldsymbol{m}^i$ 是过去所有梯度的加权和}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/fig13_momentum_intuition.jpg}
+    \caption{Momentum 的另一解读与直觉图。展开递推式可知 $\boldsymbol{m}^i$ 是\textbf{过去所有 gradient 的加权和}（weighted sum）。下方小球图：即便走到 $\partial L/\partial w = 0$ 的 critical point，凭着``上一步方向''（蓝虚线）的惯性，\textbf{真正的移动（蓝实线）仍能继续向前}，甚至翻过小丘走向更好的 local minima。}
+    \label{fig:momentum_intuition}
+\end{figure}
+\footnotetext{视频画面时间区间：00:27:25--00:30:38。}
+
+把递推式逐层展开：
+\begin{align*}
+    \boldsymbol{m}^0 &= \boldsymbol{0} \\
+    \boldsymbol{m}^1 &= -\eta\,\boldsymbol{g}^0 \\
+    \boldsymbol{m}^2 &= \lambda\,\boldsymbol{m}^1 - \eta\,\boldsymbol{g}^1 = -\lambda\eta\,\boldsymbol{g}^0 - \eta\,\boldsymbol{g}^1 \\
+    &\;\;\vdots
+\end{align*}
+
+\begin{importantbox}{Momentum 的两种等价解读}
+    \begin{enumerate}
+        \item \textbf{递推视角}：每一步的移动 $=$ gradient 的反方向 $+$ 上一步移动方向。
+        \item \textbf{展开视角}：$\boldsymbol{m}^i$ 是\textbf{过去所有 gradient $\boldsymbol{g}^0,\boldsymbol{g}^1,\dots,\boldsymbol{g}^{i-1}$ 的加权和}——越早的 gradient，被 $\lambda$ 衰减得越多。
+    \end{enumerate}
+    所以加上 momentum 后，update 方向\textbf{不只考虑当下的 gradient，而是综合了过去的全部 gradient}。
+\end{importantbox}
+
+\begin{knowledgebox}{一个最直观的例子：凭惯性继续走}
+    沿 error surface 滚动：
+    \begin{itemize}
+        \item 一开始 gradient 指向右，无上一步方向，就单纯往右走一点。
+        \item 走到 local minima / saddle point，gradient $=0$，\textbf{普通 gradient descent 就此停住}。
+        \item 但 momentum 还记得``前一步往右''，于是\textbf{继续往右}，越过这个坑。
+        \item 甚至到了 gradient 指向左（要你往回走）的地方，只要\textbf{上一步的影响力（动量）够大}，仍可能继续往右，\textbf{翻过小丘}，抵达更好的 local minima。
+    \end{itemize}
+    这正是 momentum 可能带来的好处：\textbf{用惯性对抗 critical point}。
+\end{knowledgebox}
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本节给出了两个\textbf{运算量小、却能切实改善训练}的技巧，正好补上了上一节``算 Hessian 太贵''留下的缺口。
+
+\subsection{核心要点提炼}
+
+\begin{importantbox}{Batch 部分}
+    \begin{enumerate}
+        \item \textbf{Batch / Epoch / Shuffle}：每次只用一个 batch（$B$ 笔）算 gradient 并 update；看完所有 batch 为一个 epoch；每个 epoch 前 shuffle 重新分组。
+        \item \textbf{平行运算改写直觉}：有 GPU 时，1$\sim$1000 的 batch 单次 update 耗时几乎相同；故\textbf{大 batch 跑完一个 epoch 反而更快}。
+        \item \textbf{Noisy 有益}：小 batch 每个 batch 的 loss function 不同，能帮助\textbf{逃离 critical point}，\textbf{optimization 反而更好}。
+        \item \textbf{Flat vs.\ Sharp}：小 batch 倾向落入\textbf{平坦盆地（flat minima）}，对 training/testing 的 mismatch 更鲁棒，故\textbf{泛化也更好}（注：此为主流但仍待证实的解释）。
+        \item \textbf{batch size 是 hyperparameter}：大小各有所长，需要自己调；``鱼与熊掌''可借特殊方法兼得。
+    \end{enumerate}
+\end{importantbox}
+
+\begin{importantbox}{Momentum 部分}
+    \begin{enumerate}
+        \item \textbf{物理灵感}：把参数想成带惯性的球，球不会被 saddle point 或浅坑卡住。
+        \item \textbf{更新公式}：$\boldsymbol{m}^i = \lambda\,\boldsymbol{m}^{i-1} - \eta\,\boldsymbol{g}^{i-1}$，$\boldsymbol{\theta}^i = \boldsymbol{\theta}^{i-1} + \boldsymbol{m}^i$；方向 $=$ 负梯度 $+$ 上一步方向。
+        \item \textbf{等价解读}：$\boldsymbol{m}^i$ 是过去所有 gradient 的加权和，越旧衰减越多（系数 $\lambda$）。
+        \item \textbf{作用}：即便当下 gradient 为零，凭动量仍能继续前进、翻过小丘，\textbf{对抗 critical point}。
+    \end{enumerate}
+\end{importantbox}
+
+\subsection{本节关键概念清单}
+
+\begin{knowledgebox}{术语对照表}
+    \begin{center}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{概念} & \textbf{英文} & \textbf{说明} \\
+        \midrule
+        批次 & Batch / Mini-batch & 单次 update 实际使用的 $B$ 笔资料 \\
+        回合 & Epoch & 看完所有 batch 一遍；含 $N/B$ 次 update \\
+        洗牌 & Shuffle & 每个 epoch 前重新随机划分 batch \\
+        全批次 & Full Batch & batch size $=N$，等于不分 batch \\
+        平行运算 & Parallel Computing & GPU 同时处理一个 batch 内的资料 \\
+        噪声梯度 & Noisy Gradient & 小 batch 方向不稳，但利于逃离 critical point \\
+        平坦最小值 & Flat Minima & 位于宽阔盆地，泛化好 \\
+        尖锐最小值 & Sharp Minima & 位于狭窄峡谷，泛化差 \\
+        泛化差距 & Generalization Gap & 大 batch 在 testing 上变差的现象 \\
+        动量 & Momentum & 更新时叠加``上一步方向''的惯性 \\
+        动量系数 & $\lambda$ & 上一步方向的保留权重（需调） \\
+        学习率 & Learning Rate $\eta$ & gradient 反方向的步长（需调） \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+\end{knowledgebox}
+
+\subsection{承上启下}
+
+\begin{itemize}
+    \item \textbf{承上}：上一节说``卡住时多半是 saddle point，理论上有路可走，但算 Hessian 太贵''。本节的 \textbf{small batch 噪声}与 \textbf{momentum 惯性}，正是两种\textbf{运算量极小}的``逃生''手段。
+    \item \textbf{启下}：``类神经网络训练不起来怎么办''系列还没结束。下一节将讨论\textbf{自动调整学习率（Learning Rate）}——当不同参数、不同阶段需要不同步长时，如何让 learning rate 自己适应（如 Adagrad、RMSProp、Adam），进一步解决 error surface 崎岖带来的训练困难。
+\end{itemize}
+
+\vspace{1cm}
+
+\begin{center}
+    \rule{0.5\textwidth}{0.5pt}
+    \vspace{0.3cm}
+
+    \textbf{本节完 · 下一节：类神经网络训练不起来怎么办（三）—— 自动调整学习率（Learning Rate）}
+
+    课程视频：\href{\videourl}{\videourl}
+
+    \vspace{0.3cm}
+    \rule{0.5\textwidth}{0.5pt}
+\end{center}
+
+\end{document}

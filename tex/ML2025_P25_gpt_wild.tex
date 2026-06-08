@@ -1,0 +1,380 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.2em,topsep=0.2em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自监督式学习（四）}
+\newcommand{\notesubtitle}{GPT 的野望：next-token prediction 与 in-context learning}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习》2025 课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 17 分 03 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=25}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.2cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.84\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 BERT 到 GPT}
+% =====================================================================
+
+本讲承接 BERT 系列，转向另一个自监督学习代表：GPT。BERT 的预训练任务是填空，也就是给一句话遮住某些 token，再让模型猜回来；GPT 改成预测下一个 token。这个差异看似小，却导致完全不同的使用方式：BERT 更像理解式 encoder，GPT 更像自回归生成器。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig01_bert_to_gpt_series.jpg}
+    \caption{课程从 BERT 系列转向 GPT 系列；GPT 的核心任务是预测接下来会出现的 token。\protect\footnotemark}
+    \label{fig:bert-to-gpt}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:00:01--00:00:36；字幕说明 BERT 做填空题，而 GPT 的任务是预测下一个 token。}
+
+\subsection{Next-token prediction}
+
+假设训练资料中有一句“台湾大学”。GPT 训练时会从一个起始符号 \texttt{<BOS>} 开始，预测第一个 token“台”；再给它 \texttt{<BOS>} 和“台”，预测“湾”；再给它 \texttt{<BOS>}、“台”、“湾”，预测“大”；如此一路往后。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig02_next_token_first_step.jpg}
+    \caption{GPT 从 \texttt{<BOS>} 开始，输出隐藏向量，再用线性层和 softmax 预测下一个 token。\protect\footnotemark}
+    \label{fig:first-step}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:00:51--00:01:44；字幕说明用 \texttt{<BOS>} 的 embedding 预测“台”，并用 cross entropy 训练。}
+
+若一段 token 序列为 $x_1,x_2,\ldots,x_T$，GPT 最大化的条件机率可写为
+
+$$
+p_\theta(x_1,\ldots,x_T)
+= \prod_{t=1}^{T} p_\theta(x_t \mid x_{<t})
+$$
+
+训练损失为
+
+$$
+\mathcal{L}_{\mathrm{LM}}
+= -\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t})
+$$
+
+符号说明：
+\begin{itemize}
+    \item $x_t$：第 $t$ 个 token。
+    \item $x_{<t}$：位置 $t$ 之前的所有 token。
+    \item $p_\theta(x_t\mid x_{<t})$：模型根据前文预测第 $t$ 个 token 的机率。
+    \item $\theta$：GPT 模型参数。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig03_autoregressive_training_steps.jpg}
+    \caption{自回归训练把一句话拆成一连串预测任务：给前缀，预测下一个 token。\protect\footnotemark}
+    \label{fig:autoregressive-steps}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:01:44--00:02:33；字幕说明训练会反复预测“台”“湾”“大”“学”，实际训练使用大量句子。}
+
+\subsection{Decoder-only 与 causal mask}
+
+课程强调，GPT 架构像 Transformer decoder，但去掉 encoder-decoder cross-attention，保留 masked self-attention。预测某个位置时，模型只能看见当前位置之前的 token，不能偷看未来答案。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig04_decoder_masked_attention.jpg}
+    \caption{GPT 使用类似 decoder 的 masked attention：预测当前 token 时不能看见未来 token。\protect\footnotemark}
+    \label{fig:causal-mask}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:02:42--00:03:20；字幕说明 GPT 像 Transformer decoder，并通过 mask 避免预测时看到后续词汇。}
+
+\begin{importantbox}{BERT 与 GPT 的关键差异}
+    BERT 同时看左右上下文，适合得到双向理解表示；GPT 只看左侧前文，适合逐 token 生成。二者都是自监督学习，但自监督目标决定了模型的结构偏好与使用方式。
+\end{importantbox}
+
+\subsection{本章小结}
+
+GPT 的训练目标极其简单：给前文，预测下一个 token。这个目标让它自然具备生成能力，也让它必须使用 causal mask，避免训练时偷看未来。和 BERT 相比，GPT 少了填空式双向理解，多了自回归续写能力。
+
+% =====================================================================
+\section{生成能力与 GPT 的使用方式}
+% =====================================================================
+
+next-token prediction 的直接结果是生成能力。只要模型能预测下一个 token，就可以把预测结果接回输入，再预测下一个，如此循环，生成一整段文字。
+
+\subsection{为什么 GPT 会生成文章}
+
+课程用 GPT 写独角兽新闻的经典例子说明：给模型一个新闻开头，它会不断预测下一个 token，最后生成看起来完整的假新闻。生成能力不是额外加上的模块，而是 next-token prediction 反复执行的结果。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig05_gpt_generation_unicorn_demo.jpg}
+    \caption{GPT 可以通过反复预测下一个 token 生成完整文字；独角兽新闻是早期 GPT 系列的知名展示。\protect\footnotemark}
+    \label{fig:gpt-generation}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:03:24--00:04:20；字幕说明 GPT 可不断预测下一个 token 产生文章，并以独角兽假新闻作为代表例子。}
+
+生成过程可写成：
+
+\begin{enumerate}
+    \item 输入前缀 $x_{<t}$。
+    \item 模型输出 $p_\theta(x_t\mid x_{<t})$。
+    \item 从分布中选出或采样一个 token $\hat{x}_t$。
+    \item 把 $\hat{x}_t$ 接到前缀后面，继续预测。
+\end{enumerate}
+
+\begin{warningbox}{生成不是保证真实}
+    GPT 生成的是“在训练分布下看起来合理的下一个 token”，不是事实数据库查询。早期独角兽新闻之所以有代表性，正是因为它展示了模型可以生成流畅却虚构的文本。
+\end{warningbox}
+
+\subsection{不只是微调：GPT 的更狂使用法}
+
+GPT 当然也可以像 BERT 一样，后面接一个分类器再 fine-tune。但课程指出，GPT 系列论文提出了更激进的使用方式：不调参数，只把任务说明和少量示例写进 prompt，让模型通过上下文“看懂”任务。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig06_how_to_use_gpt_question.jpg}
+    \caption{课程提出“如何使用 GPT”的问题：除了接分类器微调之外，GPT 还有更接近人类考试说明的使用方式。\protect\footnotemark}
+    \label{fig:use-gpt-question}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:04:53--00:05:48；字幕说明 GPT 也可接 classifier，但论文中采用了更激进的想法。}
+
+这类使用方式像考试。考卷先告诉你题型规则，再给几个例题，最后给新题。GPT 的 prompt 也可以这样组织：先写任务说明，再写若干输入输出范例，最后写待完成输入，让模型续写答案。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig07_task_description_prompt.jpg}
+    \caption{Prompt 可以包含任务说明、范例和待回答问题；GPT 通过续写文本来给出答案。\protect\footnotemark}
+    \label{fig:prompt-description}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:06:05--00:07:05；字幕把 GPT 使用方式类比为考试：读说明、看范例、再举一反三作答。}
+
+\subsection{Few-shot learning}
+
+以翻译为例，prompt 可以写成：
+
+\begin{center}
+\texttt{Translate English to French:}\\
+\texttt{sea otter => loutre de mer}\\
+\texttt{peppermint => menthe poivree}\\
+\texttt{plush giraffe => girafe peluche}\\
+\texttt{cheese =>}
+\end{center}
+
+训练时 GPT 没有人告诉它“这是翻译任务”，也没有针对翻译做 gradient descent。它只学过续写。但在推理时，prompt 中的例子让它推断出当前格式，接着续写出“cheese”的法文。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig08_few_shot_prompting.jpg}
+    \caption{Few-shot prompting 在上下文中提供多个示例，让 GPT 从格式中推断任务并续写答案。\protect\footnotemark}
+    \label{fig:few-shot}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:07:23--00:08:16；字幕说明训练时并没有教翻译，只是在 prompt 中给几个翻译例子并要求模型补完。}
+
+\begin{importantbox}{In-context learning}
+    GPT 文献把这种方式称为 in-context learning。它不是传统意义上的训练，因为模型参数没有更新；所谓“学习”发生在上下文里，模型根据 prompt 中的说明和示例临时推断任务。
+\end{importantbox}
+
+\subsection{Few-shot、one-shot 与 zero-shot}
+
+如果 prompt 中给多个例子，称为 few-shot；只给一个例子，称为 one-shot；不给例子，只给任务说明，称为 zero-shot。这些都属于 in-context learning 的不同强度版本。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig09_in_context_learning_modes.jpg}
+    \caption{Few-shot、one-shot、zero-shot 的区别在于 prompt 中给多少示例；共同点是都不做 gradient descent。\protect\footnotemark}
+    \label{fig:icl-modes}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:08:37--00:09:26；字幕说明 in-context learning 不调模型参数，并引出 one-shot 与 zero-shot。}
+
+课程提醒，这个目标是否真正达成要看任务。有些任务 GPT 确实能靠 prompt 完成，例如简单算术；有些逻辑推理任务仍表现很差。模型规模越大，平均表现通常越好，但不是所有能力都会随规模平滑解决。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig10_gpt3_benchmark_scaling.jpg}
+    \caption{GPT-3 论文展示参数规模增加时，few-shot/one-shot/zero-shot 平均表现提升，但不同任务差异很大。\protect\footnotemark}
+    \label{fig:gpt3-scaling}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:10:22--00:11:12；字幕说明参数从 0.1B 增至 175B 后平均正确率提高，但某些逻辑推理任务仍很差。}
+
+\begin{knowledgebox}{Prompting 与 fine-tuning 的差异}
+    Fine-tuning 改变模型参数，适合把模型专门调到某个任务上；prompting 不改变参数，适合快速指定任务格式。二者不是互斥关系，现代系统常把预训练、指令微调、对齐训练与 prompt 设计结合使用。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+GPT 的野望在于：模型只通过 next-token prediction 预训练，却希望在推理时读懂任务说明和示例，直接完成新任务。few-shot、one-shot、zero-shot 与 in-context learning 的核心都是“把任务写进上下文”，而不是每个任务都重新训练模型。
+
+% =====================================================================
+\section{Beyond Text：自监督学习不只用于文字}
+% =====================================================================
+
+课程最后把视野从文字扩展到图像和语音。BERT 和 GPT 只是自监督学习的一部分，主要属于 prediction 类方法；图像中有对比学习，语音中也可以做遮蔽、预测和下游 benchmark。
+
+\subsection{自监督学习的更大地图}
+
+课程展示一张图，把 NLP、speech、CV 中的自监督方法放在一起。BERT/GPT 位于 prediction 这一支，但 CV 中有 SimCLR、MoCo、BYOL 等 contrastive 或 related 方法，speech 中也有 CPC、TERA、Mockingjay、wav2vec 等模型。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig11_beyond_text_ssl_map.jpg}
+    \caption{自监督学习远不止 BERT/GPT；NLP、speech、CV 中各自发展出预测、对比、资料中心等多类方法。\protect\footnotemark}
+    \label{fig:beyond-text-map}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:11:37--00:12:16；字幕说明 BERT/GPT 只是自监督学习的一小块，还有更多方向等待探索。}
+
+\subsection{图像自监督：SimCLR 与 BYOL}
+
+图像没有天然 token 序列，但可以构造不同视角的同一张图，要求模型把同一图片的不同增强版本拉近，把不同图片拉远。SimCLR 是典型对比学习方法。课程没有展开细节，只指出它非常有名，概念可以自行读论文理解。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig12_image_simclr.jpg}
+    \caption{SimCLR 通过图像增强和对比目标学习表示：同一图片的不同视角应接近，不同图片应分开。\protect\footnotemark}
+    \label{fig:simclr}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:12:21--00:12:36；字幕说明影像自监督中有著名方法 SimCLR，课程只做概览。}
+
+BYOL 则更反直觉：它不依赖传统负样本对比，却仍能学到强表示。课程也坦率地说，这类方法“为什么 work”并不总是直观，甚至看起来像有明显漏洞，但实验结果有效。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.86\textwidth]{figures/fig13_image_byol.jpg}
+    \caption{BYOL 是图像自监督中反直觉但有效的方法，显示深度学习中常有机制尚未完全解释的成功经验。\protect\footnotemark}
+    \label{fig:byol}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:12:36--00:13:13；字幕说明 BYOL 看起来不该成功，但实际曾取得很强结果。}
+
+\subsection{语音版 BERT 与 GPT}
+
+语音也可以套用类似思想。语音版 BERT 可以遮住一段声音，让模型猜被遮住的片段；语音版 GPT 可以根据前面的声音预测接下来会出现的声音信号。也就是说，自监督目标不依赖“文字”本身，而依赖能否从资料内部构造预测任务。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig14_speech_bert_and_gpt.jpg}
+    \caption{语音中也可以设计 BERT 式遮蔽预测与 GPT 式下一段声音预测，从而训练语音表示模型。\protect\footnotemark}
+    \label{fig:speech-bert-gpt}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:13:20--00:14:02；字幕说明语音也可做填空题或预测下一段声音，已有许多相关研究。}
+
+\subsection{Speech GLUE：SUPERB}
+
+课程指出，语音自监督领域需要类似 GLUE 的 benchmark。GLUE 在 NLP 中把多个语言理解任务组合起来评估模型；语音领域也需要一个跨任务 benchmark，测试模型是否能处理内容、说话人、情绪、语义等不同信息。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig15_speech_glue_superb.jpg}
+    \caption{SUPERB 是语音版 GLUE 的构想：用多个下游任务评估自监督语音模型的通用能力。\protect\footnotemark}
+    \label{fig:superb}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:14:22--00:15:17；字幕说明语音领域缺少类似 GLUE 的 benchmark，因此提出 Speech processing Universal PERformance Benchmark。}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/fig16_superb_unified_interface.jpg}
+    \caption{SUPERB 试图统一多种上游自监督模型和多类语音下游任务，包括识别、语义、说话人、情绪等。\protect\footnotemark}
+    \label{fig:superb-interface}
+\end{figure}
+\footnotetext{视频画面时间区间：约 00:16:05--00:16:56；字幕说明 SUPERB 从多种下游任务全方位检测模型理解人类语言的能力，并提供工具包。}
+
+\begin{importantbox}{自监督学习的共同核心}
+    无论文字、图像还是语音，自监督学习都在问同一个问题：能否从资料本身构造训练信号，让模型先学通用表示，再迁移到下游任务？
+\end{importantbox}
+
+\subsection{本章小结}
+
+自监督学习不是 NLP 专属。文字里有 BERT/GPT，图像里有 SimCLR/BYOL，语音里有遮蔽预测、下一段预测和 SUPERB 这样的 benchmark。它们表面任务不同，但都试图减少人工标签依赖，让模型从大规模原始资料中学习可迁移表示。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲用 GPT 收束自监督学习中的文字主线。BERT 和 GPT 的差异，可以压缩成一张对照表：
+
+\begin{center}
+\begin{tabular}{L{0.20\textwidth} L{0.34\textwidth} L{0.34\textwidth}}
+\toprule
+维度 & BERT & GPT \\
+\midrule
+预训练目标 & 遮蔽填空，预测被盖住的 token & 给前文，预测下一个 token \\
+上下文方向 & 双向上下文 & 只看左侧前文 \\
+典型架构 & Transformer encoder & Transformer decoder-like，causal mask \\
+典型用途 & 表示学习、分类、标注、抽取式问答 & 续写、生成、prompt-based task solving \\
+任务适配 & 多用 fine-tuning 或任务头 & 可 fine-tune，也可 in-context learning \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+GPT 的关键启发是：只要 next-token prediction 学得足够好，模型就可能在 prompt 中读任务说明、看范例、再续写答案。这不是传统监督学习，也不是普通 fine-tuning，而是一种把任务临时写进上下文的使用模式。
+
+同时，课程最后提醒我们不要把自监督学习等同于文字模型。prediction、contrastive learning、masked reconstruction、benchmark-driven evaluation 都可以出现在图像与语音中。BERT/GPT 只是更大自监督图谱中的两条主线。
+
+\begin{knowledgebox}{后续学习建议}
+    若继续深入 GPT，可以重点看三件事。第一是语言模型目标如何从 next-token prediction 发展到 instruction tuning 和 alignment。第二是 in-context learning 为什么会出现，是否等价于隐式学习算法。第三是跨模态自监督如何把文字、图像、语音放到统一表示或统一生成框架中。
+\end{knowledgebox}
+
+本讲的核心结论是：GPT 把“预测下一个 token”推到极致，得到生成能力和 in-context learning；而自监督学习的更大野心，是把这种从资料本身学习的范式推广到所有模态。
+
+\end{document}
