@@ -1,0 +1,355 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\newcommand{\Dtrain}{\mathcal{D}^{\mathrm{train}}}
+\newcommand{\Dtest}{\mathcal{D}^{\mathrm{test}}}
+\newcommand{\Dquery}{\mathcal{D}^{\mathrm{query}}}
+\newcommand{\Task}{\mathcal{T}}
+\newcommand{\flearner}{F_{\phi}}
+\newcommand{\loss}{L}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.1em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{元学习（三）：各种非常规用法}
+\newcommand{\notesubtitle}{Self-supervised、Knowledge Distillation、Domain Generalization 与 Lifelong Learning}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 31 分 12 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=57}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{四条关系：元学习作为上层训练设计}
+% =====================================================================
+
+P55 和 P56 已经说明，元学习的核心是从许多任务中学习“如何学习”。P57 不再只介绍某个元学习算法，而是展示元学习如何嵌入其他机器学习范式：self-supervised learning、domain generalization、knowledge distillation 和 lifelong learning。
+
+\framefig{0.84}{figures/fig_01_outline_four_relations.jpg}
+{本讲的四条关系：Meta Learning vs. Self-supervised Learning、Meta Learning vs. Domain Generalization、Meta Learning vs. Knowledge Distillation、Meta Learning vs. Life-long Learning。}
+{00:00:45--00:01:00}
+
+这些关系看起来分散，其实有一个共同模板：某个领域原本有一个人工设计或单层训练流程，元学习把它提升到 task-level 优化。
+\begin{itemize}
+    \item 在 self-supervised learning 中，元学习可以帮助自监督预训练结果更贴近下游任务。
+    \item 在 knowledge distillation 中，元学习可以让 teacher 学会“怎样教”。
+    \item 在 domain generalization 中，元学习可以用多个源域模拟未知目标域。
+    \item 在 lifelong learning 中，元学习可以学习抗遗忘的学习规则。
+\end{itemize}
+
+\begin{importantbox}{统一视角}
+    元学习不是和这些范式竞争，而是可以作为上层机制改造它们：把“预训练目标、教师行为、域泛化策略、抗遗忘规则”视为可学习对象，用跨任务反馈来优化。
+\end{importantbox}
+
+\subsection{本章小结}
+
+P57 的重点是“元学习作为训练设计语言”。它把不同领域中的手工选择或单层目标，改写成跨任务、跨域或跨阶段的优化问题。
+
+% =====================================================================
+\section{Meta Learning 与 Self-supervised Learning}
+% =====================================================================
+
+Self-supervised learning 的典型代表是 BERT 及其后续模型。它通过大量未标注数据上的代理目标学习表示，例如 masked language modeling。MAML 一类方法则学习初始化参数，希望模型在少量下游任务样本上快速适应。两者都可能产生好初始化，但优化目标不同。
+
+\framefig{0.84}{figures/fig_02_self_supervised_vs_maml.jpg}
+{Self-supervised learning 与 learning to initialize 都能提供初始化：BERT 通过自监督代理目标学习表示，MAML family 通过任务级训练学习适合快速适应的初始化。}
+{00:02:15--00:02:30}
+
+课程指出，BERT 与 MAML 可以结合：先用 self-supervised learning 得到 BERT 初始化，再用 MAML 或 Reptile 进一步把初始化调整到更适合下游任务的区域。这样做的直觉是，BERT 善于利用大量未标注数据，而 MAML 善于把初始化目标对齐到具体 task distribution。
+
+Self-supervised learning 的限制在于：代理目标和下游任务目标不一定一致。BERT 的 masked LM 目标并不等于情感分类、语义解析、意图识别或问答任务目标，中间存在 learning gap。MAML 的优势是直接以 training tasks 的表现为目标，但它需要准备许多带标注的 training tasks，成本也更高。
+
+\framefig{0.84}{figures/fig_03_bert_maml_learning_gap.jpg}
+{BERT 与 MAML 的互补：BERT 的自监督目标与下游任务不同，存在 learning gap；MAML 直接面向 training tasks 的表现，但需要标注任务且计算量较大。}
+{00:07:15--00:07:30}
+
+在 TOPv2 语义解析实验中，课程展示了用 BERT 作为初始化，再用 Reptile 更新，能够在低样本设定下带来更好的结果。这个结果说明：self-supervised learning 给出强表示，meta-learning 再把表示朝少样本任务适应方向推一段。
+
+\framefig{0.84}{figures/fig_04_bert_reptile_results.jpg}
+{BERT-Reptile 在 TOPv2 低样本语义解析中的结果：BERT 可作为 Reptile/MAML 类方法的初始化，经过任务级更新后，在样本较少时尤其可能更有优势。}
+{00:08:45--00:09:00}
+
+\begin{warningbox}{Self-supervised 与 meta-learning 的代价不同}
+    Self-supervised learning 的优势是可利用大量未标注数据；meta-learning 的优势是任务目标对齐，但通常需要标注的 training tasks。实际使用时常把两者组合，而不是二选一。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Self-supervised learning 提供强大的通用表示，meta-learning 提供面向 task distribution 的快速适应目标。二者可以串联：先用未标注数据学表示，再用任务级训练缩小代理目标与下游目标之间的 learning gap。
+
+% =====================================================================
+\section{Meta Learning 与 Knowledge Distillation}
+% =====================================================================
+
+Knowledge distillation 的基本形式是：用大 teacher model 产生 soft label 或概率分布，让小 student model 模仿。传统设定里，teacher 是为了分类准确率训练出来的；它是否擅长 teaching，并没有被直接优化。
+
+\framefig{0.84}{figures/fig_05_kd_teacher_student.jpg}
+{传统 knowledge distillation：大 teacher model 输出软标签，小 student model 通过交叉熵等目标模仿 teacher；但 teacher 训练时通常没有被优化为“好老师”。}
+{00:11:45--00:12:00}
+
+这带来一个有趣现象：分类准确率最高的 teacher 不一定教出最好的 student。课程引用表格说明，当 teacher 与 student 差距过大时，distillation 可能受 teacher-student gap 影响；有时较弱 teacher 反而更适合小 student 学习。
+
+\framefig{0.84}{figures/fig_06_kd_teacher_student_gap.jpg}
+{Knowledge distillation 中的 teacher-student gap：更强的 teacher 不一定产生更强 student，说明 teacher 的目标不应只看自身分类准确率，还应看其教学效果。}
+{00:12:45--00:13:00}
+
+Meta-learning 可以把“教学效果”写进 teacher 的训练目标。Learn to Teach 的思想是：teacher 的好坏不只由 teacher 自己的 accuracy 决定，而由 student 学完之后的 testing loss 决定。换句话说，teacher 要为学生的最终表现负责。
+
+\framefig{0.84}{figures/fig_07_learn_to_teach.jpg}
+{Learn to Teach：用元学习思想训练 teacher，让 teacher 的目标从自身分类表现转向 student 经 distillation 后的测试表现。}
+{00:13:30--00:13:45}
+
+抽象地写，teacher 参数为 $\phi$，student 参数为 $\theta$。Student 先通过 distillation 从 teacher 学：
+\[
+    \theta'(\phi)
+    =
+    \operatorname{TrainStudent}
+    \left(
+        \theta,
+        \text{soft labels from teacher}_{\phi}
+    \right).
+\]
+外层目标再看 student 的验证或测试损失：
+\[
+    L_{\mathrm{teach}}(\phi)
+    =
+    L_{\mathrm{student}}
+    \left(
+        \theta'(\phi)
+    \right).
+\]
+于是 teacher 更新的方向，不是“我自己预测更准”，而是“我这样教，学生之后表现更好”。
+
+\framefig{0.84}{figures/fig_08_learn_to_teach_update.jpg}
+{Learn to Teach 的外层目标：teacher 根据 student 学习后的 testing loss 被更新；temperature、soft label 形状或 teacher 输出都可能成为可学习教学策略。}
+{00:15:45--00:16:00}
+
+\begin{importantbox}{蒸馏中的 Meta 视角}
+    传统蒸馏把 teacher 当成固定来源；meta distillation 把 teacher 看成可优化教学者。核心差异是评价指标从 teacher accuracy 转为 student-after-learning performance。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Knowledge distillation 中，元学习可以让 teacher 学会 teaching。它把 distillation 从“学生模仿老师”改成“老师根据学生学成后的表现调整教学方式”。这正是元学习常见的二层结构。
+
+% =====================================================================
+\section{Meta Learning 与 Domain Generalization}
+% =====================================================================
+
+Domain adaptation 与 domain generalization 都关心域迁移。区别在于：domain adaptation 往往允许接触目标域资料，哪怕是少量未标注或少量标注；domain generalization 更困难，训练时完全不知道目标域资料，只能依靠多个源域训练出能泛化到未知域的模型。
+
+\framefig{0.84}{figures/fig_09_domain_adaptation_spectrum.jpg}
+{Domain adaptation/generalization 的资料条件：目标域知识越少，问题越困难；domain generalization 的关键是训练时没有 target domain data。}
+{00:17:15--00:17:30}
+
+如果目标域已知，就可以直接把目标域表现作为 meta-objective。但 domain generalization 的目标域在训练时不可见，因此要用源域模拟“未来未知域”。元学习的方法是：从多个 training domains 中拿一些域作为 pseudo source，另一些域作为 pseudo target，训练学习算法在 pseudo target 上表现好。
+
+\framefig{0.84}{figures/fig_10_domain_generalization_meta_framework.jpg}
+{Meta learning for domain generalization：多个 training domains 可用，真实 target domain 训练时未知；问题是如何训练 learning algorithm，使模型能泛化到未知域。}
+{00:18:30--00:18:45}
+
+\framefig{0.84}{figures/fig_11_pseudo_target_domain.jpg}
+{用源域构造 pseudo target domain：例如用红色和黄色域训练模型，再用蓝色域模拟目标域评价，从而学习适合跨域泛化的初始化或学习规则。}
+{00:19:45--00:20:00}
+
+这个思路与 few-shot meta-learning 类似：真实目标不能碰，于是训练时不断构造模拟任务。差别是任务单位从“类别/episode”变成“domain split”。Outer objective 不再只是新类别识别，而是源域训练后能否泛化到留出的伪目标域。
+
+课程给出文本分类例子：训练任务来自若干语言或域，测试任务可能来自另一种语言。Meta-learning 通过跨域 episodic training，期望学到一个在未见域上仍能工作的模型或学习算法。
+
+\framefig{0.84}{figures/fig_12_text_classification_domain_generalization.jpg}
+{文本分类中的 domain generalization 示例：用多语言/多域任务构造 meta-training，期望模型能泛化到训练阶段未见过的语言或域。}
+{00:22:15--00:22:30}
+
+\subsection{本章小结}
+
+Domain generalization 中没有真实 target domain data，因此元学习用 training domains 构造 pseudo target domain，模拟未来未知域。它把“跨域泛化”写成 task/domain-level 的外层目标。
+
+% =====================================================================
+\section{Problem of Another Level：元学习本身也会遇到域偏移}
+% =====================================================================
+
+课程特别强调一个更高层问题：如果 training tasks 与 testing tasks 本身来自不同分布，元学习也会失效。也就是说，meta-learning 解决的是某个 task distribution 内的快速适应；如果未来 task distribution 变了，learned learning algorithm 也可能过拟合旧分布。
+
+\framefig{0.84}{figures/fig_13_domain_shift_another_level.jpg}
+{Problem of another level：training examples 与 testing examples 可以有不同分布，training tasks 与 testing tasks 也可能有不同分布；元学习本身也需要面对更高层的 domain shift。}
+{00:23:45--00:24:00}
+
+这解释了为什么元学习和 domain adaptation/generalization 可以互相嵌套。Meta-learning 可以帮助 domain generalization，但 meta-learning 自己也可能需要 domain adaptation：如果训练任务和测试任务分布不同，就要考虑 task augmentation、task-level domain adaptation 或更稳健的 meta-objective。
+
+\begin{warningbox}{元学习不是免疫泛化问题}
+    元学习把泛化目标从样本层级提升到任务层级，但这不代表泛化问题消失。样本会有 distribution shift，task 也会有 distribution shift。只是在元学习中，问题换到了更高层。
+\end{warningbox}
+
+\subsection{本章小结}
+
+“Problem of another level” 是本讲的关键提醒：元学习可以处理普通模型的泛化问题，但它自己也有 meta-level 泛化问题。训练任务分布和测试任务分布若不一致，learned learning algorithm 仍可能失败。
+
+% =====================================================================
+\section{Meta Learning 与 Lifelong Learning}
+% =====================================================================
+
+Lifelong learning 关注模型按顺序学习多个数据集或任务时的 catastrophic forgetting。前面 P53、P54 讨论过三类缓解方法：selective synaptic plasticity、additional neural resource allocation、memory replay。P57 的问题是：meta-learning 能否增强这些抗遗忘方法？
+
+\framefig{0.84}{figures/fig_14_lifelong_mitigating_forgetting.jpg}
+{Lifelong learning 中缓解遗忘的三类方向：selective synaptic plasticity、additional neural resource allocation、memory replay；本讲关注元学习是否能增强这些方法。}
+{00:25:00--00:25:15}
+
+以 regularization-based 方法为例，传统做法会人为设计某种重要性估计或正则项，限制新任务更新时破坏旧任务。元学习可以把“如何正则化、如何更新、如何选择保护强度”变成可学习对象。
+
+\framefig{0.84}{figures/fig_15_regularization_meta.jpg}
+{Regularization-based + Meta：用元学习寻找能避免 catastrophic forgetting 的学习算法，使模型既能从新资料学习，又能记住旧资料。}
+{00:26:45--00:27:00}
+
+这里的目标不只是当前任务准确率高，而是一个序列目标：模型学完 dataset 1，再学 dataset 2 后，仍要保留 dataset 1 的能力。外层 meta-objective 可以在许多任务序列上评价“学完后是否遗忘”，再更新学习算法。
+
+抽象地写，给定一个任务序列 $(\Task_1,\Task_2,\ldots,\Task_T)$，学习算法 $F_\phi$ 依序更新模型：
+\[
+    \theta_t
+    =
+    F_\phi(\theta_{t-1},\Task_t).
+\]
+外层目标可以评价最终模型在所有旧任务和新任务上的表现：
+\[
+    L_{\mathrm{CL}}(\phi)
+    =
+    \sum_{t=1}^{T}
+    L_{\Task_t}(\theta_T).
+\]
+若 $F_\phi$ 学得好，它会在新任务可塑性和旧任务稳定性之间找到更好的更新规则。
+
+但课程也提醒：元学习可以帮助 lifelong learning，元学习本身也可能遇到 lifelong learning 问题。若 meta-learning 依序看到不同任务分布，它也可能只适应后来的任务分布，忘掉早先任务分布。
+
+\framefig{0.84}{figures/fig_16_lifelong_meta_another_level.jpg}
+{元学习可以帮助解决 lifelong learning，但元学习本身也可能面临 catastrophic forgetting：如果 meta-training tasks 按序到来，learned learning algorithm 也可能忘记旧任务分布。}
+{00:28:00--00:28:15}
+
+\begin{importantbox}{递归关系}
+    Lifelong learning 需要学习抗遗忘规则；元学习可以学习这样的规则。但如果元学习过程本身也按顺序接收任务，就需要 continual meta-learning。问题并没有消失，而是上移了一层。
+\end{importantbox}
+
+\subsection{本章小结}
+
+在 lifelong learning 中，元学习可以学习更好的正则、更新或记忆策略，以降低 catastrophic forgetting。但元学习本身也会在 task distribution 变化时遗忘，因此需要更高层的 continual/meta-continual 设计。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P57 展示了元学习的“跨范式嵌入”能力。它不是只服务于 few-shot image classification，而是可以被放进许多学习流程中，作为优化“如何学习”的上层机制。
+
+\begin{center}
+\begin{tabular}{L{0.24\textwidth} L{0.32\textwidth} L{0.32\textwidth}}
+\toprule
+结合对象 & 原本问题 & Meta 化后的问题 \\
+\midrule
+Self-supervised & 代理目标与下游任务有 gap & 用任务级训练调整自监督初始化 \\
+Knowledge Distillation & teacher 准确率高但不一定会教 & 让 teacher 为 student 学成后的表现负责 \\
+Domain Generalization & 真实目标域训练时未知 & 用源域构造 pseudo target domain 训练泛化规则 \\
+Lifelong Learning & 新任务会破坏旧任务能力 & 学习能兼顾新任务与旧任务的更新规则 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+这四个例子共同说明：元学习的抽象不是“快速分类”本身，而是二层目标设计。内层完成普通学习、蒸馏、跨域训练或连续学习；外层则评价“这个学习过程是否产生了我们想要的结果”，并据此更新学习规则。
+
+\begin{warningbox}{最大的误区}
+    看到“meta”不要自动认为问题被彻底解决。元学习只是把学习目标提升到任务层级；若任务分布、域分布或时间序列本身发生偏移，元学习仍然需要泛化、适应和抗遗忘机制。
+\end{warningbox}
+
+后续阅读这些方向时，可以用三个问题快速定位论文贡献：
+\begin{enumerate}
+    \item 它把哪个已有学习流程 Meta 化了？
+    \item 外层目标评价的是谁的最终表现：downstream task、student、target domain，还是旧任务集合？
+    \item 它是否讨论了 meta-level 的泛化问题，例如 training tasks 与 testing tasks 分布不一致？
+\end{enumerate}
+
+\subsection{本章小结}
+
+P57 的核心是递归视角：元学习可以帮助 self-supervised learning、knowledge distillation、domain generalization 和 lifelong learning，但它自己也会遇到同类问题的高层版本。真正重要的是识别内层学习过程、外层评价信号，以及任务分布是否可靠。
+
+\end{document}

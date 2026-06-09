@@ -1,0 +1,339 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.1em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{课程结语：深度学习的一学期游}
+\newcommand{\notesubtitle}{从技术地图、应用版图到真实困难与后续学习}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 27 分 40 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=58}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{这门课到底学了什么}
+% =====================================================================
+
+这节课不是再引入一个新的模型或算法，而是把整学期的内容压缩成一张地图。老师开头先回到机器学习最朴素的定义：机器学习就是要从资料中找一个 function。整个课程从这个定义出发，一路讨论什么样的 function 适合处理不同输入与输出形式，以及当模型变深、变大、变复杂之后，训练、泛化、解释、攻击、防御和持续学习会遇到什么问题。
+
+\framefig{0.84}{figures/fig_01_model_map.jpg}
+{课程前半学期的模型地图：从一般 function 与 linear/deep model 出发，到 CNN 处理矩阵输入、self-attention 处理序列输入，再到 Transformer 处理输入输出长度不一致的序列任务。}
+{00:01:14--00:01:29}
+
+从这张图可以看出，课程前半段不是按论文年代堆模型，而是按输入输出形态组织：
+\begin{itemize}
+    \item 当输入是一般向量或表格特征时，最基本的思想是找一个 function；linear model 是起点，但表达能力有限，因此自然进入 deep learning。
+    \item 当输入是一张图片，资料可以看成矩阵或张量，CNN 用局部感受野、权重共享和层级组合来捕捉影像中的空间结构。
+    \item 当输入是一段声音或文字，资料具有序列结构，self-attention 让每个位置可以根据内容动态地关注其他位置。
+    \item 当输入与输出都是序列，且长度可以不相同，Transformer 提供了更通用的序列到序列框架，覆盖翻译、摘要、问答等任务。
+\end{itemize}
+
+\begin{importantbox}{课程的第一层主线}
+    前半学期回答的问题是：面对不同形态的资料，应该设计怎样的 function class？CNN、self-attention 和 Transformer 并不是孤立技巧，而是把「资料结构」写进模型结构的不同方式。
+\end{importantbox}
+
+过了期中之后，课程转向更广的深度学习主题。这里的核心不是再学一种固定输入输出结构，而是讨论深度学习系统在现实世界中会遇到的周边问题：如何生成资料、如何利用未标注资料、训练和测试不匹配时怎么办、如何让模型从互动中学习、如何面对攻击、如何解释模型、如何部署到资源受限装置，以及如何让模型学习新的任务而不遗忘旧任务。
+
+\framefig{0.84}{figures/fig_02_advanced_topics.jpg}
+{课程后半学期的高级主题列表：GAN、BERT、domain adaptation、reinforcement learning、attack and defense、explainable machine learning 等内容共同构成深度学习系统的现实问题地图。}
+{00:02:24--00:02:39}
+
+这些主题看起来分散，但可以被整理成四类问题：
+\begin{description}
+    \item[资料从哪里来] GAN 关注生成模型，self-supervised learning 关注未标注资料的利用。
+    \item[环境会不会改变] domain adaptation 与 domain generalization 关注训练资料和测试资料不匹配。
+    \item[模型能否可靠使用] adversarial attack/defense 与 explainable ML 关注模型的脆弱性、透明性和可被信任程度。
+    \item[系统能否落地] reinforcement learning、network compression、lifelong learning 与 meta learning 关注互动、资源限制、持续更新和跨任务迁移。
+\end{description}
+
+\begin{knowledgebox}{为什么结语要从「地图」开始}
+    初学一门快速发展的技术时，最容易被单点名词淹没：今天听 GAN，明天听 BERT，后天听 RL，好像每个主题都是一座孤岛。结语的价值在于把这些名词重新放回「问题空间」里：它们分别解决资料、环境、可靠性、资源、迁移与学习流程中的哪一个问题。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+这门课的内容可以压缩成两层：第一层是 function class 的选择，也就是如何用 CNN、self-attention、Transformer 等结构处理不同资料形态；第二层是深度学习系统的现实化，也就是生成、预训练、领域转移、强化学习、攻击防御、解释、压缩、终身学习和元学习等问题。结语的重点不是再记住更多名词，而是把已经学过的名词放回同一张地图。
+
+% =====================================================================
+\section{从技术地图到应用版图}
+% =====================================================================
+
+老师接着把课程内容连接到具体应用。技术地图回答「模型长什么样」，应用版图回答「这些模型能拿来做什么」。深度学习常见应用可以粗略分成计算机视觉、自然语言处理、语音处理、生成任务和互动决策等方向，而课程作业与课堂例子正是用这些任务让学生触摸真实流程。
+
+\framefig{0.86}{figures/fig_03_application_map.jpg}
+{课程应用版图：计算机视觉涵盖分类、攻击、防御、压缩、解释、异常侦测和二次元头像生成；自然语言处理涵盖翻译、问答等任务，并与疫情期间的线上学习背景并置。}
+{00:03:45--00:04:00}
+
+在计算机视觉中，课程从最直观的影像分类开始，例如让机器判断图片里是某类动物或物件。后续主题不断围绕这个基础任务扩展：
+\begin{itemize}
+    \item attack and defense 说明即使模型分类准确，也可能被刻意设计的扰动骗过。
+    \item explanation 试图回答模型为什么这样判断，模型到底看到了什么特征。
+    \item anomaly detection 讨论当测试样本不属于已知类别时，模型如何察觉异常。
+    \item compression 讨论模型如何被放进资源有限的装置里。
+    \item generation 让模型从「看图分类」进一步变成「画出图像」。
+\end{itemize}
+
+自然语言处理部分则展示了序列模型的另一种用法。机器翻译把一个语言的句子转成另一个语言，问答系统根据问题生成答案，BERT 与 GPT 相关内容则把语言模型推到更通用的预训练和生成框架中。语音任务中，模型需要把连续音讯转成文字，或判断说话者是谁；这些任务和 NLP 一样都依赖序列建模，只是输入信号从文字 token 变成声学特征。
+
+\begin{importantbox}{从作业看应用}
+    作业的意义不只是检验课堂概念，而是把完整 pipeline 暴露出来：读取资料、建立模型、选择损失、调超参数、观察验证集、提交结果、面对 public/private set 差异。学生真正学到的是「把技术嵌入任务」的过程，而不是单独背诵某个架构名称。
+\end{importantbox}
+
+这也解释了为什么老师鼓励修完课之后找一个自己关心的问题来做。深度学习技术只有在具体任务中才会变成能力：研究生可以把自己的研究问题重新表述成分类、生成、序列建模、异常侦测、强化学习或领域转移问题；工程实践者也可以从手边资料出发，判断课程中哪个作业或范例最接近自己的需求。
+
+\subsection{本章小结}
+
+技术地图需要落到应用版图中才有意义。CNN、self-attention、Transformer、GAN、BERT、RL 等名词不是为了被孤立记忆，而是为了让我们在面对影像、语言、语音、生成、互动、部署和可靠性问题时，有一套可以迁移的工具箱。
+
+% =====================================================================
+\section{下一步学什么}
+% =====================================================================
+
+老师把这门课比作「深度学习一学期游」。这个比喻很准确：课程带学生经过许多关键景点，但不会让学生在每一个地方住下来。你会知道有哪些门、门后大概有什么，但真正跨入门内，还需要在课程结束后继续投入。
+
+\framefig{0.86}{figures/fig_04_one_semester_tour.jpg}
+{老师把本课程比作「深度学习一学期游」：它带学生快速经过关键技术景点，让学生知道有哪些方向值得继续深入，而不是在一学期内穷尽所有细节。}
+{00:05:45--00:06:00}
+
+这个定位对学习策略很重要。如果误以为一门入门课应该把所有主题都讲透，就会觉得内容太跳；如果理解它是地图课，就会知道真正的收获是建立索引：以后读论文、做研究或解实际问题时，可以知道某个困难大致属于哪个方向，应该去查哪类方法。
+
+\framefig{0.84}{figures/fig_05_learn_next.jpg}
+{课程结束后的学习建议：找一个自己在乎的问题尝试解决；具备阅读 NeurIPS、ICLR、AAAI、ICML 等会议论文的能力；继续参加机器学习暑期学校等活动。}
+{00:06:56--00:07:11}
+
+老师给出的下一步建议可以整理成三条路径：
+\begin{enumerate}
+    \item \textbf{找一个自己真的在乎的问题。} 深度学习不是靠刷名词学会的。最有效的后续学习，是把自己的研究、兴趣或工作问题转成一个可训练、可评估、可迭代的机器学习任务。
+    \item \textbf{开始读顶会论文。} 如果课程大多数内容已经理解，读 NeurIPS、ICLR、AAAI、ICML 等会议论文时，至少可以抓住问题设定、方法结构、实验逻辑和贡献位置。读不懂全部细节很正常，但已经有能力看懂大致方向。
+    \item \textbf{继续参加系统化进阶课程。} 例如老师提到的 Machine Learning Summer School。进阶课程的价值在于接触更前沿的研究主题，也能看到不同学者如何组织同一个领域。
+\end{enumerate}
+
+\begin{knowledgebox}{读论文时不必追求一次读懂}
+    修完这门课后的论文阅读目标，不是立刻复现所有公式，而是先回答四个问题：论文想解决什么问题？它把问题形式化成什么任务？它相对既有方法改了哪里？实验是否真的支持它的主张？能回答这四点，就已经从「听课」进入「研究阅读」。
+\end{knowledgebox}
+
+对工程和应用导向的学习者来说，下一步不一定是立刻读大量论文，也可以从复用作业开始。老师提到，有些学生把助教范例稍微修改，就能处理自己实验室或研究中的问题。这个做法并不低级：迁移一个已有 pipeline，往往正是实际机器学习项目的第一步。真正重要的是从能跑通的范例出发，逐步替换资料、指标、模型和训练策略。
+
+\begin{warningbox}{不要把「上完课」误解成「已经学完」}
+    入门课结束意味着你有了地图，不意味着你已经走完所有路。课程给的是坐标系和基本工具；后续能力来自把这些工具用于真实问题、读真实论文、踩真实训练坑，并能把结果反过来解释清楚。
+\end{warningbox}
+
+\subsection{本章小结}
+
+P58 对后续学习的建议很朴素：找问题、读论文、继续上进阶课。它背后的核心是把被动听课转成主动建构。真正的深度学习能力不是知道某个模型名字，而是能把一个问题放入合适的任务框架，找到可用资料，建立 baseline，分析失败原因，并迭代到可解释的结果。
+
+% =====================================================================
+\section{为什么这门课负担这么重}
+% =====================================================================
+
+结语后半段转向课程本身。老师统计了修课人数与系所分布：这学期申请修课的人数达到 1280 人，学生来自许多不同系所。最多的是资工系，约 13.7\%；第二多的是电机系，约 11.8\%；还有资管、职工、电机所等许多群体。这个分布说明深度学习已经不只是资讯或电机学生的工具，而是许多领域都希望尝试的共同方法。
+
+\framefig{0.86}{figures/fig_06_enrollment_distribution.jpg}
+{修课学生的系所分布图：将近 1300 人来自大量不同系所，说明深度学习已经成为跨领域学生都希望接触的基础工具。}
+{00:09:18--00:09:33}
+
+大班课程带来的挑战不是只有「人多」。它会影响课程设计的每个环节：
+\begin{itemize}
+    \item 作业必须让不同背景的学生都有入口，因此助教需要提供范例程式，让不会从零开始写模型的人也能动手修改。
+    \item 训练平台需要尽量统一，否则助教很难支持上千个不同环境中的错误。
+    \item 评测机制必须可扩展，因此 public set/private set、提交次数限制和线上评测就变得必要。
+    \item 课程不可能完全按照最强学生的节奏设计，也不可能把所有学生都保护在没有困难的环境中。
+\end{itemize}
+
+老师特别谈到 Colab、训练时间和运算资源问题。学生可能觉得模型训练几个小时很痛苦，但从深度学习发展的角度看，过去没有免费 GPU 时，类似作业甚至可能需要训练两天才跑出 baseline。今天统一使用 Colab 并不完美，但如果没有类似平台，一个近 1300 人的大班很难同时做深度学习实作。
+
+\framefig{0.84}{figures/fig_07_course_pain_points.jpg}
+{学生常见不适点：模型训练时间太长、没有好的运算资源、private set 与 public set 结果不一致、每日 submission 次数有限。老师强调这些并非刻意刁难，而是深度学习实践中真实存在的问题。}
+{00:18:45--00:19:00}
+
+\begin{importantbox}{评测机制背后的教育意义}
+    Public/private set 的差异不是课程特有的麻烦，而是机器学习竞赛和实际部署都会遇到的泛化问题。提交次数限制也不是单纯惩罚学生，而是在提醒：模型选择不能只靠反复试 leaderboard，必须依赖验证集、误差分析和对任务的理解。
+\end{importantbox}
+
+这里最值得注意的是老师对「痛苦」的解释。他并没有把学生的不适轻描淡写掉，而是承认训练慢、资源不足、结果不稳定都会带来挫折；同时也指出，这些不适不是 bug，而是深度学习的本质问题。模型训练需要时间，超参数选择有不确定性，public/private set 不一致反映泛化风险，深模型调参常常需要经验和实验。
+
+\begin{warningbox}{「通灵」感来自哪里}
+    学生觉得深度学习像通灵，通常是因为模型容量大、训练过程非凸、资料分布复杂、超参数交互影响强。真正的解决方式不是假装每个选择都有确定答案，而是建立实验纪律：固定 baseline、一次只改关键因素、记录训练曲线、使用验证集、做误差分析，并把直觉转化成可检验假设。
+\end{warningbox}
+
+\subsection{本章小结}
+
+这门课负担重，不只是因为作业多，而是因为它选择让学生接触真实深度学习流程：训练需要资源，调参需要实验，评测有泛化风险，大班支持需要统一平台和自动化评测。理解这些限制之后，学生会更容易把课程中的痛苦转化成工程常识，而不是只把它看成课程难度。
+
+% =====================================================================
+\section{不适感与选择：深度学习不是简单按钮}
+% =====================================================================
+
+老师最后解释，课程其实可以把很多令人不适的部分藏起来：把作业改成选择题，只问概念，不要求训练模型，不暴露 Colab、训练时间、private set、submission 限制、超参数调试和结果不稳定。这样学生可能更开心，老师和助教也更轻松。但他选择不这么做，因为这样会让学生误以为深度学习是一个简单按钮。
+
+\framefig{0.84}{figures/fig_08_informed_choice.jpg}
+{老师说明课程选择不隐藏深度学习实践中的困难：可以把不适感藏起来，但他希望学生获得对深度学习真实、完整、全面的认识，再决定未来是否继续投入。}
+{00:20:24--00:20:39}
+
+这段话的核心是「知情选择」。课程并不要求每个人未来都继续做深度学习，也不需要每个人喜欢这件事；但它希望学生在决定喜欢或不喜欢之前，看到技术真实的样貌。真实样貌包括亮眼应用，也包括训练成本、资料偏差、泛化不稳定、模型不可解释、部署受限、被攻击的风险和持续维护的负担。
+
+\begin{importantbox}{知情选择}
+    一门好的入门课不只展示技术最漂亮的一面，也应该展示它的代价。学生修完课后可以选择继续深入，也可以选择远离这个领域；关键是这个选择来自真实经验，而不是来自对深度学习的误解。
+\end{importantbox}
+
+老师用「疫苗」比喻这种不适感：课程中的困难可能有副作用，让人一时不舒服；但最坏的结果不过是一门课成绩不理想，而真正的收益是提前接触真实问题。未来面对更大的研究或产业挑战时，学生至少知道深度学习不是魔法，也不是把资料丢进去就会自动变好的机器。
+
+这也呼应了整门课的作业设计。作业不只是为了评分，而是为了让学生经历一遍从资料到模型、从 baseline 到改善、从 public score 到 private score 的完整过程。对很多非资讯背景的学生来说，即使最后只是修改助教范例，也已经迈过一个重要门槛：知道一个机器学习项目大致如何组织，知道失败时可以从哪里查起。
+
+\begin{knowledgebox}{困难本身也是课程内容}
+    深度学习课程中的训练等待、调参失败、验证集震荡、线上评测落差，并不是教学流程外的噪音。它们正是深度学习实践的一部分。能把这些困难说清楚，比只会展示成功 demo 更接近专业能力。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+P58 最有教育意味的部分，是老师明确选择不隐藏困难。课程的目标不是让学生产生「深度学习很简单」的错觉，而是让学生在相对安全的课堂环境中，先接触一次真实困难。这样无论未来继续做研究、做应用，还是选择不深入，判断都会更成熟。
+
+% =====================================================================
+\section{从「为学」到修完课程}
+% =====================================================================
+
+结尾处，老师借《为学一首示子侄》的故事鼓励修完课程的学生。原文中，贫者凭一瓶一钵前往南海，富者多年想买船却没有成行。老师把它改写成机器学习课程版本：有人手上没有顶级 GPU，只靠 Colab 也完成了十多个作业；有人一直想买 V100，却没有真正开始。
+
+\framefig{0.86}{figures/fig_09_for_learning_adaptation.jpg}
+{老师改写《为学一首示子侄》作为最后勉励：资源不足并不必然阻止学习，真正关键的是是否开始行动，并在一学期内持续完成作业。}
+{00:26:22--00:26:37}
+
+这段玩笑背后有一个很严肃的学习观：资源重要，但资源不是行动的替代品。深度学习当然需要算力，课程也承认没有好资源会让过程更痛苦；但对于入门者来说，能不能开始、能不能跑通 baseline、能不能从失败中改一点东西，往往比一开始就拥有最强硬件更重要。
+
+老师最后感谢学生修完整门课，并期待来自不同系所的学生未来把深度学习带到各行各业，做出现在无法想象的事情。这不是客套话，而是对课程定位的最终说明：这门课不是只服务未来的机器学习研究者，也服务那些会在其他领域使用机器学习的人。跨领域学生不一定要成为模型架构专家，但可以成为知道如何把领域问题转化成机器学习问题的人。
+
+\begin{importantbox}{完成课程本身是一种能力证明}
+    修完这门课意味着学生至少经历过完整的深度学习入门循环：理解基本模型、完成多个作业、面对训练资源限制、提交结果、接受泛化不确定性，并在困难中持续推进。这种经验会成为未来处理真实问题的底层耐受力。
+\end{importantbox}
+
+\subsection{本章小结}
+
+《为学》的改写把 P58 的情绪收束得很清楚：资源不足会增加困难，但不等于无法开始。课程最希望留下的不是某一个模型细节，而是学生对真实困难的免疫力、继续学习的方向感，以及把深度学习带回自己领域的可能性。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P58 是整门课的结语，因此它的重点不是技术细节，而是课程意义。老师首先回顾：从找 function 出发，课程讲过 deep learning、CNN、self-attention、Transformer；然后扩展到 GAN、BERT、domain adaptation、reinforcement learning、attack/defense、explainable ML、network compression、lifelong learning、meta learning 等主题。它们共同构成一张深度学习的问题地图。
+
+这张地图可以进一步压缩成五个问题：
+\begin{enumerate}
+    \item \textbf{资料是什么形态？} 向量、矩阵、序列、图像、声音、文字，不同资料形态需要不同 inductive bias。
+    \item \textbf{模型要学什么 function？} 分类、生成、序列转换、问答、控制、异常侦测，对应不同输出结构和损失设计。
+    \item \textbf{训练和测试是否一致？} 领域转移、泛化、public/private set 差异都在提醒模型不能只记住训练分布。
+    \item \textbf{模型是否可靠？} 攻击、防御、解释、压缩和部署决定模型能不能在真实环境中使用。
+    \item \textbf{学习流程能否继续改进？} 终身学习和元学习把重点从「训练一个模型」推进到「设计会持续适应的学习系统」。
+\end{enumerate}
+
+\begin{knowledgebox}{从课程到长期学习}
+    如果把 P58 当作学习路线图，最自然的下一步不是平均复习所有主题，而是选择一个自己关心的任务，把它放进这五个问题中定位：资料形态是什么？目标 function 是什么？评估指标是什么？训练测试差距在哪里？可靠性和部署有什么限制？这样课程知识才会从清单变成工具。
+\end{knowledgebox}
+
+这节结语还强调了一个容易被忽略的事实：深度学习教育不能只讲成功案例。真正的学习者需要知道训练会慢、结果会不稳定、验证集会误导、线上评测会有落差、模型会被攻击、解释不一定可靠、资源限制会影响可行性。课程把这些困难保留下来，是为了让学生在低风险环境中先体验一次真实世界的阻力。
+
+因此，整门课最终留下的不是「我知道很多模型名字」，而是三种能力：
+\begin{itemize}
+    \item \textbf{定位能力：} 看到一个问题时，知道它大致属于视觉、语言、语音、生成、领域转移、强化学习、异常侦测、解释、压缩或持续学习中的哪一类。
+    \item \textbf{迁移能力：} 能把课程作业、范例程式或论文方法迁移到自己的资料和问题上，先建立 baseline，再逐步修改。
+    \item \textbf{耐受能力：} 面对训练时间、资源限制、调参不确定性和评测落差时，不把失败简单归因于「我不会」，而是把它们拆成可以实验和分析的问题。
+\end{itemize}
+
+最后，老师请学生给坚持到最后的自己掌声。这句话之所以重要，是因为深度学习的入门并不只是概念理解，也包括和不确定性相处。能完整走过这一学期，已经说明学生不只是听过深度学习，而是亲自碰过它的真实边界。之后无论继续读论文、参加进阶课程、做研究，还是把模型应用到其他行业，这门课提供的地图和经验都会继续发挥作用。
+
+\subsection{延伸问题}
+
+\begin{enumerate}
+    \item 你现在最关心的一个真实问题，能否被表述成监督学习、生成、序列建模、异常侦测、强化学习或领域转移任务？
+    \item 如果要把某个课程作业改成你的问题，最先需要替换的是资料、模型、损失函数、评估指标，还是训练流程？
+    \item 当 public set 和 private set 表现不一致时，你会如何重新设计验证集和误差分析？
+    \item 如果未来继续读论文，你能否用「问题、方法、实验、限制」四栏总结一篇论文？
+\end{enumerate}
+
+\end{document}

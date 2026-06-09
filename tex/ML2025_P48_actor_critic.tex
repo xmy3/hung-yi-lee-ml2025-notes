@@ -1,0 +1,527 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\policy}{\pi_\theta}
+\newcommand{\val}{V^\theta}
+\newcommand{\adv}{A_t}
+\newcommand{\return}{G_t}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{强化学习概述（三）：Actor-Critic}
+\newcommand{\notesubtitle}{Value Function, Monte Carlo, Temporal Difference, Advantage, and Shared Actor-Critic Networks}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 34 分 40 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=48}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 Policy Gradient 到 Actor-Critic}
+% =====================================================================
+
+前两讲已经把 reinforcement learning 的 actor 训练写成了一种带权重的分类问题。Actor 看到状态 $s_t$，输出动作分布 $\policy(a\mid s_t)$；如果最后发现动作 $a_t$ 对后续 reward 有帮助，就提高 $\policy(a_t\mid s_t)$；如果它伤害结果，就降低这个概率。形式上可以把 actor 的目标写成
+\[
+    L_{\mathrm{actor}}(\theta)
+    =-\sum_t A_t \log \policy(a_t\mid s_t),
+\]
+其中 $A_t$ 是第 $t$ 步动作的权重，也就是这一步动作应该被鼓励还是被惩罚的强度。
+
+P47 已经介绍了几种构造 $A_t$ 的方法：从 immediate reward，到累计未来 reward，再到 discounted cumulative reward，最后再减去一个 baseline $b$。这些版本都在回答同一个问题：如何把整场游戏的结果分配回每一步动作？P48 的关键推进是：baseline 不应该只是一个全局常数，而应该看当前状态。
+
+\framefig{0.88}{figures/fig01_outline_actor_critic.jpg}
+{课程大纲从 Policy Gradient 推进到 Actor-Critic：本讲要引入一个评价 actor 的 critic，再用它改进 actor 的训练信号。}
+{00:00:00--00:00:15}
+
+如果在一个状态 $s_t$ 里，本来随便做一个动作就很容易拿高分，那么某一次拿到高分未必说明 $a_t$ 特别好；反过来，如果状态本来很危险，最终只损失一点点也可能是好动作。也就是说，动作评价应该与状态难度绑定。Actor-Critic 的核心思想就是训练另一个模型 critic 来估计``在这个状态下，当前 actor 平均能做到什么水平''，再用实际结果与这个平均水平相减。
+
+\begin{importantbox}{Actor-Critic 的一句话版本}
+    Actor 负责决定怎么行动，critic 负责评价当前 actor 在某个状态下的平均表现。训练 actor 时，我们不只问``这一步之后的 return 是多少''，还问``它比当前状态下的平均 return 好多少''。这个相对差值就是 advantage。
+\end{importantbox}
+
+本讲先定义 critic/value function，再讲如何用 Monte Carlo 或 Temporal Difference 估计 value，最后把 value 放回 policy gradient，得到常用的 Advantage Actor-Critic。
+
+\subsection{本章小结}
+
+P48 并不是另起炉灶，而是补上 P47 中 baseline 的精细版本。以前的 $b$ 是全局平均；现在的 $\val(s_t)$ 是 state-dependent baseline。这个替换让 actor 的训练信号从``绝对回报''变成``相对当前状态平均水平的优势''。
+
+% =====================================================================
+\section{Critic 与 Value Function}
+% =====================================================================
+
+Critic 的工作是评价 actor。假设当前 actor 的参数是 $\theta$，它的 policy 是 $\policy$。Critic 并不是抽象地判断某个画面好不好，而是判断：\textbf{如果 actor $\theta$ 看到状态 $s$，接下来继续用这个 actor 与环境互动，预期可以得到多少 discounted cumulative reward。}
+
+本讲采用最常用的一种 critic：value function，记为
+\[
+    \val(s).
+\]
+它的输入是 state 或 observation $s$，输出是一个 scalar。这个 scalar 的语义是
+\[
+    \val(s)
+    =
+    \E_{\policy}
+    \left[
+        \sum_{k=0}^{\infty}\gamma^k r_{t+k}
+        \mid s_t=s
+    \right],
+\]
+也就是从状态 $s$ 开始，之后一直按照当前 actor $\policy$ 行动，能得到的折扣累计 reward 的期望值。
+
+\framefig{0.88}{figures/fig02_value_function_definition.jpg}
+{Value function $\val(s)$ 输入状态 $s$，输出一个 scalar，用来估计 actor $\theta$ 从该状态继续行动时的 discounted cumulative reward。}
+{00:02:15--00:02:30}
+
+这里上标 $\theta$ 很重要。$\val(s)$ 不是状态本身的绝对价值，而是\textbf{对某个 actor 而言的价值}。同一个游戏画面，对很强的 actor 可能意味着后面可以拿很多分；对很弱的 actor 可能意味着马上失败。因此 value function 必须随着被评价 actor 的变化而变化。
+
+\framefig{0.92}{figures/fig03_value_depends_on_actor.jpg}
+{同一个画面在不同 actor 下可能有不同 value：好的 actor 看见还有很多目标的画面，预计可以继续获得高 reward；差的 actor 未必能做到。}
+{00:06:00--00:06:15}
+
+\begin{knowledgebox}{Value function 与 Q function}
+    本讲聚焦 $V^\theta(s)$，它只看 state，不指定下一步 action。另一种常见 critic 是 $Q^\theta(s,a)$，它评价``在 state $s$ 先采取 action $a$，之后再按照 actor $\theta$ 行动''的 expected return。Actor-Critic 这讲使用 $V$ 来当 baseline；DQN 一类方法则更常直接使用 $Q$ 来选动作。
+\end{knowledgebox}
+
+\subsection{为什么 value 可以当 baseline}
+
+在 policy gradient 中，训练样本是 $(s_t,a_t)$，权重是 $A_t$。如果只用 discounted return $\return$，则
+\[
+    A_t = \return.
+\]
+这个数表示实际采样到的轨迹有多好。但 $\return$ 没有区分``状态本来就简单''和``动作真的特别好''。如果用 $\val(s_t)$ 估计当前状态的平均水平，那么
+\[
+    \return - \val(s_t)
+\]
+就表示实际结果比平均水平高多少。这个差值更适合当作 actor 的训练权重，因为 actor 真正应该学习的是：在相同状态下，哪些动作比平均抽样更值得增加概率。
+
+\subsection{本章小结}
+
+Critic/value function 输出的不是动作概率，而是一个状态的 expected return。它依赖当前 actor $\theta$，因此 actor 变了，critic 理论上也要重新适应。把 $\val(s_t)$ 当成 baseline 后，policy gradient 的信号会从绝对好坏转为相对好坏。
+
+% =====================================================================
+\section{如何估计 Value：Monte Carlo 与 Temporal Difference}
+% =====================================================================
+
+Value function 本身也是一个需要训练出来的模型。给定一个状态 $s_t$，我们希望 critic 输出接近真实的 expected return。但真实期望无法直接知道，因为它涉及未来所有可能轨迹。因此课程介绍两类经典估计方式：Monte Carlo based approach 与 Temporal Difference based approach。
+
+\subsection{Monte Carlo：等 episode 结束后回头监督}
+
+Monte Carlo 的想法最直接：让 actor 从某个状态 $s_t$ 开始继续玩到 episode 结束，把实际得到的 discounted return 当作监督信号。若从 $t$ 开始到终止时刻 $T$ 的 reward 是 $r_t,r_{t+1},\ldots,r_T$，则
+\[
+    \return
+    =
+    r_t+\gamma r_{t+1}+\gamma^2 r_{t+2}+\cdots+\gamma^{T-t}r_T.
+\]
+然后训练 critic 让
+\[
+    \val(s_t)\approx \return.
+\]
+对应的平方误差可以写成
+\[
+    L_{\mathrm{critic}}^{\mathrm{MC}}
+    =
+    \frac{1}{2}\left(\val(s_t)-\return\right)^2.
+\]
+
+\framefig{0.88}{figures/fig04_monte_carlo_value_target.jpg}
+{Monte Carlo based approach：看到状态 $s_t$ 后让 actor 继续与环境互动，直到 episode 结束，再用实际累计 reward $G_t$ 作为 $\val(s_t)$ 的 target。}
+{00:07:15--00:07:30}
+
+MC 的优点是 target 很容易理解：它就是实际发生的完整结果。缺点也来自这里：必须等 episode 结束才能知道 target，而且单条 trajectory 的随机性很大。如果环境有随机性，或者 actor 自己是 stochastic policy，那么同一个 $s_t$ 后面可能出现很多不同结果；一条样本的 $\return$ 只是其中一个 sample。
+
+\subsection{Temporal Difference：用一步转移 bootstrap}
+
+Temporal Difference，简称 TD，不等待完整 episode。它只需要观察一步转移
+\[
+    (s_t,a_t,r_t,s_{t+1}),
+\]
+就可以对 $\val(s_t)$ 做更新。关键关系是 Bellman 式的自洽：
+\[
+    \val(s_t)
+    \approx
+    r_t+\gamma \val(s_{t+1}).
+\]
+也就是说，从 $s_t$ 开始的价值，应该等于当前立刻拿到的 reward，加上走到 $s_{t+1}$ 后的未来价值。
+
+\framefig{0.88}{figures/fig05_temporal_difference_data.jpg}
+{Temporal Difference based approach 只需要一段局部经验 $(s_t,a_t,r_t,s_{t+1})$，不必等整局结束。}
+{00:08:30--00:08:45}
+
+\framefig{0.88}{figures/fig06_td_value_relation.jpg}
+{TD 使用 $\val(s_t)\approx r_t+\gamma\val(s_{t+1})$ 的关系来训练 critic；下一状态的 value 被拿来 bootstrap 当前状态的 target。}
+{00:11:00--00:11:15}
+
+TD 的 critic loss 可写成
+\[
+    L_{\mathrm{critic}}^{\mathrm{TD}}
+    =
+    \frac{1}{2}
+    \left(
+        \val(s_t)
+        -
+        \bigl(r_t+\gamma \val(s_{t+1})\bigr)
+    \right)^2.
+\]
+实际实现时，右边的 $\val(s_{t+1})$ 常被视作 target 的一部分，不让同一次反向传播同时追着两边跑；许多算法会用 target network、detach 或延迟更新来稳定训练。
+
+\begin{importantbox}{MC 与 TD 的核心取舍}
+    Monte Carlo 使用完整实际回报，bias 较小但 variance 较大，且必须等 episode 结束；TD 使用一步 reward 加下一状态的估计值，variance 较小且可在线更新，但 target 本身依赖 critic 的估计，因此会引入 bootstrap bias。
+\end{importantbox}
+
+\subsection{MC vs. TD：为什么两者可能给出不同答案}
+
+课程用 Sutton 书中的例子说明：即使观察同一批经验，MC 与 TD 也可能对某个状态给出不同 value。假设 critic 观察到若干 episode，其中从 $s_b$ 出发多数时候 reward 为 $1$ 后结束，少数时候 reward 为 $0$；因此 $V(s_b)$ 约为 $3/4$。但从 $s_a$ 出发的那条完整经验刚好走到 $s_b$ 后最终得到 $0$。
+
+MC 只看从 $s_a$ 出发那条完整 trajectory 的最终 return，因此会说
+\[
+    V_{\mathrm{MC}}(s_a)=0.
+\]
+TD 则利用局部转移 $s_a\to s_b$，并认为
+\[
+    V_{\mathrm{TD}}(s_a)
+    \approx
+    r+V(s_b)
+    =
+    0+\frac{3}{4}
+    =
+    \frac{3}{4}.
+\]
+
+\framefig{0.92}{figures/fig07_mc_vs_td_sutton_example.jpg}
+{Sutton 例子中，MC 使用从 $s_a$ 出发的完整 sample 得到 $V(s_a)=0$；TD 通过 $s_a\to s_b$ 的转移与 $V(s_b)=3/4$ 得到 $V(s_a)=3/4$。}
+{00:18:30--00:18:45}
+
+这个例子不是说 MC 或 TD 谁永远正确，而是强调二者利用资料的方式不同。MC 尊重完整样本，所以在样本少时可能被单条偶然结果影响；TD 尊重状态之间的局部关系，所以可以更快把 $s_b$ 的统计信息传回 $s_a$，但前提是 $V(s_b)$ 的估计要可靠。
+
+\begin{knowledgebox}{从估计角度看 TD}
+    TD 可以被理解为``边学边猜''：critic 还没有真的看到从 $s_t$ 到终局的所有结果，却先用 $s_{t+1}$ 的 value 来补上未来部分。这个技巧让 RL 可以做 online learning，也让 value 在状态图上传播得更快。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+MC 和 TD 都是在训练 $\val(s)$，但 target 来源不同。MC 的 target 是完整 episode 的实际 return；TD 的 target 是 $r_t+\gamma\val(s_{t+1})$。Actor-Critic 中常用 TD，因为它不必等待整局结束，也正好能导出后面的 TD error advantage。
+
+% =====================================================================
+\section{Version 3.5：用 \texorpdfstring{$V(s)$}{V(s)} 做 State-dependent Baseline}
+% =====================================================================
+
+回到 actor 的训练权重。P47 的 baseline 版本可以写成
+\[
+    A_t = G'_t-b,
+\]
+其中 $G'_t$ 表示 discounted return-to-go，$b$ 是一个与 state 无关的平均值。P48 的 Version 3.5 把 $b$ 换成 critic 输出：
+\[
+    A_t
+    =
+    G'_t-\val(s_t).
+\]
+这一步看起来只是把常数换成函数，但语义变化很大：baseline 从``整体平均表现''变成了``在这个 state 下当前 actor 的平均表现''。
+
+\framefig{0.9}{figures/fig08_version35_state_dependent_baseline.jpg}
+{Version 3.5：训练 actor 时不再减固定 baseline $b$，而是减去 critic 对当前状态的估计 $\val(s_t)$。}
+{00:21:00--00:21:15}
+
+\subsection{Advantage 的直觉}
+
+在状态 $s_t$ 下，actor 实际采取了动作 $a_t$，之后得到一个 sample return $G'_t$。但如果同样在 $s_t$ 下，不一定采取 $a_t$，而是按照 actor 的动作分布随机 sample 动作，再继续玩下去，会得到一个平均 return。这个平均 return 就是 $\val(s_t)$。
+
+因此
+\[
+    A_t=G'_t-\val(s_t)
+\]
+可以读成：
+\begin{itemize}
+    \item 若 $A_t>0$，实际动作 $a_t$ 比从当前 policy 随机抽动作的平均结果更好，应提高 $\policy(a_t\mid s_t)$。
+    \item 若 $A_t<0$，实际动作 $a_t$ 比平均结果更差，应降低 $\policy(a_t\mid s_t)$。
+    \item 若 $A_t\approx 0$，它大致只是平均水平，更新幅度可以很小。
+\end{itemize}
+
+\framefig{0.92}{figures/fig09_advantage_better_or_worse_than_average.jpg}
+{Advantage 的直觉：$G'_t$ 是实际 sample 的结果，$\val(s_t)$ 是该状态下按 actor 分布行动的平均结果；两者相减判断 $a_t$ 是否 better than average。}
+{00:24:45--00:25:00}
+
+\begin{importantbox}{为什么 baseline 可以依赖 state}
+    在 policy gradient 中，baseline 只要不依赖当前实际 action $a_t$，就不会改变梯度期望，只会改变 variance。$\val(s_t)$ 依赖 state，但不依赖``这一次抽到的动作是哪一个''，因此可以作为合法 baseline。它让训练更稳定，同时保留 policy gradient 的方向。
+\end{importantbox}
+
+\subsection{实际含义：奖励高不一定动作好}
+
+Version 3.5 带来的一个重要观念是：高 return 不等于动作好，低 return 也不等于动作差。动作的好坏必须放在同一个状态的背景下比较。例如：
+\begin{itemize}
+    \item 简单状态下拿到 $10$ 分，但该状态平均能拿 $20$ 分，则 $A_t<0$，动作应被抑制。
+    \item 困难状态下只拿到 $-1$ 分，但该状态平均是 $-10$ 分，则 $A_t>0$，动作反而值得鼓励。
+\end{itemize}
+这正是 advantage 的作用：它把 credit assignment 从绝对分数改成相对分数。
+
+\subsection{本章小结}
+
+Version 3.5 的 actor loss 可以写成
+\[
+    L_{\mathrm{actor}}
+    =
+    -\sum_t
+    \bigl(G'_t-\val(s_t)\bigr)
+    \log \policy(a_t\mid s_t).
+\]
+这里的 critic 不是直接替 actor 选动作，而是提供 state-dependent baseline。Actor 仍然学习动作分布；critic 负责告诉 actor：这次动作相对于当前状态的平均水平到底好不好。
+
+% =====================================================================
+\section{Version 4：TD Error 与 Advantage Actor-Critic}
+% =====================================================================
+
+Version 3.5 仍然有一个问题：$G'_t$ 是单条 sample trajectory 的 return。它可能特别幸运，也可能特别倒霉。用一个 sample return 去减一个平均值 $\val(s_t)$，variance 仍然可能很大。课程接着提出 Version 4：不要等整条 trajectory 的 $G'_t$，而是把 $G'_t$ 的未来部分替换成下一状态的 expected value。
+
+从 $s_t$ 采取 $a_t$ 后，得到 immediate reward $r_t$，并跳到 $s_{t+1}$。从 $s_{t+1}$ 往后，如果继续使用当前 actor，平均能得到 $\val(s_{t+1})$。因此采取 $a_t$ 后的 expected return 可以近似为
+\[
+    r_t+\gamma\val(s_{t+1}).
+\]
+把它与未指定动作前的平均 value $\val(s_t)$ 相减，就得到
+\[
+    A_t
+    =
+    r_t+\gamma\val(s_{t+1})-\val(s_t).
+\]
+这个量也叫 TD error，通常记为
+\[
+    \delta_t
+    =
+    r_t+\gamma\val(s_{t+1})-\val(s_t).
+\]
+
+\framefig{0.92}{figures/fig10_version4_td_error_advantage.jpg}
+{Version 4 把实际完整 return 的未来部分换成下一状态的 value：用 $r_t+\gamma\val(s_{t+1})-\val(s_t)$ 作为 actor 的权重。}
+{00:26:00--00:26:15}
+
+\framefig{0.92}{figures/fig11_advantage_actor_critic_formula.jpg}
+{Advantage Actor-Critic 的常用形式：$\adv=r_t+\gamma\val(s_{t+1})-\val(s_t)$，也就是用 TD error 评价动作优劣。}
+{00:28:00--00:28:15}
+
+\subsection{TD error 的意义}
+
+$\delta_t$ 同时有两个解释：
+\begin{itemize}
+    \item 对 critic 来说，它是预测误差：当前 value $\val(s_t)$ 与 TD target $r_t+\gamma\val(s_{t+1})$ 的差距。
+    \item 对 actor 来说，它是 advantage：实际采取 $a_t$ 后跳到的结果，比当前状态平均水平更好还是更差。
+\end{itemize}
+
+若 $\delta_t>0$，说明采取 $a_t$ 后的 immediate reward 加未来 value 高于 $\val(s_t)$，于是 actor 应增加 $a_t$ 的概率；若 $\delta_t<0$，则说明它低于平均，应减少该动作概率。因此 actor loss 可以写成
+\[
+    L_{\mathrm{actor}}^{\mathrm{A2C}}
+    =
+    -\sum_t
+    \delta_t
+    \log \policy(a_t\mid s_t).
+\]
+
+\begin{knowledgebox}{Actor-Critic 的训练循环}
+    一次典型更新可以概括为：用 actor 与环境互动得到 $(s_t,a_t,r_t,s_{t+1})$；用 TD target 更新 critic；计算 $\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)$；把 $\delta_t$ 当作权重更新 actor。Critic 学得越准，actor 收到的 advantage 信号越可靠。
+\end{knowledgebox}
+
+\subsection{为什么这叫 Actor-Critic}
+
+在 Version 4 中，actor 与 critic 互相依赖：
+\begin{itemize}
+    \item Actor 决定采样哪些动作，也决定 critic 要评价哪一个 policy。
+    \item Critic 给 actor 提供训练权重，告诉它哪些动作相对平均更好。
+    \item Actor 更新后 policy 变了，$\val(s)$ 的目标也随之改变，critic 需要继续追上新的 actor。
+\end{itemize}
+因此这不是先训练好一个永远不变的 critic，再训练 actor；更接近一个交替适应的过程。实际实现中常见做法是一边收集经验，一边同时优化 actor loss 与 critic loss。
+
+\begin{warningbox}{Critic 不准会怎样}
+    如果 critic 严重高估或低估某些状态，actor 会收到错误的 advantage 信号。例如 $\val(s_t)$ 被低估时，很多普通动作都会看起来像好动作；$\val(s_{t+1})$ 被高估时，actor 也可能错误地偏好通往该状态的动作。Actor-Critic 的稳定性很大程度取决于 critic 的质量。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Version 4 把 Version 3.5 中的 $G'_t-\val(s_t)$ 改写成 TD error：
+\[
+    \delta_t=r_t+\gamma\val(s_{t+1})-\val(s_t).
+\]
+这一步减少了等待完整 episode 的需求，也让 actor 与 critic 通过同一个 TD 信号连接起来。常见的 Advantage Actor-Critic 就是在这个公式上建立的。
+
+% =====================================================================
+\section{实现技巧、DQN 展望与课堂问答}
+% =====================================================================
+
+\subsection{共享 actor 与 critic 的前几层}
+
+如果输入是游戏画面，actor 与 critic 都需要从同一张图中提取视觉特征。Actor 最后输出每个动作的分数或概率；critic 最后输出一个 scalar value。前面的视觉特征抽取网络很可能可以共用，尤其是 CNN 层。
+
+\framefig{0.9}{figures/fig12_actor_critic_shared_layers.jpg}
+{Actor 与 critic 可以共享前几层参数：共同的特征抽取网络之后，actor head 输出动作分布，critic head 输出 value scalar。}
+{00:29:15--00:29:30}
+
+共享网络的好处是节省参数，也让 actor 与 critic 使用相同的状态表示。但实现时要注意两个 loss 的平衡：actor loss、critic loss、entropy regularization 等项若尺度差异很大，可能会让共享层偏向某一边。因此很多实现会写成
+\[
+    L
+    =
+    L_{\mathrm{actor}}
+    +
+    c_v L_{\mathrm{critic}}
+    -
+    c_H H(\policy),
+\]
+其中 $H(\policy)$ 是 entropy，用来鼓励探索，$c_v,c_H$ 是调权重的系数。
+
+\subsection{DQN：直接用 critic 决定动作的另一条线}
+
+课程结尾提到，RL 里还有一类方法更直接地使用 critic：critic 不只提供 baseline，而是直接参与动作选择。最著名的例子是 Deep Q Network (DQN)。DQN 学的是
+\[
+    Q(s,a),
+\]
+也就是在状态 $s$ 先采取动作 $a$ 后的 expected return。选动作时可以直接取
+\[
+    a^\star=\argmax_a Q(s,a).
+\]
+这与本讲的 actor-critic 不同：actor-critic 保留一个显式 actor 来输出 policy，critic 主要辅助评价；DQN 则让 $Q$ 本身承担选动作的核心角色。
+
+\framefig{0.9}{figures/fig13_dqn_outlook.jpg}
+{DQN 展望：课程提到 DQN 及其大量变形，例如 DDQN、Dueling DDQN、Distributional DQN、Noisy DQN 与 Rainbow。}
+{00:29:30--00:29:45}
+
+图中 Rainbow 是一个代表性工作，它把多个 DQN 改进技巧组合起来。课程没有在本讲展开 DQN 细节，而是把它作为 RL 中另一条路线提示给同学。P48 的主线仍然是：如何用 critic 改进 policy gradient。
+
+\subsection{随机环境下的 value 是期望值}
+
+课堂问答中有一个重要澄清：如果环境具有随机性，那么看到同一个 observation 后，后面发生的事情不一定固定。$\val(s)$ 在这种情况下表示的是\textbf{平均值/期望值}，不是某一条确定路径的结果。形式上，
+\[
+    \val(s)
+    =
+    \E\left[
+        G_t
+        \mid s_t=s,\ \pi_\theta
+    \right],
+\]
+期望同时包含 actor 抽动作的随机性与环境转移的随机性。
+
+这也解释了为什么 sampling 在 RL 中非常关键。若训练过程中从未观察到某些状态或某些转移，critic 就无法凭空学会它们的 value；若 sample 覆盖不均，value 估计也会偏。老师特别强调，reinforcement learning 的最终表现与 sample 的好坏关系很大。
+
+\begin{warningbox}{没有观察到的状态很难被正确训练}
+    在监督学习中，训练资料覆盖不足会造成泛化问题；在 RL 中，这个问题更尖锐，因为资料本身由 actor 采样产生。Actor 若从不探索某些区域，critic 就缺乏这些区域的 value target，actor 也收不到关于这些动作的正确 advantage 信号。
+\end{warningbox}
+
+\subsection{Actor 的 distribution 从哪里来}
+
+另一个问答涉及 actor 的动作分布。若 action 是离散的，actor 可以像 classifier 一样：输入 state $s$，输出每个 action 的 score，再通过 softmax 变成概率分布
+\[
+    \policy(a\mid s)
+    =
+    \frac{\exp z_a(s)}
+    {\sum_{a'}\exp z_{a'}(s)}.
+\]
+实际行动时从这个分布中 sample，训练时再根据 advantage 调整对应 action 的 log probability。这个观点把 RL 中的 actor 与分类模型连接起来：差别不在网络形式，而在监督信号不是人工标注的 label，而是来自环境互动后的 reward 与 critic。
+
+\subsection{本章小结}
+
+实现 Actor-Critic 时，actor 与 critic 可以共享特征抽取层，再分出两个 head。DQN 是另一类直接使用 critic/Q function 选动作的方法。课堂问答补充了两个容易误解的点：随机环境下 $V$ 是期望值；actor 的动作 distribution 通常由网络输出 score 后 softmax 得到。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+这一讲可以压缩成一条公式演化链：
+\[
+    A_t=G'_t-b
+    \quad\Longrightarrow\quad
+    A_t=G'_t-\val(s_t)
+    \quad\Longrightarrow\quad
+    A_t=r_t+\gamma\val(s_{t+1})-\val(s_t).
+\]
+第一步仍是 P47 的固定 baseline；第二步引入 critic，让 baseline 依赖 state；第三步使用 TD error，把完整 sample return 换成一步 reward 加下一状态 value，得到 Advantage Actor-Critic。
+
+\begin{importantbox}{本讲最值得带走的观念}
+    Actor-Critic 的 critic 不是为了取代 actor，而是为了让 actor 知道``这次动作相对于当前状态的平均水平是否更好''。所以 advantage 不是 reward 本身，而是相对评价；TD error 则是一个可以在线计算的相对评价。
+\end{importantbox}
+
+从学习流程看，critic 解决的是评价问题，actor 解决的是决策问题。Critic 越能准确估计当前 actor 的 expected return，actor 的 policy gradient 权重就越有意义；actor 越能探索到有信息量的状态，critic 的训练资料就越充分。两者互相促进，也互相拖累，这正是 Actor-Critic 系列方法既强大又不总是稳定的原因。
+
+下一段课程将进入 Reward Shaping。它关心的是另一个 RL 训练难点：如果环境给的 reward 太稀疏、太延迟，actor 与 critic 都很难学习。Reward Shaping 会尝试重新设计或补充 reward，让学习过程更容易获得有效信号。
+
+\end{document}

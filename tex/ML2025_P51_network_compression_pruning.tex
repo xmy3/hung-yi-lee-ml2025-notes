@@ -1,0 +1,399 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\mask}{m}
+\newcommand{\weights}{w}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{Network Compression（一）：Network Pruning}
+\newcommand{\notesubtitle}{Smaller Models, Pruning Pipelines, Structured Sparsity, Lottery Tickets, and Rethinking Pruning}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 29 分 31 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=51}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{为什么需要 Smaller Model}
+% =====================================================================
+
+从这一讲开始，课程进入 network compression。前面的课程一直在讨论如何把模型做得更强：更深、更宽、更大的数据、更复杂的训练目标。但真实部署时，模型不只要准确，也要能在有限资源下运行。手机、手表、无人机、嵌入式设备、机器人边缘端，都不一定能承受大型模型的内存、算力、功耗和延迟。
+
+\framefig{0.88}{figures/fig01_smaller_model_motivation.jpg}
+{Smaller model 的动机：在资源受限环境中部署 ML 模型，需要更少参数、更低延迟，也可能带来隐私与本地推理方面的好处。}
+{00:02:00--00:02:15}
+
+小模型的价值可以从几方面理解：
+\begin{itemize}
+    \item \textbf{存储更省：} 参数量少，模型文件小，适合端侧设备与大规模分发。
+    \item \textbf{推理更快：} 计算量少，响应延迟低，适合实时任务。
+    \item \textbf{功耗更低：} 对电池设备、机器人和无人机尤其重要。
+    \item \textbf{隐私更好：} 若模型能在本地运行，资料不必上传云端。
+    \item \textbf{成本更低：} 云端部署时，小模型也能减少计算成本。
+\end{itemize}
+
+Network compression 的目标不是单纯把模型变小，而是在尽量维持性能的前提下降低资源需求。因此它关心的是 trade-off：用多少准确率换多少参数量、延迟、内存或能耗。
+
+\begin{importantbox}{压缩不是只看参数量}
+    一个模型参数少，不一定推理快；一个模型稀疏，也不一定能在硬件上加速。真正的压缩目标通常同时包含模型大小、FLOPs、实际 wall-clock latency、内存访问、功耗和部署框架支持。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Network compression 处理的是部署现实：我们已经能训练强模型，但未必能把它们放到资源受限场景中。小模型的目的包括省存储、降延迟、降功耗、保护隐私和降低成本。
+
+% =====================================================================
+\section{Network Compression 的方法版图}
+% =====================================================================
+
+课程列出几类常见模型压缩方法：
+\begin{itemize}
+    \item \textbf{Network Pruning：} 移除不重要的权重、神经元、通道或结构。
+    \item \textbf{Knowledge Distillation：} 用大模型 teacher 训练小模型 student。
+    \item \textbf{Parameter Quantization：} 用较低 bit 表示参数或 activation。
+    \item \textbf{Architecture Design：} 直接设计高效结构，例如 depthwise convolution、mobile block。
+    \item \textbf{Dynamic Computation：} 对不同输入使用不同计算量，例如 early exit 或条件执行。
+\end{itemize}
+
+\framefig{0.88}{figures/fig02_network_compression_outline.jpg}
+{Network compression 的方法版图：pruning、distillation、quantization、architecture design、dynamic computation；本讲不讨论硬件方案。}
+{00:03:00--00:03:15}
+
+这一讲主要讲 Network Pruning。Pruning 的核心想法非常朴素：大网络里可能有很多冗余连接或神经元，把它们剪掉后，模型仍然可以维持接近原来的性能。剪枝可以看成一个三步问题：
+\[
+    \text{train large model}
+    \quad\Longrightarrow\quad
+    \text{identify unimportant parts}
+    \quad\Longrightarrow\quad
+    \text{remove and recover}.
+\]
+
+\subsection{Pruning 与其他压缩方法的关系}
+
+Pruning 并不排斥其他压缩方法。实际部署中常把多个技巧组合起来：先剪枝得到较小结构，再做量化；或者先用大模型 teacher 蒸馏一个小模型，再对小模型继续剪枝。课程先从 pruning 开始，是因为它直接揭示了一个基本问题：大网络中到底是否存在可被移除的冗余？
+
+\subsection{本章小结}
+
+Network compression 包含多条路线。本讲聚焦 pruning：先训练一个大网络，再识别并移除不重要部分，最后通过 fine-tuning 恢复性能。
+
+% =====================================================================
+\section{为什么 Network 可以被 Pruned}
+% =====================================================================
+
+现代神经网络通常是 over-parameterized 的：参数量远大于训练资料或任务所需的最小自由度。Over-parameterization 一方面让训练更容易，另一方面也意味着网络中可能存在大量冗余权重或神经元。Pruning 的基本假设就是：这些冗余可以被删除。
+
+\framefig{0.9}{figures/fig03_overparameterized_optimal_brain_damage.jpg}
+{网络可剪枝的直觉：模型通常过参数化，存在冗余权重或神经元。早期工作 Optimal Brain Damage 就已经研究如何移除不重要参数。}
+{00:05:15--00:05:30}
+
+图中类比了人脑发育中的突触密度变化：并不是越多连接越好，发育过程中也会有 pruning。神经网络中的 pruning 当然不是生物脑机制的直接复刻，但它提供了一个直觉：学习系统可以先拥有大量候选连接，再保留真正有用的部分。
+
+\begin{knowledgebox}{Optimal Brain Damage 的历史位置}
+    LeCun、Denker、Solla 的 Optimal Brain Damage 是早期 neural network pruning 代表工作之一。它试图估计删除某个参数对 loss 的影响，从而剪掉影响较小的参数。这说明 pruning 并不是近年才出现的技巧，而是神经网络历史中很早就存在的问题。
+\end{knowledgebox}
+
+\subsection{过参数化的双重角色}
+
+大网络之所以有用，并不只是因为最终需要那么多参数。更重要的是，大网络提供了更宽的优化空间，让梯度下降更容易找到好解。训练完成后，其中一部分结构可能并非最终功能所必需，但它们在训练过程中帮助了优化。这也是后面``为什么不直接训练小网络''的关键。
+
+\subsection{本章小结}
+
+Pruning 建立在过参数化与冗余假设上：大网络中有不少连接或神经元对最终功能贡献较小，可以被删除。但这些冗余不代表大网络没有价值，因为大网络可能帮助优化过程找到好解。
+
+% =====================================================================
+\section{Network Pruning 的基本流程}
+% =====================================================================
+
+一个典型 pruning 流程如下：
+\begin{enumerate}
+    \item 先训练一个较大的 pre-trained network。
+    \item 评估每个权重、神经元、通道或结构的重要性。
+    \item 删除低重要性的部分，让网络变小。
+    \item 剪枝后准确率通常会下降，因此需要 fine-tune 恢复。
+    \item 不要一次剪太多；反复剪枝与 fine-tune，直到模型足够小。
+\end{enumerate}
+
+\framefig{0.9}{figures/fig04_pruning_pipeline_importance_remove_finetune.jpg}
+{Network pruning 的迭代流程：从大模型出发，评估重要性，移除不重要部分，fine-tune 恢复性能，再判断是否已经足够小。}
+{00:08:30--00:08:45}
+
+重要性如何定义取决于剪枝粒度。对单个 weight，常见启发式是看绝对值 $|w|$：权重越接近零，删除后影响可能越小。对 neuron，可以看它在数据集上有多少次 activation 不为零，或者看它对 loss、梯度、输出的贡献。更复杂的方法会估计删除某个参数后 loss 的变化：
+\[
+    \Delta L_i
+    =
+    L(\weights \odot \mask_{-i})-L(\weights),
+\]
+其中 $\mask_{-i}$ 表示把第 $i$ 个参数或结构置零的 mask。
+
+\begin{warningbox}{重要性估计只是近似}
+    单个权重的绝对值小，不代表它一定无用；一个神经元在某批资料上少激活，也不代表它对所有输入都无用。Pruning 的实际效果取决于重要性指标、剪枝比例、fine-tuning 方式和资料分布。
+\end{warningbox}
+
+\subsection{为什么要 fine-tune}
+
+删除参数会改变网络函数。即使被删的是低重要性参数，累计删除很多也会让模型性能下降。Fine-tuning 的作用是让剩余参数重新适应新的结构，把被剪掉部分造成的扰动吸收掉。实践中常使用逐步剪枝：少量删除、微调、再删除、再微调。
+
+\subsection{本章小结}
+
+Pruning 不是一次性把小权重删掉就结束，而是一个迭代过程：训练大模型、评估重要性、删除、fine-tune、再判断是否继续。剪枝比例过大时，网络可能无法恢复。
+
+% =====================================================================
+\section{Weight Pruning 与 Neuron Pruning}
+% =====================================================================
+
+Pruning 的粒度会影响实际部署效果。最细粒度的是 weight pruning：删除单个连接。它可以得到很高 sparsity，但网络结构会变成不规则稀疏图。
+
+\framefig{0.9}{figures/fig05_weight_pruning_irregular_structure.jpg}
+{Weight pruning 删除单个连接，能减少参数，但会让网络结构变得不规则；若硬件或框架不擅长稀疏计算，实际加速可能有限。}
+{00:09:15--00:09:30}
+
+不规则稀疏结构的麻烦在于：虽然数学上乘法次数少了，但普通 dense matrix multiplication 无法直接利用这种稀疏性。需要特殊稀疏存储、索引、kernel 或硬件支持；否则节省的参数量未必转化为实际速度提升。
+
+另一类是 structured pruning，例如 neuron pruning、channel pruning、filter pruning。它删除的是完整神经元、通道或卷积核，得到的网络仍然是规则 dense 结构，只是宽度变小。
+
+\framefig{0.9}{figures/fig06_neuron_pruning_regular_structure.jpg}
+{Neuron pruning 删除完整神经元或结构块，剪枝后网络仍然规则，因此更容易实现，也更容易带来实际加速。}
+{00:13:30--00:13:45}
+
+\begin{importantbox}{压缩率与加速率不是同一件事}
+    Weight pruning 往往能给出很高参数稀疏率，但未必带来显著 wall-clock speedup；structured pruning 的参数压缩率可能较低，却更容易在常规硬件上加速。部署时要看实际推理时间，而不只看 sparsity。
+\end{importantbox}
+
+\subsection{选择剪枝粒度}
+
+剪枝粒度越细，搜索空间越大，也越可能保留性能；但越细的稀疏模式越难被硬件高效利用。剪枝粒度越粗，例如整层、整通道、整 attention head，结构越规则，部署越简单，但性能损失可能更大。因此实际系统通常根据部署目标选择粒度：
+\begin{itemize}
+    \item 想压缩模型文件：unstructured weight pruning 可能有帮助。
+    \item 想降低真实延迟：structured pruning 更常见。
+    \item 想兼顾性能与硬件效率：需要结合目标平台做 profiling。
+\end{itemize}
+
+\subsection{本章小结}
+
+Weight pruning 与 neuron/channel pruning 的差异不只是剪什么，还关系到能否真正加速。前者更灵活但结构不规则；后者更粗糙但部署友好。
+
+% =====================================================================
+\section{为什么不直接训练小模型}
+% =====================================================================
+
+既然最终想要小模型，一个自然问题是：为什么不一开始就训练一个小网络？课程专门提出这个问题，因为它触及 pruning 的本质价值。
+
+\framefig{0.88}{figures/fig07_why_not_train_small_network.jpg}
+{为什么不直接训练小网络？Pruning 的意义不仅是得到小结构，也可能来自大网络训练过程中的优化优势。}
+{00:15:45--00:16:00}
+
+经验上，直接训练小网络往往比训练大网络再剪枝更难，或性能较差。原因包括：
+\begin{itemize}
+    \item 大网络参数多，优化空间更宽，较容易找到低 loss 解。
+    \item 小网络容量有限，若初始化或训练早期走错方向，恢复空间较小。
+    \item 大网络训练后可以暴露哪些连接或结构真正有用，相当于先做一次搜索。
+\end{itemize}
+
+因此 pruning 可以被理解为两件事的组合：先用大网络降低优化难度，再从训练好的大网络中提取一个较小的可用子结构。
+
+\begin{knowledgebox}{大网络可能是训练脚手架}
+    大网络中的很多参数最终可以被删掉，但它们可能在训练过程中帮助模型找到好表示。Pruning 得到的小网络不只是一个随机小网络，而是经过大网络训练过程筛选出来的结构。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+直接训练小网络并不总能达到剪枝后小网络的性能。Pruning 的潜在价值在于：大模型先帮助优化与结构搜索，剪枝再提取有效子网络。
+
+% =====================================================================
+\section{Lottery Ticket Hypothesis}
+% =====================================================================
+
+Lottery Ticket Hypothesis 试图解释 pruning 为什么有效。它的直觉是：一个随机初始化的大网络中，可能已经包含若干``中奖彩票''子网络。只要找到正确的子网络，并保留它在原始大网络中的初始化，这个子网络就可以单独训练到接近大网络的性能。
+
+\framefig{0.88}{figures/fig08_lottery_ticket_hypothesis_start.jpg}
+{Lottery Ticket Hypothesis：随机初始化的大网络中可能存在可训练的 winning ticket 子网络；先训练大网络，再找出这个子网络。}
+{00:17:30--00:17:45}
+
+典型流程可以写成：
+\begin{enumerate}
+    \item 随机初始化大网络，记录初始权重 $\weights_0$。
+    \item 训练大网络得到 $\weights_T$。
+    \item 根据 $\weights_T$ 剪枝，得到 mask $\mask$。
+    \item 保留子网络结构 $\mask$，但把剩余权重重置回原始初始化 $\mask\odot \weights_0$。
+    \item 只训练这个子网络；若它能达到好性能，就称为 winning ticket。
+\end{enumerate}
+
+这个假说强调的不只是结构，还包括初始化。子网络必须拿到``当初那组''初始化，而不是重新随机初始化。
+
+\framefig{0.88}{figures/fig09_lottery_ticket_original_init_matters.jpg}
+{Lottery ticket 中原始初始化很重要：训练大网络、剪出子网络后，若重新随机初始化同一子网络，性能可能明显变差。}
+{00:20:00--00:20:15}
+
+\begin{importantbox}{Lottery Ticket 的核心说法}
+    大网络像一堆彩票，其中某些子网络的结构与初始化组合特别适合训练。Pruning 的作用之一，是从大网络中找出这些 winning tickets。
+\end{importantbox}
+
+\subsection{原始初始化为什么可能重要}
+
+如果只保留结构而随机重置权重，子网络未必能训练好。这说明 ``which connections'' 和 ``how they were initialized'' 都可能重要。原始初始化可能让梯度早期走向某个有利区域；换一个随机初始化，虽然结构相同，训练轨迹也可能完全不同。
+
+\subsection{本章小结}
+
+Lottery Ticket Hypothesis 把 pruning 的意义从``删除冗余''推进到``发现可训练子网络''。它强调子网络结构与原始初始化的组合，解释了为什么训练大网络再剪枝可能优于直接训练小网络。
+
+% =====================================================================
+\section{剪枝策略与 Significance}
+% =====================================================================
+
+后续研究进一步分析 winning ticket 中到底什么重要。课程展示了不同 pruning strategy，例如根据最终权重大小、初始权重大小、权重变化量、magnitude increase 等来选子网络。图中还提到一个有趣现象：初始权重的 sign 可能很关键。
+
+\framefig{0.92}{figures/fig10_pruning_strategy_significance.jpg}
+{不同 pruning strategy 与 sign-significance：研究发现保留初始权重符号可能很重要，甚至可以从随机权重网络中剪出有用结构。}
+{00:22:45--00:23:00}
+
+``Significance'' 可以理解为：也许权重的精确数值不是唯一关键，正负号与连接模式已经携带了重要信息。例如初始权重
+\[
+    0.9,\ 3.1,\ -9.1,\ 8.5,\ldots
+\]
+可能在某些实验中只需要保留符号模式
+\[
+    +\alpha,\ +\alpha,\ -\alpha,\ +\alpha,\ldots
+\]
+仍然能表现出有意义的功能。这类结果把 pruning 从单纯压缩技术推向了对网络可训练性与结构先验的研究。
+
+\subsection{Weight Agnostic 的启发}
+
+图中还提到 Weight Agnostic Neural Networks。相关思想是：有些网络结构即使不依赖精细训练出的权重数值，也能凭结构本身表现出一定能力。这与 Lottery Ticket 的讨论呼应：也许有价值的不只是训练后权重大小，而是连接模式、符号、初始化和训练动态共同形成的结构。
+
+\subsection{本章小结}
+
+剪枝策略影响最终子网络。Lottery Ticket 后续研究发现，初始权重符号、连接模式、权重变化等都可能重要。Pruning 因此不只是工程压缩，也成为理解神经网络训练动态的一扇窗口。
+
+% =====================================================================
+\section{重新思考 Network Pruning 的价值}
+% =====================================================================
+
+课程最后引用 ``Rethinking the Value of Network Pruning'' 一类研究，提醒我们不要把 Lottery Ticket 或 pruning 的结论理解得过于绝对。实验中有时发现：剪枝得到的架构，使用新的随机初始化从头训练，也能达到接近甚至超过 fine-tuned pruned model 的表现。
+
+\framefig{0.92}{figures/fig11_rethinking_value_of_network_pruning.jpg}
+{Rethinking the Value of Network Pruning：一些实验显示，剪枝得到的结构用新的随机初始化从头训练，也可能获得与 fine-tuned pruned model 接近的表现。}
+{00:26:45--00:27:00}
+
+这带来一个新的解释：pruning 的价值也许不总在于保留某组特定权重，而可能在于找到了一个更合适的小架构。也就是说，pruning 有时像是一种 architecture search：大模型训练后告诉我们哪些通道、层或结构可以保留，然后这个结构本身就有价值。
+
+\begin{warningbox}{不要把单一结论泛化到所有剪枝场景}
+    Lottery Ticket Hypothesis、从头训练剪枝架构、structured pruning、unstructured pruning 的结论依赖模型规模、数据集、学习率、训练预算和剪枝方式。小学习率、非结构化稀疏、大规模模型、迁移学习场景下，现象可能不同。
+\end{warningbox}
+
+\subsection{两种视角并存}
+
+可以把 pruning 的价值理解为两种视角：
+\begin{itemize}
+    \item \textbf{权重视角：} 训练后的大网络包含好的子网络；保留原始初始化或训练后权重很重要。
+    \item \textbf{架构视角：} 剪枝过程发现了一个有效小结构；该结构从头训练也可以表现良好。
+\end{itemize}
+实际中这两种视角可能同时存在。对于某些任务，初始化与权重路径很关键；对于另一些任务，剪出的结构本身已经足够说明问题。
+
+\subsection{本章小结}
+
+Pruning 的价值不只有一种解释。它可以是压缩、可以是子网络发现、也可以是架构搜索。具体哪一种解释更适合，要看剪枝方法、训练设定和部署目标。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲从部署需求出发，引出 smaller model 与 network compression；随后聚焦 network pruning，讲了基本流程、weight pruning 与 neuron pruning 的部署差异、为什么不直接训练小网络、Lottery Ticket Hypothesis 以及对 pruning 价值的再思考。
+
+\begin{importantbox}{本讲最值得带走的观念}
+    Network pruning 不只是把小权重删掉。它同时涉及模型压缩、优化难度、结构搜索、初始化重要性和实际硬件加速。一个 pruned model 是否有价值，要看它是否真的满足部署目标。
+\end{importantbox}
+
+从工程角度看，pruning 最终要回到实际指标：模型文件是否变小、推理是否更快、精度是否可接受、部署框架是否能利用稀疏或结构化小网络。从研究角度看，pruning 又提供了理解过参数化神经网络的一条线索：大网络为什么容易训练？好的子网络是否早已藏在随机初始化里？结构与权重哪个更重要？
+
+后续 network compression 还会继续涉及 knowledge distillation、quantization、architecture design 与 dynamic computation。这些方法与 pruning 互补，真实部署中常常组合使用。
+
+\end{document}

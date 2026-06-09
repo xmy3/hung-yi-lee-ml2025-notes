@@ -1,89 +1,76 @@
-# 李宏毅《机器学习 2025》课程笔记
+﻿# 李宏毅《机器学习 2025》课程笔记整理版
 
-本仓库收录李宏毅老师 **2025 春季机器学习（ML 2025）** 课程的学习笔记，共 **33 讲（P01–P33）**。
+本文件夹收录 P01-P58 全部课程笔记的整理副本。原始生成目录仍保留在上一级目录中。
 
-每一讲都包含：
+## 文件结构
 
-- 📄 **LaTeX 源文件**（[`tex/`](tex/)）—— 可自行编译、修改
-- 📕 **编译好的 PDF**（[`pdf/`](pdf/)）—— 可直接阅读
-- 🗂️ [`index.csv`](index.csv) —— 全部讲次的机器可读索引
+- `pdf/`：按讲次排序并统一重命名的 PDF。
+- `tex/`：对应的 LaTeX 源文件副本。
+- `index.csv`：讲次、slug、PDF、TeX、原始目录的机器可读索引。
 
----
+## 目录
 
-## 📚 目录
+| 讲次 | 主题 slug | PDF | TeX | 原始目录 |
+|:---:|:---|:---:|:---:|:---|
+| P01 | intro | [PDF](pdf/ML2025_P01_intro.pdf) | [TeX](tex/ML2025_P01_intro.tex) | $(@{part=P01; slug=intro; pdf=pdf/ML2025_P01_intro.pdf; tex=tex/ML2025_P01_intro.tex; source=ml2025_p01_intro}.source) |
+| P02 | deep_intro | [PDF](pdf/ML2025_P02_deep_intro.pdf) | [TeX](tex/ML2025_P02_deep_intro.tex) | $(@{part=P02; slug=deep_intro; pdf=pdf/ML2025_P02_deep_intro.pdf; tex=tex/ML2025_P02_deep_intro.tex; source=ml2025_p02_deep_intro}.source) |
+| P03 | task_guide | [PDF](pdf/ML2025_P03_task_guide.pdf) | [TeX](tex/ML2025_P03_task_guide.tex) | $(@{part=P03; slug=task_guide; pdf=pdf/ML2025_P03_task_guide.pdf; tex=tex/ML2025_P03_task_guide.tex; source=ml2025_p03_task_guide}.source) |
+| P04 | local_minima | [PDF](pdf/ML2025_P04_local_minima.pdf) | [TeX](tex/ML2025_P04_local_minima.tex) | $(@{part=P04; slug=local_minima; pdf=pdf/ML2025_P04_local_minima.pdf; tex=tex/ML2025_P04_local_minima.tex; source=ml2025_p04_local_minima}.source) |
+| P05 | batch_momentum | [PDF](pdf/ML2025_P05_batch_momentum.pdf) | [TeX](tex/ML2025_P05_batch_momentum.tex) | $(@{part=P05; slug=batch_momentum; pdf=pdf/ML2025_P05_batch_momentum.pdf; tex=tex/ML2025_P05_batch_momentum.tex; source=ml2025_p05_batch_momentum}.source) |
+| P06 | adaptive_lr | [PDF](pdf/ML2025_P06_adaptive_lr.pdf) | [TeX](tex/ML2025_P06_adaptive_lr.tex) | $(@{part=P06; slug=adaptive_lr; pdf=pdf/ML2025_P06_adaptive_lr.pdf; tex=tex/ML2025_P06_adaptive_lr.tex; source=ml2025_p06_adaptive_lr}.source) |
+| P07 | loss_function | [PDF](pdf/ML2025_P07_loss_function.pdf) | [TeX](tex/ML2025_P07_loss_function.tex) | $(@{part=P07; slug=loss_function; pdf=pdf/ML2025_P07_loss_function.pdf; tex=tex/ML2025_P07_loss_function.tex; source=ml2025_p07_loss_function}.source) |
+| P08 | pokemon_classifier | [PDF](pdf/ML2025_P08_pokemon_classifier.pdf) | [TeX](tex/ML2025_P08_pokemon_classifier.tex) | $(@{part=P08; slug=pokemon_classifier; pdf=pdf/ML2025_P08_pokemon_classifier.pdf; tex=tex/ML2025_P08_pokemon_classifier.tex; source=ml2025_p08_pokemon_classifier}.source) |
+| P09 | cnn | [PDF](pdf/ML2025_P09_cnn.pdf) | [TeX](tex/ML2025_P09_cnn.tex) | $(@{part=P09; slug=cnn; pdf=pdf/ML2025_P09_cnn.pdf; tex=tex/ML2025_P09_cnn.tex; source=ml2025_p09_cnn}.source) |
+| P10 | validation_overfitting | [PDF](pdf/ML2025_P10_validation_overfitting.pdf) | [TeX](tex/ML2025_P10_validation_overfitting.tex) | $(@{part=P10; slug=validation_overfitting; pdf=pdf/ML2025_P10_validation_overfitting.pdf; tex=tex/ML2025_P10_validation_overfitting.tex; source=ml2025_p10_validation_overfitting}.source) |
+| P11 | fish_bear_ml | [PDF](pdf/ML2025_P11_fish_bear_ml.pdf) | [TeX](tex/ML2025_P11_fish_bear_ml.tex) | $(@{part=P11; slug=fish_bear_ml; pdf=pdf/ML2025_P11_fish_bear_ml.pdf; tex=tex/ML2025_P11_fish_bear_ml.tex; source=ml2025_p11_fish_bear_ml}.source) |
+| P12 | self_attention_part1 | [PDF](pdf/ML2025_P12_self_attention_part1.pdf) | [TeX](tex/ML2025_P12_self_attention_part1.tex) | $(@{part=P12; slug=self_attention_part1; pdf=pdf/ML2025_P12_self_attention_part1.pdf; tex=tex/ML2025_P12_self_attention_part1.tex; source=ml2025_p12_self_attention_part1}.source) |
+| P13 | self_attention_part2 | [PDF](pdf/ML2025_P13_self_attention_part2.pdf) | [TeX](tex/ML2025_P13_self_attention_part2.tex) | $(@{part=P13; slug=self_attention_part2; pdf=pdf/ML2025_P13_self_attention_part2.pdf; tex=tex/ML2025_P13_self_attention_part2.tex; source=ml2025_p13_self_attention_part2}.source) |
+| P14 | batch_normalization | [PDF](pdf/ML2025_P14_batch_normalization.pdf) | [TeX](tex/ML2025_P14_batch_normalization.tex) | $(@{part=P14; slug=batch_normalization; pdf=pdf/ML2025_P14_batch_normalization.pdf; tex=tex/ML2025_P14_batch_normalization.tex; source=ml2025_p14_batch_normalization}.source) |
+| P15 | transformer_part1 | [PDF](pdf/ML2025_P15_transformer_part1.pdf) | [TeX](tex/ML2025_P15_transformer_part1.tex) | $(@{part=P15; slug=transformer_part1; pdf=pdf/ML2025_P15_transformer_part1.pdf; tex=tex/ML2025_P15_transformer_part1.tex; source=ml2025_p15_transformer_part1}.source) |
+| P16 | transformer_part2 | [PDF](pdf/ML2025_P16_transformer_part2.pdf) | [TeX](tex/ML2025_P16_transformer_part2.tex) | $(@{part=P16; slug=transformer_part2; pdf=pdf/ML2025_P16_transformer_part2.pdf; tex=tex/ML2025_P16_transformer_part2.tex; source=ml2025_p16_transformer_part2}.source) |
+| P17 | self_attention_variants | [PDF](pdf/ML2025_P17_self_attention_variants.pdf) | [TeX](tex/ML2025_P17_self_attention_variants.tex) | $(@{part=P17; slug=self_attention_variants; pdf=pdf/ML2025_P17_self_attention_variants.pdf; tex=tex/ML2025_P17_self_attention_variants.tex; source=ml2025_p17_self_attention_variants}.source) |
+| P18 | gan_part1 | [PDF](pdf/ML2025_P18_gan_part1.pdf) | [TeX](tex/ML2025_P18_gan_part1.tex) | $(@{part=P18; slug=gan_part1; pdf=pdf/ML2025_P18_gan_part1.pdf; tex=tex/ML2025_P18_gan_part1.tex; source=ml2025_p18_gan_part1}.source) |
+| P19 | gan_part2_theory_wgan | [PDF](pdf/ML2025_P19_gan_part2_theory_wgan.pdf) | [TeX](tex/ML2025_P19_gan_part2_theory_wgan.tex) | $(@{part=P19; slug=gan_part2_theory_wgan; pdf=pdf/ML2025_P19_gan_part2_theory_wgan.pdf; tex=tex/ML2025_P19_gan_part2_theory_wgan.tex; source=ml2025_p19_gan_part2_theory_wgan}.source) |
+| P20 | gan_part3_eval_conditional | [PDF](pdf/ML2025_P20_gan_part3_eval_conditional.pdf) | [TeX](tex/ML2025_P20_gan_part3_eval_conditional.tex) | $(@{part=P20; slug=gan_part3_eval_conditional; pdf=pdf/ML2025_P20_gan_part3_eval_conditional.pdf; tex=tex/ML2025_P20_gan_part3_eval_conditional.tex; source=ml2025_p20_gan_part3_eval_conditional}.source) |
+| P21 | gan_part4_unpaired_cyclegan | [PDF](pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf) | [TeX](tex/ML2025_P21_gan_part4_unpaired_cyclegan.tex) | $(@{part=P21; slug=gan_part4_unpaired_cyclegan; pdf=pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf; tex=tex/ML2025_P21_gan_part4_unpaired_cyclegan.tex; source=ml2025_p21_gan_part4_unpaired_cyclegan}.source) |
+| P22 | self_supervised_intro | [PDF](pdf/ML2025_P22_self_supervised_intro.pdf) | [TeX](tex/ML2025_P22_self_supervised_intro.tex) | $(@{part=P22; slug=self_supervised_intro; pdf=pdf/ML2025_P22_self_supervised_intro.pdf; tex=tex/ML2025_P22_self_supervised_intro.tex; source=ml2025_p22_self_supervised_intro}.source) |
+| P23 | bert_intro | [PDF](pdf/ML2025_P23_bert_intro.pdf) | [TeX](tex/ML2025_P23_bert_intro.tex) | $(@{part=P23; slug=bert_intro; pdf=pdf/ML2025_P23_bert_intro.pdf; tex=tex/ML2025_P23_bert_intro.tex; source=ml2025_p23_bert_intro}.source) |
+| P24 | bert_anecdotes | [PDF](pdf/ML2025_P24_bert_anecdotes.pdf) | [TeX](tex/ML2025_P24_bert_anecdotes.tex) | $(@{part=P24; slug=bert_anecdotes; pdf=pdf/ML2025_P24_bert_anecdotes.pdf; tex=tex/ML2025_P24_bert_anecdotes.tex; source=ml2025_p24_bert_anecdotes}.source) |
+| P25 | gpt_wild | [PDF](pdf/ML2025_P25_gpt_wild.pdf) | [TeX](tex/ML2025_P25_gpt_wild.tex) | $(@{part=P25; slug=gpt_wild; pdf=pdf/ML2025_P25_gpt_wild.pdf; tex=tex/ML2025_P25_gpt_wild.tex; source=ml2025_p25_gpt_wild}.source) |
+| P26 | efficient_tuning | [PDF](pdf/ML2025_P26_efficient_tuning.pdf) | [TeX](tex/ML2025_P26_efficient_tuning.tex) | $(@{part=P26; slug=efficient_tuning; pdf=pdf/ML2025_P26_efficient_tuning.pdf; tex=tex/ML2025_P26_efficient_tuning.tex; source=ml2025_p26_efficient_tuning}.source) |
+| P27 | speech_vision_ssl | [PDF](pdf/ML2025_P27_speech_vision_ssl.pdf) | [TeX](tex/ML2025_P27_speech_vision_ssl.tex) | $(@{part=P27; slug=speech_vision_ssl; pdf=pdf/ML2025_P27_speech_vision_ssl.pdf; tex=tex/ML2025_P27_speech_vision_ssl.tex; source=ml2025_p27_speech_vision_ssl}.source) |
+| P28 | autoencoder_basic | [PDF](pdf/ML2025_P28_autoencoder_basic.pdf) | [TeX](tex/ML2025_P28_autoencoder_basic.tex) | $(@{part=P28; slug=autoencoder_basic; pdf=pdf/ML2025_P28_autoencoder_basic.pdf; tex=tex/ML2025_P28_autoencoder_basic.tex; source=ml2025_p28_autoencoder_basic}.source) |
+| P29 | anomaly_detection_1 | [PDF](pdf/ML2025_P29_anomaly_detection_1.pdf) | [TeX](tex/ML2025_P29_anomaly_detection_1.tex) | $(@{part=P29; slug=anomaly_detection_1; pdf=pdf/ML2025_P29_anomaly_detection_1.pdf; tex=tex/ML2025_P29_anomaly_detection_1.tex; source=ml2025_p29_anomaly_detection_1}.source) |
+| P30 | anomaly_detection_2 | [PDF](pdf/ML2025_P30_anomaly_detection_2.pdf) | [TeX](tex/ML2025_P30_anomaly_detection_2.tex) | $(@{part=P30; slug=anomaly_detection_2; pdf=pdf/ML2025_P30_anomaly_detection_2.pdf; tex=tex/ML2025_P30_anomaly_detection_2.tex; source=ml2025_p30_anomaly_detection_2}.source) |
+| P31 | anomaly_detection_3 | [PDF](pdf/ML2025_P31_anomaly_detection_3.pdf) | [TeX](tex/ML2025_P31_anomaly_detection_3.tex) | $(@{part=P31; slug=anomaly_detection_3; pdf=pdf/ML2025_P31_anomaly_detection_3.pdf; tex=tex/ML2025_P31_anomaly_detection_3.tex; source=ml2025_p31_anomaly_detection_3}.source) |
+| P32 | anomaly_detection_4 | [PDF](pdf/ML2025_P32_anomaly_detection_4.pdf) | [TeX](tex/ML2025_P32_anomaly_detection_4.tex) | $(@{part=P32; slug=anomaly_detection_4; pdf=pdf/ML2025_P32_anomaly_detection_4.pdf; tex=tex/ML2025_P32_anomaly_detection_4.tex; source=ml2025_p32_anomaly_detection_4}.source) |
+| P33 | anomaly_detection_5 | [PDF](pdf/ML2025_P33_anomaly_detection_5.pdf) | [TeX](tex/ML2025_P33_anomaly_detection_5.tex) | $(@{part=P33; slug=anomaly_detection_5; pdf=pdf/ML2025_P33_anomaly_detection_5.pdf; tex=tex/ML2025_P33_anomaly_detection_5.tex; source=ml2025_p33_anomaly_detection_5}.source) |
+| P34 | anomaly_detection_6 | [PDF](pdf/ML2025_P34_anomaly_detection_6.pdf) | [TeX](tex/ML2025_P34_anomaly_detection_6.tex) | $(@{part=P34; slug=anomaly_detection_6; pdf=pdf/ML2025_P34_anomaly_detection_6.pdf; tex=tex/ML2025_P34_anomaly_detection_6.tex; source=ml2025_p34_anomaly_detection_6}.source) |
+| P35 | anomaly_detection_7 | [PDF](pdf/ML2025_P35_anomaly_detection_7.pdf) | [TeX](tex/ML2025_P35_anomaly_detection_7.tex) | $(@{part=P35; slug=anomaly_detection_7; pdf=pdf/ML2025_P35_anomaly_detection_7.pdf; tex=tex/ML2025_P35_anomaly_detection_7.tex; source=ml2025_p35_anomaly_detection_7}.source) |
+| P36 | interpretability_pokemon_digimon | [PDF](pdf/ML2025_P36_interpretability_pokemon_digimon.pdf) | [TeX](tex/ML2025_P36_interpretability_pokemon_digimon.tex) | $(@{part=P36; slug=interpretability_pokemon_digimon; pdf=pdf/ML2025_P36_interpretability_pokemon_digimon.pdf; tex=tex/ML2025_P36_interpretability_pokemon_digimon.tex; source=ml2025_p36_interpretability_pokemon_digimon}.source) |
+| P37 | interpretability_cat_inside_machine | [PDF](pdf/ML2025_P37_interpretability_cat_inside_machine.pdf) | [TeX](tex/ML2025_P37_interpretability_cat_inside_machine.tex) | $(@{part=P37; slug=interpretability_cat_inside_machine; pdf=pdf/ML2025_P37_interpretability_cat_inside_machine.pdf; tex=tex/ML2025_P37_interpretability_cat_inside_machine.tex; source=ml2025_p37_interpretability_cat_inside_machine}.source) |
+| P38 | nlp_adversarial_attack_part1 | [PDF](pdf/ML2025_P38_nlp_adversarial_attack_part1.pdf) | [TeX](tex/ML2025_P38_nlp_adversarial_attack_part1.tex) | $(@{part=P38; slug=nlp_adversarial_attack_part1; pdf=pdf/ML2025_P38_nlp_adversarial_attack_part1.pdf; tex=tex/ML2025_P38_nlp_adversarial_attack_part1.tex; source=ml2025_p38_nlp_adversarial_attack_part1}.source) |
+| P39 | adversarial_attack_basics | [PDF](pdf/ML2025_P39_adversarial_attack_basics.pdf) | [TeX](tex/ML2025_P39_adversarial_attack_basics.tex) | $(@{part=P39; slug=adversarial_attack_basics; pdf=pdf/ML2025_P39_adversarial_attack_basics.pdf; tex=tex/ML2025_P39_adversarial_attack_basics.tex; source=ml2025_p39_adversarial_attack_basics}.source) |
+| P40 | adversarial_attack_human_malice | [PDF](pdf/ML2025_P40_adversarial_attack_human_malice.pdf) | [TeX](tex/ML2025_P40_adversarial_attack_human_malice.tex) | $(@{part=P40; slug=adversarial_attack_human_malice; pdf=pdf/ML2025_P40_adversarial_attack_human_malice.pdf; tex=tex/ML2025_P40_adversarial_attack_human_malice.tex; source=ml2025_p40_adversarial_attack_human_malice}.source) |
+| P41 | nlp_adversarial_attack_part2 | [PDF](pdf/ML2025_P41_nlp_adversarial_attack_part2.pdf) | [TeX](tex/ML2025_P41_nlp_adversarial_attack_part2.tex) | $(@{part=P41; slug=nlp_adversarial_attack_part2; pdf=pdf/ML2025_P41_nlp_adversarial_attack_part2.pdf; tex=tex/ML2025_P41_nlp_adversarial_attack_part2.tex; source=ml2025_p41_nlp_adversarial_attack_part2}.source) |
+| P42 | nlp_adversarial_attack_part3 | [PDF](pdf/ML2025_P42_nlp_adversarial_attack_part3.pdf) | [TeX](tex/ML2025_P42_nlp_adversarial_attack_part3.tex) | $(@{part=P42; slug=nlp_adversarial_attack_part3; pdf=pdf/ML2025_P42_nlp_adversarial_attack_part3.pdf; tex=tex/ML2025_P42_nlp_adversarial_attack_part3.tex; source=ml2025_p42_nlp_adversarial_attack_part3}.source) |
+| P43 | nlp_imitation_backdoor_attack | [PDF](pdf/ML2025_P43_nlp_imitation_backdoor_attack.pdf) | [TeX](tex/ML2025_P43_nlp_imitation_backdoor_attack.tex) | $(@{part=P43; slug=nlp_imitation_backdoor_attack; pdf=pdf/ML2025_P43_nlp_imitation_backdoor_attack.pdf; tex=tex/ML2025_P43_nlp_imitation_backdoor_attack.tex; source=ml2025_p43_nlp_imitation_backdoor_attack}.source) |
+| P44 | domain_adaptation_overview | [PDF](pdf/ML2025_P44_domain_adaptation_overview.pdf) | [TeX](tex/ML2025_P44_domain_adaptation_overview.tex) | $(@{part=P44; slug=domain_adaptation_overview; pdf=pdf/ML2025_P44_domain_adaptation_overview.pdf; tex=tex/ML2025_P44_domain_adaptation_overview.tex; source=ml2025_p44_domain_adaptation_overview}.source) |
+| P45 | bert_three_stories_self_supervised | [PDF](pdf/ML2025_P45_bert_three_stories_self_supervised.pdf) | [TeX](tex/ML2025_P45_bert_three_stories_self_supervised.tex) | $(@{part=P45; slug=bert_three_stories_self_supervised; pdf=pdf/ML2025_P45_bert_three_stories_self_supervised.pdf; tex=tex/ML2025_P45_bert_three_stories_self_supervised.tex; source=ml2025_p45_bert_three_stories_self_supervised}.source) |
+| P46 | reinforcement_learning_intro_part1 | [PDF](pdf/ML2025_P46_reinforcement_learning_intro_part1.pdf) | [TeX](tex/ML2025_P46_reinforcement_learning_intro_part1.tex) | $(@{part=P46; slug=reinforcement_learning_intro_part1; pdf=pdf/ML2025_P46_reinforcement_learning_intro_part1.pdf; tex=tex/ML2025_P46_reinforcement_learning_intro_part1.tex; source=ml2025_p46_reinforcement_learning_intro_part1}.source) |
+| P47 | policy_gradient_mood | [PDF](pdf/ML2025_P47_policy_gradient_mood.pdf) | [TeX](tex/ML2025_P47_policy_gradient_mood.tex) | $(@{part=P47; slug=policy_gradient_mood; pdf=pdf/ML2025_P47_policy_gradient_mood.pdf; tex=tex/ML2025_P47_policy_gradient_mood.tex; source=ml2025_p47_policy_gradient_mood}.source) |
+| P48 | actor_critic | [PDF](pdf/ML2025_P48_actor_critic.pdf) | [TeX](tex/ML2025_P48_actor_critic.tex) | $(@{part=P48; slug=actor_critic; pdf=pdf/ML2025_P48_actor_critic.pdf; tex=tex/ML2025_P48_actor_critic.tex; source=ml2025_p48_actor_critic}.source) |
+| P49 | reward_shaping | [PDF](pdf/ML2025_P49_reward_shaping.pdf) | [TeX](tex/ML2025_P49_reward_shaping.tex) | $(@{part=P49; slug=reward_shaping; pdf=pdf/ML2025_P49_reward_shaping.pdf; tex=tex/ML2025_P49_reward_shaping.tex; source=ml2025_p49_reward_shaping}.source) |
+| P50 | learning_from_demonstration | [PDF](pdf/ML2025_P50_learning_from_demonstration.pdf) | [TeX](tex/ML2025_P50_learning_from_demonstration.tex) | $(@{part=P50; slug=learning_from_demonstration; pdf=pdf/ML2025_P50_learning_from_demonstration.pdf; tex=tex/ML2025_P50_learning_from_demonstration.tex; source=ml2025_p50_learning_from_demonstration}.source) |
+| P51 | network_compression_pruning | [PDF](pdf/ML2025_P51_network_compression_pruning.pdf) | [TeX](tex/ML2025_P51_network_compression_pruning.tex) | $(@{part=P51; slug=network_compression_pruning; pdf=pdf/ML2025_P51_network_compression_pruning.pdf; tex=tex/ML2025_P51_network_compression_pruning.tex; source=ml2025_p51_network_compression_pruning}.source) |
+| P52 | network_compression_methods | [PDF](pdf/ML2025_P52_network_compression_methods.pdf) | [TeX](tex/ML2025_P52_network_compression_methods.tex) | $(@{part=P52; slug=network_compression_methods; pdf=pdf/ML2025_P52_network_compression_methods.pdf; tex=tex/ML2025_P52_network_compression_methods.tex; source=ml2025_p52_network_compression_methods}.source) |
+| P53 | lifelong_learning_catastrophic_forgetting | [PDF](pdf/ML2025_P53_lifelong_learning_catastrophic_forgetting.pdf) | [TeX](tex/ML2025_P53_lifelong_learning_catastrophic_forgetting.tex) | $(@{part=P53; slug=lifelong_learning_catastrophic_forgetting; pdf=pdf/ML2025_P53_lifelong_learning_catastrophic_forgetting.pdf; tex=tex/ML2025_P53_lifelong_learning_catastrophic_forgetting.tex; source=ml2025_p53_lifelong_learning_catastrophic_forgetting}.source) |
+| P54 | lifelong_learning_catastrophic_forgetting_2 | [PDF](pdf/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.pdf) | [TeX](tex/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.tex) | $(@{part=P54; slug=lifelong_learning_catastrophic_forgetting_2; pdf=pdf/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.pdf; tex=tex/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.tex; source=ml2025_p54_lifelong_learning_catastrophic_forgetting_2}.source) |
+| P55 | meta_learning_part1 | [PDF](pdf/ML2025_P55_meta_learning_part1.pdf) | [TeX](tex/ML2025_P55_meta_learning_part1.tex) | $(@{part=P55; slug=meta_learning_part1; pdf=pdf/ML2025_P55_meta_learning_part1.pdf; tex=tex/ML2025_P55_meta_learning_part1.tex; source=ml2025_p55_meta_learning_part1}.source) |
+| P56 | meta_learning_part2_everything_can_be_meta | [PDF](pdf/ML2025_P56_meta_learning_part2_everything_can_be_meta.pdf) | [TeX](tex/ML2025_P56_meta_learning_part2_everything_can_be_meta.tex) | $(@{part=P56; slug=meta_learning_part2_everything_can_be_meta; pdf=pdf/ML2025_P56_meta_learning_part2_everything_can_be_meta.pdf; tex=tex/ML2025_P56_meta_learning_part2_everything_can_be_meta.tex; source=ml2025_p56_meta_learning_part2_everything_can_be_meta}.source) |
+| P57 | meta_learning_unusual_applications | [PDF](pdf/ML2025_P57_meta_learning_unusual_applications.pdf) | [TeX](tex/ML2025_P57_meta_learning_unusual_applications.tex) | $(@{part=P57; slug=meta_learning_unusual_applications; pdf=pdf/ML2025_P57_meta_learning_unusual_applications.pdf; tex=tex/ML2025_P57_meta_learning_unusual_applications.tex; source=ml2025_p57_meta_learning_unusual_applications}.source) |
+| P58 | course_conclusion | [PDF](pdf/ML2025_P58_course_conclusion.pdf) | [TeX](tex/ML2025_P58_course_conclusion.tex) | $(@{part=P58; slug=course_conclusion; pdf=pdf/ML2025_P58_course_conclusion.pdf; tex=tex/ML2025_P58_course_conclusion.tex; source=ml2025_p58_course_conclusion}.source) |
 
-### 一、深度学习与训练基础（P01–P11）
+## 说明
 
-| 讲次 | 主题 | PDF | TeX |
-|:---:|:---|:---:|:---:|
-| P01 | 课程导论 | [PDF](pdf/ML2025_P01_intro.pdf) | [TeX](tex/ML2025_P01_intro.tex) |
-| P02 | 深度学习简介 | [PDF](pdf/ML2025_P02_deep_intro.pdf) | [TeX](tex/ML2025_P02_deep_intro.tex) |
-| P03 | 机器学习任务攻略 | [PDF](pdf/ML2025_P03_task_guide.pdf) | [TeX](tex/ML2025_P03_task_guide.tex) |
-| P04 | 局部最小值与鞍点 | [PDF](pdf/ML2025_P04_local_minima.pdf) | [TeX](tex/ML2025_P04_local_minima.tex) |
-| P05 | Batch 与 Momentum | [PDF](pdf/ML2025_P05_batch_momentum.pdf) | [TeX](tex/ML2025_P05_batch_momentum.tex) |
-| P06 | 自适应学习率 | [PDF](pdf/ML2025_P06_adaptive_lr.pdf) | [TeX](tex/ML2025_P06_adaptive_lr.tex) |
-| P07 | 分类与损失函数 | [PDF](pdf/ML2025_P07_loss_function.pdf) | [TeX](tex/ML2025_P07_loss_function.tex) |
-| P08 | 宝可梦分类实战 | [PDF](pdf/ML2025_P08_pokemon_classifier.pdf) | [TeX](tex/ML2025_P08_pokemon_classifier.tex) |
-| P09 | 卷积神经网络（CNN） | [PDF](pdf/ML2025_P09_cnn.pdf) | [TeX](tex/ML2025_P09_cnn.tex) |
-| P10 | 验证集与过拟合 | [PDF](pdf/ML2025_P10_validation_overfitting.pdf) | [TeX](tex/ML2025_P10_validation_overfitting.tex) |
-| P11 | 鱼与熊掌：深度的意义 | [PDF](pdf/ML2025_P11_fish_bear_ml.pdf) | [TeX](tex/ML2025_P11_fish_bear_ml.tex) |
-
-### 二、自注意力机制与 Transformer（P12–P17）
-
-| 讲次 | 主题 | PDF | TeX |
-|:---:|:---|:---:|:---:|
-| P12 | 自注意力机制（上） | [PDF](pdf/ML2025_P12_self_attention_part1.pdf) | [TeX](tex/ML2025_P12_self_attention_part1.tex) |
-| P13 | 自注意力机制（下） | [PDF](pdf/ML2025_P13_self_attention_part2.pdf) | [TeX](tex/ML2025_P13_self_attention_part2.tex) |
-| P14 | 批次标准化（Batch Normalization） | [PDF](pdf/ML2025_P14_batch_normalization.pdf) | [TeX](tex/ML2025_P14_batch_normalization.tex) |
-| P15 | Transformer（上） | [PDF](pdf/ML2025_P15_transformer_part1.pdf) | [TeX](tex/ML2025_P15_transformer_part1.tex) |
-| P16 | Transformer（下） | [PDF](pdf/ML2025_P16_transformer_part2.pdf) | [TeX](tex/ML2025_P16_transformer_part2.tex) |
-| P17 | 自注意力机制的各种变体 | [PDF](pdf/ML2025_P17_self_attention_variants.pdf) | [TeX](tex/ML2025_P17_self_attention_variants.tex) |
-
-### 三、生成对抗网络（GAN）（P18–P21）
-
-| 讲次 | 主题 | PDF | TeX |
-|:---:|:---|:---:|:---:|
-| P18 | GAN（一）：基本概念 | [PDF](pdf/ML2025_P18_gan_part1.pdf) | [TeX](tex/ML2025_P18_gan_part1.tex) |
-| P19 | GAN（二）：理论与 WGAN | [PDF](pdf/ML2025_P19_gan_part2_theory_wgan.pdf) | [TeX](tex/ML2025_P19_gan_part2_theory_wgan.tex) |
-| P20 | GAN（三）：评估与条件生成 | [PDF](pdf/ML2025_P20_gan_part3_eval_conditional.pdf) | [TeX](tex/ML2025_P20_gan_part3_eval_conditional.tex) |
-| P21 | GAN（四）：非成对生成与 CycleGAN | [PDF](pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf) | [TeX](tex/ML2025_P21_gan_part4_unpaired_cyclegan.tex) |
-
-### 四、自监督学习与预训练模型（P22–P27）
-
-| 讲次 | 主题 | PDF | TeX |
-|:---:|:---|:---:|:---:|
-| P22 | 自监督学习简介 | [PDF](pdf/ML2025_P22_self_supervised_intro.pdf) | [TeX](tex/ML2025_P22_self_supervised_intro.tex) |
-| P23 | BERT 简介 | [PDF](pdf/ML2025_P23_bert_intro.pdf) | [TeX](tex/ML2025_P23_bert_intro.tex) |
-| P24 | BERT 的奇闻轶事 | [PDF](pdf/ML2025_P24_bert_anecdotes.pdf) | [TeX](tex/ML2025_P24_bert_anecdotes.tex) |
-| P25 | GPT 的野望 | [PDF](pdf/ML2025_P25_gpt_wild.pdf) | [TeX](tex/ML2025_P25_gpt_wild.tex) |
-| P26 | 高效参数微调（Efficient Tuning） | [PDF](pdf/ML2025_P26_efficient_tuning.pdf) | [TeX](tex/ML2025_P26_efficient_tuning.tex) |
-| P27 | 语音与影像的自监督学习 | [PDF](pdf/ML2025_P27_speech_vision_ssl.pdf) | [TeX](tex/ML2025_P27_speech_vision_ssl.tex) |
-
-### 五、自编码器与异常检测（P28–P33）
-
-| 讲次 | 主题 | PDF | TeX |
-|:---:|:---|:---:|:---:|
-| P28 | 自编码器（Auto-encoder）基础 | [PDF](pdf/ML2025_P28_autoencoder_basic.pdf) | [TeX](tex/ML2025_P28_autoencoder_basic.tex) |
-| P29 | 异常检测（一） | [PDF](pdf/ML2025_P29_anomaly_detection_1.pdf) | [TeX](tex/ML2025_P29_anomaly_detection_1.tex) |
-| P30 | 异常检测（二） | [PDF](pdf/ML2025_P30_anomaly_detection_2.pdf) | [TeX](tex/ML2025_P30_anomaly_detection_2.tex) |
-| P31 | 异常检测（三） | [PDF](pdf/ML2025_P31_anomaly_detection_3.pdf) | [TeX](tex/ML2025_P31_anomaly_detection_3.tex) |
-| P32 | 异常检测（四） | [PDF](pdf/ML2025_P32_anomaly_detection_4.pdf) | [TeX](tex/ML2025_P32_anomaly_detection_4.tex) |
-| P33 | 异常检测（五） | [PDF](pdf/ML2025_P33_anomaly_detection_5.pdf) | [TeX](tex/ML2025_P33_anomaly_detection_5.tex) |
-
----
-
-## 🛠️ 自行编译
-
-每份 `.tex` 均为独立文档，使用 XeLaTeX（含中文支持）编译：
-
-```bash
-xelatex tex/ML2025_P01_intro.tex
-```
-
-## 📄 版权说明
-
-- 笔记文字与排版为个人学习整理，仅供学习交流使用。
-- 课程相关的讲义截图、图表版权归原作者 **李宏毅老师** 所有。
-- 课程主页：<https://speech.ee.ntu.edu.tw/~hylee/ml/2025-spring.php>
-
-> 若涉及版权问题，请联系删除。
+这些文件是学习整理材料；视频截图与课程内容版权归原课程作者所有。

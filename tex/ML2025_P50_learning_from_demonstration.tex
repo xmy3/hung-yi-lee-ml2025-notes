@@ -1,0 +1,396 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\policy}{\pi_\theta}
+\newcommand{\traj}{\tau}
+\newcommand{\experttraj}{\hat{\tau}}
+\newcommand{\reward}{R_\phi}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{强化学习概述（五）：Learning from Demonstration}
+\newcommand{\notesubtitle}{Imitation Learning, Behavior Cloning, Inverse Reinforcement Learning, and the GAN Analogy}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 27 分 08 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=50}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 Reward Shaping 走到 No Reward}
+% =====================================================================
+
+前一讲讨论 sparse reward 与 reward shaping：当环境 reward 太少时，可以人为补充中间奖励，引导 agent 学习。但这一步本身也有困难：有些任务连 reward 都很难定义；有些任务即使写了 reward，也可能导致意料之外的行为。P50 处理的是更进一步的情况：如果 reward function 不可用，是否还能从专家示范中学习？
+
+\framefig{0.88}{figures/fig01_outline_learning_from_demonstration.jpg}
+{RL 大纲进入最后一块：No Reward: Learning from Demonstration。当 reward 难以定义或不可得时，改用专家示范提供学习信号。}
+{00:00:00--00:00:15}
+
+这讲的动机与上一讲紧密相连。Reward shaping 的核心假设是：设计者知道哪些中间行为有助于最终目标。但在复杂任务中，设计 reward 可能比设计模型更难。例如机器人伦理、自动驾驶安全、开放环境中的长期目标，都很难写成简单、稳定、不会被钻空子的数值函数。
+
+\framefig{0.88}{figures/fig02_reward_design_motivation_irobot.jpg}
+{动机：某些任务中定义 reward 本身就很困难；手工设计 reward 也可能导致不可控行为。课程用《I, Robot》式例子说明规则与真实意图可能不一致。}
+{00:02:45--00:03:00}
+
+图中提到机器人三定律，本意是保护人类，但如果系统错误理解``保护人类整体生存''，可能推导出限制个体自由甚至牺牲部分人的行为。这个例子强调：reward 或规则只要写得不完整，agent 就可能优化出设计者不想要的策略。
+
+\begin{importantbox}{为什么要从示范学习}
+    当 reward 难写时，人类专家往往可以直接示范正确行为。Learning from Demonstration 把问题从``告诉 agent 什么分数最高''改成``给 agent 看专家怎么做''，让行为本身成为学习信号。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Reward shaping 仍然要求人类写 reward；Learning from Demonstration 则假设 reward 不可用，但专家 trajectory 可用。它适合那些目标难以精确定义、但人类能够演示或记录专家行为的任务。
+
+% =====================================================================
+\section{Imitation Learning 的基本设定}
+% =====================================================================
+
+在 imitation learning 中，actor 仍然可以与环境互动。它看到状态 $s_t$，采取动作 $a_t$，环境转移到 $s_{t+1}$。不同的是：我们没有 reward function，不能用 policy gradient、actor-critic 或 reward shaping 直接训练。
+
+取而代之的是专家示范资料：
+\[
+    \mathcal{D}_E
+    =
+    \{\experttraj_1,\experttraj_2,\ldots,\experttraj_K\},
+\]
+其中每条专家轨迹
+\[
+    \experttraj
+    =
+    \{s_1,\hat a_1,s_2,\hat a_2,\ldots\}
+\]
+记录了专家在不同状态下采取的动作。
+
+\framefig{0.88}{figures/fig03_imitation_learning_demonstrations.jpg}
+{Imitation learning：actor 可以与环境互动，但 reward function 不可用；我们拥有专家示范，每条 $\hat{\tau}$ 是专家的一条 trajectory。}
+{00:06:00--00:06:15}
+
+课程给了两个直观例子：
+\begin{itemize}
+    \item 自动驾驶：记录人类驾驶员在道路画面下的方向盘、油门或动作决策。
+    \item 机器人控制：通过抓住机器人手臂或遥操作，记录专家如何完成抓取、移动、装配等任务。
+\end{itemize}
+这些示范不直接告诉模型``这个动作得多少分''，但告诉模型``在这个状态下，专家选择了什么动作''。
+
+\subsection{示范数据与监督资料的差别}
+
+表面上，专家轨迹像监督学习资料：输入是 state，标签是 expert action。可是它与普通监督学习有一个关键差别：模型部署后会影响自己未来看到的状态。分类器预测错一张图片，不会改变下一张图片；自动驾驶 actor 转错一点方向，却会把车带到专家从未示范过的状态。
+
+\begin{knowledgebox}{Sequential decision 的特殊性}
+    Imitation learning 的资料不是独立同分布样本，而是一条条由策略与环境交互产生的轨迹。一个小错误可能改变后续状态分布，导致模型进入训练集中没有覆盖的区域。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Imitation learning 的输入是专家轨迹，目标是训练 actor 模仿专家行为。它看起来像监督学习，但因为 actor 的动作会改变未来状态，模仿学习必须处理分布漂移与错误累积。
+
+% =====================================================================
+\section{Behavior Cloning：把模仿学习当监督学习}
+% =====================================================================
+
+最直接的方法叫 behavior cloning。做法是把专家轨迹拆成很多 state-action pair：
+\[
+    (s_i,\hat a_i),
+\]
+然后训练 actor 在状态 $s_i$ 下输出与专家动作 $\hat a_i$ 一样的动作。
+
+\framefig{0.88}{figures/fig04_behavior_cloning_supervised_form.jpg}
+{Behavior cloning 的形式：把专家轨迹中的状态 $s_i$ 当输入，专家动作 $\hat a_i$ 当标签，训练 actor 输出动作 $a_i$ 逼近 $\hat a_i$。}
+{00:07:15--00:07:30}
+
+若 action 是离散的，可以用 cross-entropy：
+\[
+    L_{\mathrm{BC}}(\theta)
+    =
+    -\sum_i \log \policy(\hat a_i\mid s_i).
+\]
+若 action 是连续控制量，例如方向盘角度或机械臂关节速度，可以用均方误差：
+\[
+    L_{\mathrm{BC}}(\theta)
+    =
+    \sum_i
+    \left\|
+        \pi_\theta(s_i)-\hat a_i
+    \right\|_2^2.
+\]
+
+Behavior cloning 简单、有效、容易实现。很多真实系统会先用 behavior cloning 做初始化，再进入强化学习或其他 fine-tuning 流程。它的问题也很经典：它只学``专家在专家状态下怎么做''，却没有学``当自己犯错后该怎么恢复''。
+
+\subsection{问题一：专家只覆盖有限观察}
+
+专家示范通常只覆盖专家会遇到的状态。如果专家开车从不偏离道路中心，那么训练资料里几乎没有``车已经偏到路边''时应该怎么救回来。Behavior cloning 部署后，只要模型犯一个小错误进入训练分布之外的状态，预测就会变得不可靠；错误再导致更偏的状态，形成连锁反应。
+
+\framefig{0.88}{figures/fig05_behavior_cloning_limited_observation.jpg}
+{Behavior cloning 的第一个问题：专家只 sample 到有限 observation。模型一旦偏离专家轨迹，就可能进入没有训练资料覆盖的状态。}
+{00:08:15--00:08:30}
+
+这个现象常被称为 covariate shift 或 distribution shift：
+\[
+    p_{\mathrm{train}}(s)
+    \neq
+    p_{\pi_\theta}(s).
+\]
+训练时状态来自专家策略，测试时状态来自模型自己的策略。若两者差距扩大，监督学习训练出的局部动作预测就会失效。
+
+\subsection{问题二：复制无关行为}
+
+第二个问题是：behavior cloning 会复制示范中的所有相关与无关行为。只要数据里出现了某个动作，模型就可能把它当作任务所需行为学习下来。课程用电视剧片段说明：如果专家在完成任务前做了很多无关动作，agent 也可能照抄这些动作。
+
+\framefig{0.88}{figures/fig06_behavior_cloning_copies_irrelevant_actions.jpg}
+{Behavior cloning 的第二个问题：agent 会复制示范中的所有行为，包括与任务无关的动作。}
+{00:11:00--00:11:15}
+
+这可以理解为因果问题。Behavior cloning 只看相关性：专家在状态 $s$ 做了动作 $a$，于是模型学 $s\mapsto a$。它并不知道动作 $a$ 是否真的对完成任务有因果贡献。若示范中包含习惯性动作、环境巧合或标注偏差，模型可能把这些都当成目标行为。
+
+\begin{warningbox}{Behavior cloning 的根本限制}
+    Behavior cloning 学的是专家动作分布，而不是专家背后的目标函数。它可以模仿表面行为，却不一定理解哪些行为对目标有用、哪些只是示范过程中的偶然或无关动作。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Behavior cloning 把 imitation learning 转成监督学习，优点是简单直接；缺点是容易受状态分布漂移影响，也会复制无关行为。为了解决这些问题，需要从``模仿动作''进一步走向``理解专家为什么这样做''。
+
+% =====================================================================
+\section{Inverse Reinforcement Learning：反推出 Reward}
+% =====================================================================
+
+Inverse Reinforcement Learning，简称 IRL，尝试回答：专家为什么会做这些动作？它不直接训练 actor 模仿动作，而是从专家 trajectory 中反推一个 reward function，再用这个 reward function 训练 actor。
+
+\framefig{0.9}{figures/fig07_inverse_rl_overview.jpg}
+{IRL 总览：输入是环境与专家示范，输出是 reward function；再用这个 reward function 通过 RL 找到 optimal actor。}
+{00:13:00--00:13:15}
+
+普通 RL 的方向是
+\[
+    R \quad\Longrightarrow\quad \pi^\star,
+\]
+给定 reward function，找最优策略。IRL 的方向则是反过来：
+\[
+    \{\experttraj_k\}_{k=1}^K
+    \quad\Longrightarrow\quad
+    R,
+\]
+从专家行为推测什么 reward 会让这些行为显得合理。得到 reward 后，再用 RL 求一个能最大化该 reward 的 actor。
+
+\subsection{基本原则：老师总是最好的}
+
+课程把 IRL 的原则写成一句话：\textbf{The teacher is always the best.} 也就是说，我们假设专家示范比当前 actor 的行为更好。因此要找一个 reward function，使专家 trajectory 的总 reward 高于 actor 自己采样出的 trajectory。
+
+\framefig{0.9}{figures/fig08_inverse_rl_basic_idea.jpg}
+{IRL 基本想法：初始化 actor；每轮让 actor 与环境互动得到轨迹；定义一个 reward function，使专家轨迹比 actor 轨迹更好；再让 actor 最大化这个新 reward。}
+{00:16:00--00:16:15}
+
+可以把这个思想写成不等式。对专家轨迹 $\experttraj$ 与 actor 轨迹 $\traj$，希望
+\[
+    \sum_t \reward(\hat s_t,\hat a_t)
+    >
+    \sum_t \reward(s_t,a_t).
+\]
+其中 $\reward$ 是要学习的 reward model。它的任务不是直接判断单步动作是否与专家一样，而是给整条轨迹评分，让专家轨迹分数更高。
+
+\subsection{迭代式 IRL}
+
+一个简化的 IRL 训练循环如下：
+\begin{enumerate}
+    \item 初始化一个 actor $\pi_\theta$。
+    \item 用 $\pi_\theta$ 与环境互动，收集 actor 轨迹 $\{\traj_k\}$。
+    \item 学一个 reward function $\reward$，让专家轨迹得分高于 actor 轨迹。
+    \item 用新的 $\reward$ 通过 RL 更新 actor，使 actor 获得更高 reward。
+    \item 重复以上步骤，直到 actor 轨迹越来越接近专家轨迹。
+\end{enumerate}
+
+这个流程比 behavior cloning 更绕，但它试图恢复任务目标。若 reward 学得好，actor 不需要在每个状态都复制专家动作；它只要找到能获得高 reward 的行为即可。这有助于避免复制无关动作，也可能让策略具备更好的泛化能力。
+
+\begin{knowledgebox}{IRL 学到的是 reward，不是单步标签}
+    Behavior cloning 学 $s\mapsto a$；IRL 学 $R(s,a)$ 或 $R(s)$。前者问``专家在这里做了什么''，后者问``什么目标会让专家这样做显得最优''。这就是两者的关键差异。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+IRL 假设专家示范是高质量行为，通过学习 reward function 解释专家行为，再用 RL 训练 actor。它的目标不是逐帧复制专家，而是恢复专家背后的偏好或任务目标。
+
+% =====================================================================
+\section{IRL 与 GAN 的类比}
+% =====================================================================
+
+课程把 IRL 与 GAN 放在同一张图里对比。GAN 中有 generator $G$ 与 discriminator $D$。$D$ 学会给真实样本高分、生成样本低分；$G$ 学会产生能从 $D$ 那里拿高分的样本。二者反复竞争，最终 $G$ 的输出逼近真实数据分布。
+
+IRL 也有类似结构：
+\begin{itemize}
+    \item expert trajectories 类似真实样本。
+    \item actor trajectories 类似 generator 生成的样本。
+    \item reward function 类似 discriminator，给专家轨迹高 reward，给 actor 轨迹低 reward。
+    \item actor 类似 generator，尝试生成能拿高 reward 的轨迹。
+\end{itemize}
+
+\framefig{0.92}{figures/fig09_gan_irl_analogy.jpg}
+{GAN 与 IRL 的类比：GAN 的 discriminator 区分 real/generated；IRL 的 reward function 区分 expert trajectory 与 actor trajectory，actor 再学习获得更高 reward。}
+{00:18:45--00:19:00}
+
+这个类比帮助理解为什么 IRL 常是交替训练：reward model 需要区分专家与当前 actor；actor 又会根据 reward model 改变行为。当 actor 变强后，旧 reward model 可能不再能清楚区分两者，于是需要继续更新 reward。
+
+\begin{importantbox}{从 adversarial 角度看 IRL}
+    Reward function 与 actor 形成一种对抗式循环：reward function 学会指出 actor 与专家的差距，actor 学会减少这个差距。这个思路后来发展出 Generative Adversarial Imitation Learning (GAIL) 等方法。
+\end{importantbox}
+
+\subsection{IRL 为什么能缓解 behavior cloning 的问题}
+
+Behavior cloning 要求 actor 在每个专家状态下输出相同动作；IRL 只要求 actor 产生高 reward 轨迹。因此：
+\begin{itemize}
+    \item 若专家轨迹里有无关动作，reward model 可以不给这些动作高 reward，actor 不必复制它们。
+    \item 若 actor 偏离专家轨迹，只要它仍能找到高 reward 行为，就不一定失败。
+    \item 若同一目标有多种实现方式，IRL 允许 actor 找到不同但同样高分的策略。
+\end{itemize}
+
+当然，这依赖 reward model 学得合理。若 reward model 只学到表面差异，也可能产生新的 reward hacking 问题。
+
+\subsection{本章小结}
+
+IRL 与 GAN 的共同点是：都通过一个评分器指导生成器。GAN 的评分器是 discriminator，IRL 的评分器是 reward function；GAN 的 generator 生成样本，IRL 的 actor 生成轨迹。
+
+% =====================================================================
+\section{机器人示例与延伸方向}
+% =====================================================================
+
+课程最后回到机器人学习。机器人任务常常很难写 reward：人可以示范抓取、摆放、插入、开门等动作，但要把这些动作的每个中间状态写成 reward function 并不容易。因此 learning from demonstration 在机器人领域非常自然。
+
+\framefig{0.9}{figures/fig10_robot_guided_cost_learning.jpg}
+{机器人示例：Guided Cost Learning / Deep Inverse Optimal Control 使用示范来学习 cost/reward，再训练机器人执行任务。}
+{00:23:00--00:23:15}
+
+图中提到 Guided Cost Learning: Deep Inverse Optimal Control via Policy Optimization。这里的 cost learning 与 reward learning 是同一类思想：通过示范推测什么状态或动作代价低，然后训练策略去最小化代价。机器人抓取、倒水、移动物体等任务尤其适合这种框架，因为人类可以示范，但 reward 难以手写。
+
+\framefig{0.9}{figures/fig11_to_learn_more_imagined_goals.jpg}
+{延伸阅读：课程列出 Visual Reinforcement Learning with Imagined Goals、Skew-Fit 等机器人与自监督 RL 方向。}
+{00:24:45--00:25:00}
+
+这些延伸方向与前几讲的主题互相连接：
+\begin{itemize}
+    \item Reward shaping 试图手动补充学习信号。
+    \item Curiosity 使用 intrinsic reward 自动鼓励探索。
+    \item Learning from demonstration 通过专家行为提供目标信息。
+    \item IRL/GAIL 进一步把专家行为转化成可优化的 reward 或判别信号。
+\end{itemize}
+
+\subsection{本章小结}
+
+机器人任务体现了 learning from demonstration 的价值：真实世界目标复杂，reward 难写，但人类示范相对容易获得。IRL 与 cost learning 让系统从示范中恢复任务偏好，再用 RL 或 policy optimization 学会执行。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P50 可以总结成从浅到深的三层模仿学习：
+\[
+\begin{aligned}
+\text{expert actions}
+&\Longrightarrow
+\text{behavior cloning} \\
+&\Longrightarrow
+\text{reward / cost learning}
+\Longrightarrow
+\text{policy optimization}.
+\end{aligned}
+\]
+Behavior cloning 直接模仿动作，简单但容易受分布漂移和无关动作影响；IRL 则反推出 reward function，再让 actor 学会最大化这个 reward。
+
+\framefig{0.88}{figures/fig12_concluding_rl_outline.jpg}
+{结语：RL 概述部分完成了从 policy gradient、actor-critic、sparse reward 到 learning from demonstration 的主线。}
+{00:25:45--00:26:00}
+
+\begin{importantbox}{本讲最值得带走的观念}
+    当 reward 不可用时，专家示范可以替代 reward 成为学习信号。Behavior cloning 模仿专家做了什么；IRL 尝试理解专家为什么这样做，并把这种理解转成 reward function。
+\end{importantbox}
+
+从整个 RL 小单元看，课程逐步处理了三个困难：如何从 reward 更新 actor，如何在 reward 稀疏时补充信号，如何在 reward 不存在时从示范恢复目标。下一阶段如果继续深入，就会看到这些思想在真实机器人、自动驾驶、游戏 AI 与人类偏好学习中不断组合出现。
+
+\end{document}

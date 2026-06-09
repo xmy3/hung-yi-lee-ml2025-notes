@@ -1,0 +1,726 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\simfunc}{sim}
+\DeclareMathOperator{\PPL}{PPL}
+\DeclareMathOperator{\POS}{POS}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自然语言处理上的对抗式攻击（下）：约束、搜索与触发器}
+\newcommand{\notesubtitle}{Constraints, Search Methods, TextFooler, Universal Triggers, and Backdoors}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 1 小时 26 分 21 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=41}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{NLP 对抗样本的特殊性}
+% =====================================================================
+
+前两讲讨论图像领域的对抗式攻击时，扰动往往被写成像素空间中的一个小向量：只要扰动幅度不大，人的视觉系统通常仍会认为两张图片属于同一个物体。自然语言处理中的情形不同。文字不是连续像素，而是离散 token、词、字和句子的组合；一个字符、一个词性、一个同义词选择，都可能让句子的语法或语义发生突变。
+
+因此，NLP 中的 evasion attack 不能只问“模型是否被欺骗”，还必须问“改完以后的句子还算不算原来的句子”。如果攻击样本已经语义崩坏、语法不通、或者被改到人类读者一眼看出异常，那么它虽然可能让模型出错，却未必是一个有意义的 adversarial example。
+
+\framefig{0.92}{figures/fig01_constraints_overview.jpg}
+{NLP evasion attack 的有效样本通常要同时满足任务目标、原句重叠度、语法性与语义保持。}
+{00:00:30--00:00:45}
+
+\subsection{三个核心约束}
+
+课程把自然语言中的有效对抗样本概括成三类约束：
+
+\begin{description}
+    \item[Overlap] 改写后的句子要与原句有足够重叠，不能把整句话完全重写。图像攻击中常用 $\ell_p$ norm 衡量扰动大小；文本里则要用编辑距离、修改词比例等离散度量。
+    \item[Grammaticality] 改写后的句子要像一句正常语言。即使语义还差不多，如果词性错乱、主谓不合、或者拼接出奇怪片段，攻击样本也不自然。
+    \item[Semantic preserving] 改写后应保持原句语义。攻击者可以替换词，但不能把正面评价改成负面评价，或者把新闻事实改成另一件事。
+\end{description}
+
+可以把文本攻击的目标写成带约束的优化问题：
+\[
+x^{\mathrm{adv}}=\argmax_{x'} L(f(x'),y)
+\quad
+\text{s.t.}\quad
+d_{\mathrm{edit}}(x,x')\leq \epsilon,\quad
+g(x')\leq \tau_g,\quad
+s(x,x')\geq \tau_s.
+\]
+
+其中 $f$ 是被攻击模型，$L$ 是让模型犯错的损失，$d_{\mathrm{edit}}$ 衡量改动幅度，$g$ 衡量语法问题，$s$ 衡量语义相似度。图像攻击里的“扰动预算”在 NLP 中被拆成了多个相互牵制的条件。
+
+\begin{importantbox}{为什么 NLP 攻击更难评估}
+    图像里“小扰动”常常能用一个连续范数近似；语言里“小扰动”必须同时考虑字面距离、语法自然度和语义一致性。一个词面很小的变化可能翻转语义，一个词面较大的同义替换反而可能语义稳定。因此，NLP 攻击的成功率如果不报告约束条件，往往很难比较。
+\end{importantbox}
+
+\subsection{本章小结}
+
+NLP 对抗样本不是单纯把输入改到模型出错，而是在模型出错、人类仍能接受、语义仍然保留之间取得平衡。后面的所有算法，无论是 greedy search、word importance ranking、TextFooler、BERT-Attack 还是 genetic algorithm，本质上都是在这个多约束搜索空间中寻找可行点。
+
+% =====================================================================
+\section{Overlap：从编辑距离到修改比例}
+% =====================================================================
+
+Overlap 约束回答的是“改了多少”。在字符、词或 token 层级上，攻击者可以删除、插入、替换若干元素；编辑距离就是把这些操作的最小次数当作距离。这个思想来自拼写纠错和序列比对，但在对抗攻击里，它变成了限制攻击者自由度的工具。
+
+\subsection{Levenshtein edit distance}
+
+Levenshtein distance 允许三种基本操作：insert、delete、substitute。给定两个序列 $a$ 和 $b$，距离 $\mathrm{lev}(a,b)$ 是把 $a$ 变成 $b$ 所需要的最少操作数。
+
+\framefig{0.90}{figures/fig02_levenshtein_definition.jpg}
+{Levenshtein edit distance 用插入、删除和替换的最小操作次数衡量两个序列的差异。}
+{00:01:45--00:02:00}
+
+其动态规划递推可以写成：
+\[
+D_{i,j}=
+\begin{cases}
+i, & j=0,\\
+j, & i=0,\\
+D_{i-1,j-1}, & a_i=b_j,\\
+1+\min\{D_{i-1,j},D_{i,j-1},D_{i-1,j-1}\}, & a_i\neq b_j.
+\end{cases}
+\]
+
+这里 $D_{i,j}$ 表示 $a$ 的前 $i$ 个元素与 $b$ 的前 $j$ 个元素之间的编辑距离。最后的 $D_{m,n}$ 就是完整序列的距离。
+
+\framefig{0.90}{figures/fig03_levenshtein_recurrence.jpg}
+{Levenshtein distance 的递推式会在删除、插入、替换三种路径中选取最便宜的路径。}
+{00:03:15--00:03:30}
+
+\subsection{字符级与词级编辑距离}
+
+同一个思想可以放在不同粒度上。若把字符串拆成字符，那么 \texttt{kitten} 到 \texttt{sitting} 的距离对应字符替换和插入；若把句子拆成词，那么替换一个词就算一次 word-level edit。NLP 攻击通常更关心词级或 token 级改动，因为模型输入多半经过 tokenizer，且语义变化常常发生在词或子词层面。
+
+\framefig{0.90}{figures/fig04_word_level_edit_distance.jpg}
+{编辑距离也可以在词或 token 层级计算，用来限制替换词数或 token 数。}
+{00:06:00--00:06:15}
+
+常见 overlap 约束包括：
+\[
+\frac{\#\{i:x_i\neq x'_i\}}{n}\leq \rho,
+\qquad
+\mathrm{lev}(x,x')\leq B,
+\qquad
+\mathrm{Jaccard}(x,x')\geq \tau.
+\]
+
+第一项是最大修改比例，例如最多只能改 $10\%$ 或 $20\%$ 的词；第二项是编辑距离预算；第三项用词集合交集比例要求两句仍共享大量词汇。修改比例适合长度固定或近似固定的替换攻击，编辑距离适合包含插入、删除的攻击，Jaccard 相似度适合粗略限制词汇重叠。
+
+\subsection{Overlap 不是语义保证}
+
+Overlap 的局限也很明显。把一句影评里的 \texttt{great} 换成 \texttt{terrible} 只改了一个词，但情感语义完全反转；把 \texttt{not bad} 改成 \texttt{bad} 只删一个词，却改变了判断。因此 overlap 是必要但不充分的约束，它只能限制“改动幅度”，不能直接证明“语义未变”。
+
+\begin{warningbox}{低编辑距离不等于高质量攻击}
+    编辑距离小只说明表面改动少。对情感分类、事实判断、自然语言推理等任务来说，一个关键词或否定词就可能决定标签。严谨的 NLP 攻击必须把 overlap 约束和语义约束一起报告。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Overlap 约束给文本攻击提供了离散版的扰动预算。Levenshtein distance、修改词比例和词集合重叠都能控制样本与原句的表面距离，但它们不能独立保证语法性或语义保持。它们更像第一道门槛：超过预算的样本直接淘汰，预算内的样本还要继续接受语法和语义检查。
+
+% =====================================================================
+\section{Grammaticality：让改写仍像自然语言}
+% =====================================================================
+
+如果攻击样本语法上不自然，实际威胁会下降：人类读者容易察觉异常，下游系统也可能用预处理、拼写纠错或规则过滤拦截。因此，NLP 对抗样本通常要加 grammaticality 约束，让替换词在局部和全句层面都尽量自然。
+
+\subsection{POS consistency}
+
+最常见的局部语法约束是 part-of-speech consistency，也就是替换前后词性一致。例如原句里的某个词是动词，候选替换也应是动词；原词是形容词，候选也应是形容词。这样可以避免把句子改成明显不通顺的组合。
+
+\framefig{0.88}{figures/fig05_pos_consistency.jpg}
+{POS consistency 要求被替换词和候选词在上下文中保持一致的词性，降低语法破坏。}
+{00:09:45--00:10:00}
+
+形式化地说，若在位置 $i$ 把 $w_i$ 替换成 $w'_i$，可以要求：
+\[
+\POS(w_i\mid x)=\POS(w'_i\mid x')
+\quad\text{or}\quad
+\POS(w_i)\in \mathcal{A}(w'_i).
+\]
+
+第一种写法要求上下文相关词性完全一致；第二种写法允许一个词有多个可接受词性，只要候选词落在允许集合中。实际系统中，POS tagger 本身也可能出错，因此 POS consistency 通常是启发式约束，而不是数学上的充分条件。
+
+\subsection{语法错误数}
+
+另一种做法是使用 grammar checker 评估句子中的 grammatical errors。攻击前原句可能已经有一些语法问题，所以更合理的约束不是“错误数必须为零”，而是“改写后错误数不能明显增加”：
+\[
+E_{\mathrm{grammar}}(x')\leq E_{\mathrm{grammar}}(x)+\delta_g.
+\]
+
+\framefig{0.88}{figures/fig06_grammar_errors.jpg}
+{语法工具可以估计改写句子的错误数，攻击算法据此过滤明显不自然的候选。}
+{00:12:00--00:12:15}
+
+这里 $\delta_g$ 是容忍阈值。若原句本身已经口语化或不完整，严格要求 $E_{\mathrm{grammar}}(x')=0$ 反而不现实；而允许错误数大幅增加又会让攻击样本失去自然性。因此，语法错误约束通常需要结合任务领域调阈值。
+
+\subsection{Perplexity 与流畅度}
+
+课程还提到使用预训练语言模型的 perplexity 衡量 fluency。语言模型会给序列 $x=(w_1,\dots,w_n)$ 一个概率：
+\[
+p(x)=\prod_{i=1}^{n}p(w_i\mid w_{<i}).
+\]
+
+perplexity 可写成：
+\[
+\PPL(x)=\exp\left(-\frac{1}{n}\sum_{i=1}^{n}\log p(w_i\mid w_{<i})\right).
+\]
+
+直观上，perplexity 越低，表示语言模型越不惊讶，句子越像训练语料中的自然表达；perplexity 越高，表示句子越不常见、越不流畅。
+
+\framefig{0.88}{figures/fig07_perplexity_fluency.jpg}
+{语言模型 perplexity 可以作为全句流畅度指标，高 perplexity 往往意味着表达不自然。}
+{00:13:30--00:13:45}
+
+可以把它写成过滤条件：
+\[
+\PPL(x')\leq \PPL(x)+\delta_p
+\quad\text{or}\quad
+\PPL(x')\leq \tau_p.
+\]
+
+第一种写法要求改写后不要比原句差太多；第二种写法要求绝对流畅度不超过某个阈值。perplexity 的优点是能看全句，缺点是它依赖所选语言模型。一个通用语言模型未必懂特定领域术语，可能把专业表达误判为“不流畅”。
+
+\begin{knowledgebox}{局部语法与全句流畅度}
+    POS consistency 关注单个替换是否合乎词性，grammar checker 关注显式语法错误，perplexity 关注整句是否像自然语言。三者互补：只用 POS 会漏掉长距离不协调，只用 perplexity 又可能过度依赖语言模型的语料偏见。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Grammaticality 约束把“攻击成功”限制在自然语言范围内。词性一致性负责局部替换，语法工具负责错误检测，perplexity 负责整体流畅度。它们都不是完美指标，但能显著减少语法上明显不合理的 adversarial samples。
+
+% =====================================================================
+\section{Semantic Preserving：让标签含义不要被偷换}
+% =====================================================================
+
+语义保持是 NLP 攻击最关键也最难的部分。若攻击者把文本语义改成另一个类别，模型预测改变就不再说明模型脆弱，而只是输入真的变了。对抗样本应当让人类仍认为标签不变，同时让模型预测出错。
+
+\subsection{词向量相似度}
+
+在词替换攻击中，最直接的语义约束是要求候选词和原词在 embedding space 中接近。若词向量分别为 $e(w)$ 与 $e(w')$，可使用 cosine similarity：
+\[
+\cos(e(w),e(w'))=
+\frac{e(w)^\top e(w')}{\|e(w)\|_2\|e(w')\|_2}.
+\]
+
+\framefig{0.88}{figures/fig08_word_embedding_similarity.jpg}
+{词向量 cosine similarity 用来筛选语义接近的替换词，例如把一个词替换成向量空间中邻近的候选。}
+{00:15:45--00:16:00}
+
+攻击算法通常会保留：
+\[
+\cos(e(w_i),e(c))\geq \tau_w
+\]
+的候选词 $c$。阈值越高，替换越保守，攻击成功率可能下降；阈值越低，搜索空间更大，但更容易产生语义漂移。
+
+词向量约束的弱点是它只看单词，不看上下文。同一个词在不同句子里含义可能不同；两个词在向量空间相近，也不保证放进当前句子后仍保持原句语义。例如某些情感词、否定词、比较词在整体标签中权重很大，替换它们会直接改变任务答案。
+
+\subsection{句向量相似度}
+
+为弥补词级约束的不足，可以把整句话编码成 sentence embedding，再比较原句和改写句的相似度。课程中提到 Universal Sentence Encoder 这类句向量模型。若句编码器为 $\phi$，语义相似度可以写成：
+\[
+s(x,x')=
+\cos(\phi(x),\phi(x')).
+\]
+
+\framefig{0.90}{figures/fig09_sentence_embedding_similarity.jpg}
+{句向量相似度直接比较原句与改写句的整体语义，常用于过滤局部替换造成的语义漂移。}
+{00:18:15--00:18:30}
+
+攻击算法可要求：
+\[
+s(x,x')\geq \tau_s.
+\]
+
+句向量约束更接近人类对整体语义的判断，但仍然有风险。句向量模型可能对细粒度事实、否定、数字、实体替换不敏感。对新闻真假、自然语言推理、问答等任务来说，实体和关系变化很重要；单纯的句向量相似度可能把“很像但标签已变”的句子放行。
+
+\subsection{语义约束与任务标签}
+
+语义保持必须结合任务定义。情感分类中，保留情感极性最重要；主题分类中，保留主题最重要；自然语言推理中，保留前提和假设之间的逻辑关系最重要。一个通用相似度阈值不能替代任务语义。
+
+更严谨的评估常会加入人工标注或人类可读性检查：如果人类读者认为 $x$ 与 $x'$ 标签相同，而模型输出不同，那么攻击样本才真正暴露模型问题。若人类也认为标签改变，则该样本更像数据增强或改写，不应计入成功攻击。
+
+\begin{importantbox}{语义保持的核心判断}
+    对抗样本的目标不是“让模型换答案”这么简单，而是“在人类认为答案不该换的前提下，让模型换答案”。这也是为什么 NLP adversarial attack 的论文通常需要报告 semantic similarity、修改比例、POS constraint 和人工评估等指标。
+\end{importantbox}
+
+\subsection{本章小结}
+
+词向量相似度提供局部同义替换，句向量相似度提供整体语义过滤。两者能降低语义漂移，但都不能完全替代任务相关的人类判断。NLP 攻击质量的关键，是让模型错误来自模型脆弱性，而不是来自攻击者偷偷改变了输入含义。
+
+% =====================================================================
+\section{Search Method：在离散空间里找攻击样本}
+% =====================================================================
+
+文本输入是离散的，不能像图像那样直接对每个像素加连续扰动。攻击算法要在巨大候选空间里决定三个问题：改哪个位置、换成什么词、何时停止。课程从 greedy search 开始，再引入 word importance ranking、gradient-based ranking 和 genetic algorithm。
+
+\subsection{朴素 greedy search}
+
+Greedy search 的想法是：对每个位置尝试若干替换，计算每个候选对模型输出的影响，然后优先采用最能降低正确类别概率或最能提高目标类别概率的替换。
+
+\framefig{0.90}{figures/fig10_greedy_search_intro.jpg}
+{Greedy search 会在每个位置试探候选替换，并按分数从高到低执行，直到模型预测被翻转。}
+{00:19:45--00:20:00}
+
+对 untargeted attack，可以定义候选分数：
+\[
+\mathrm{score}(i,c)=p_y(x)-p_y(x_{i\rightarrow c}),
+\]
+其中 $p_y(x)$ 是模型对原标签 $y$ 的概率，$x_{i\rightarrow c}$ 表示把第 $i$ 个词替换成候选词 $c$ 的句子。分数越大，表示候选越能削弱模型对正确标签的信心。
+
+\framefig{0.90}{figures/fig11_greedy_candidate_scoring.jpg}
+{候选替换可以按 loss、正确类概率下降量或目标类概率上升量排序。}
+{00:21:15--00:21:30}
+
+执行时可以写成：
+\[
+(i^\star,c^\star)=\argmax_{(i,c)\in\mathcal{C}}\mathrm{score}(i,c),
+\qquad
+x^{(t+1)}=x^{(t)}_{i^\star\rightarrow c^\star}.
+\]
+
+若替换后模型已经出错，则攻击成功；若还没成功，就继续在剩余位置上搜索。
+
+\framefig{0.90}{figures/fig12_greedy_replacement_step.jpg}
+{Greedy search 通常替换当前最有效的位置，并避免同一个词被反复替换。}
+{00:22:15--00:22:30}
+
+Greedy 的优点是简单、直观、容易和各种约束组合；缺点是开销可能很大。若句长为 $n$，每个词有 $k$ 个候选，朴素搜索可能需要大量模型查询，尤其在黑箱环境下成本很高。
+
+\subsection{Word Importance Ranking}
+
+Word Importance Ranking（WIR）先估计每个词对当前预测有多重要，再按重要性从高到低替换。这样不必在所有位置上反复尝试所有候选，搜索会更有方向。
+
+\framefig{0.90}{figures/fig13_word_importance_ranking.jpg}
+{WIR 先估计词的重要性，再优先替换最影响模型预测的词。}
+{00:25:00--00:25:15}
+
+一种常见做法是 leave-one-out。把第 $i$ 个词删除或遮盖，观察正确类别概率下降多少：
+\[
+I_i=p_y(x)-p_y(x_{\setminus i}).
+\]
+
+若删除第 $i$ 个词后模型对正确类别的概率大幅下降，说明该词对模型判断很重要。攻击者就优先替换这些重要词。
+
+\framefig{0.90}{figures/fig14_wir_speed_benefit.jpg}
+{WIR 可以显著减少长句中的无效尝试，因为搜索优先集中在高影响词上。}
+{00:31:00--00:31:15}
+
+WIR 的计算本身也需要查询模型，但它把“先找位置”和“再找候选”分开，使搜索更加稳定。对长句而言，先排序再替换通常比完全枚举更快。
+
+\subsection{Gradient-based WIR}
+
+在白箱或可访问梯度的情况下，可以用 embedding gradient 估计词的重要性。设第 $i$ 个 token 的 embedding 为 $e_i$，loss 为 $L$，可定义：
+\[
+I_i=\left\|\frac{\partial L}{\partial e_i}\right\|_2.
+\]
+
+梯度范数越大，表示在该 token 的 embedding 方向上小变化越能影响 loss。课程把它类比成图像中的 saliency map：图像里看哪些像素对输出敏感，文本里看哪些词的 embedding 对输出敏感。
+
+\framefig{0.90}{figures/fig15_gradient_based_wir.jpg}
+{Gradient-based WIR 用 embedding 梯度范数衡量词的重要性，类似文本版 saliency map。}
+{00:34:30--00:34:45}
+
+不过，文本 token 本身仍是离散的。梯度告诉我们“哪个方向敏感”，但不能直接把 embedding 当成最终词输出；攻击算法仍要从词表或候选集合中选择实际 token。因此 gradient-based WIR 常用于排序位置，而候选生成仍要结合词向量、MLM 或同义词库。
+
+\subsection{Genetic algorithm}
+
+Genetic algorithm 把每个候选句子当作一个个体，用 fitness 衡量它离攻击成功有多近。算法维护一个 population，反复执行 selection、crossover、mutation，逐渐产生更强的攻击样本。
+
+\framefig{0.90}{figures/fig16_genetic_algorithm_intro.jpg}
+{Genetic algorithm 通过 population 与 fitness 演化候选句子，若当前样本攻击失败就继续迭代。}
+{00:36:00--00:36:15}
+
+对 untargeted attack，可以把 fitness 写成：
+\[
+F(x')=1-p_y(x')-\lambda_1\max(0,\tau_s-s(x,x'))
+-\lambda_2\max(0,r(x,x')-\rho),
+\]
+其中 $1-p_y(x')$ 鼓励降低正确类别概率，后两项惩罚语义相似度不足和修改比例过高。实际论文中 fitness 可以有不同设计，但核心思想都是把攻击目标和质量约束合并成可比较的分数。
+
+\framefig{0.90}{figures/fig17_crossover_mutation.jpg}
+{Genetic algorithm 中的 crossover 从不同 parent 继承词，mutation 再随机替换部分位置。}
+{00:39:15--00:39:30}
+
+Crossover 会从两个 parent 句子中按位置抽取词，得到新句子；mutation 会随机选择一些位置并替换成候选词。每轮保留 fitness 较高的样本，直到模型出错或达到迭代上限。
+
+\begin{knowledgebox}{搜索方法的共同结构}
+    无论是 greedy、WIR、gradient ranking 还是 genetic algorithm，都在做同一件事：用有限查询在离散候选空间中寻找满足约束的错误分类样本。差别只在于如何选择位置、如何生成候选、如何评估候选，以及是否允许从多个候选路径中演化。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+文本攻击的核心难点是离散搜索。Greedy search 简单但查询开销可能高；WIR 先找关键词，能提升效率；gradient-based WIR 需要白箱信息，适合利用 embedding 梯度排序；genetic algorithm 通过群体演化探索多个路径，适合复杂搜索空间。后续代表性攻击方法基本都可以看作这些组件的组合。
+
+% =====================================================================
+\section{代表性词替换攻击}
+% =====================================================================
+
+课程接着介绍一系列 synonym substitution attack。它们大多遵循同一个框架：先选出重要词，再生成候选替换，过滤不满足约束的候选，最后用某种搜索策略找到能翻转模型预测的句子。不同方法的差异在候选来源、约束强度和搜索策略。
+
+\framefig{0.90}{figures/fig18_synonym_substitution_intro.jpg}
+{Synonym substitution attack 通过同义或近义替换构造文本对抗样本。}
+{00:44:45--00:45:00}
+
+\subsection{TextFooler}
+
+TextFooler 是 NLP 对抗攻击中非常典型的方法。它的目标通常是 untargeted classification：让分类器不再输出原本正确的类别。它先估计词的重要性，再为重要词寻找语义相近的候选替换，并通过多个约束过滤候选。
+
+\framefig{0.90}{figures/fig19_textfooler_overview.jpg}
+{TextFooler 的整体结构：重要词排序、word embedding 候选、语义与词性约束，再用 greedy search 执行替换。}
+{00:46:00--00:46:15}
+
+一个简化流程如下：
+
+\begin{enumerate}
+    \item 对输入句子 $x$ 计算 word importance ranking。
+    \item 按重要性从高到低选词 $w_i$。
+    \item 在 counter-fitted GloVe 等词向量空间中找邻近候选。
+    \item 用词向量距离、sentence similarity、POS consistency 等条件过滤候选。
+    \item 选择最能降低正确类别概率的候选替换。
+    \item 若模型预测翻转则停止，否则继续替换下一个重要词。
+\end{enumerate}
+
+\framefig{0.90}{figures/fig20_textfooler_algorithm.jpg}
+{TextFooler 算法把 constraint、search 和 transformation 结合起来，逐步替换高重要性词。}
+{00:48:45--00:49:00}
+
+TextFooler 的价值在于它把“有效攻击”明确绑定到多个质量约束上，而不是只追求模型出错。它也展示了 NLP 攻击的典型折中：约束越强，样本质量越高，但可用候选越少，攻击成功率可能下降。
+
+\subsection{PWWS}
+
+PWWS（Probability Weighted Word Saliency）同样使用词替换，但它把 word saliency 和替换后的概率变化结合起来。直观上，它不仅问“这个词是否重要”，还问“把它换成某个候选以后，对模型输出的影响有多大”。
+
+可把 PWWS 的打分理解为：
+\[
+\mathrm{PWWS}(i,c)=\mathrm{saliency}(i)\cdot \Delta p(i,c),
+\]
+其中 $\mathrm{saliency}(i)$ 衡量位置 $i$ 的重要性，$\Delta p(i,c)$ 衡量候选替换 $c$ 对目标预测的影响。它比单纯 WIR 更细，因为它把“位置重要性”和“候选有效性”相乘。
+
+\subsection{BERT-Attack}
+
+BERT-Attack 使用 BERT 的 masked language model 生成候选词。对句子中的某个位置打 mask 后，BERT 会根据上下文预测合理 token。这样得到的候选更贴合上下文，比静态词向量邻居更容易保持局部流畅。
+
+\framefig{0.90}{figures/fig21_bert_attack_constraints_warning.jpg}
+{若缺少约束，替换攻击可能产生低质量或危险样本；BERT-Attack 需要结合相似度与修改比例过滤。}
+{00:50:45--00:51:00}
+
+\framefig{0.90}{figures/fig22_bert_attack_mlm.jpg}
+{BERT-Attack 通过 MLM 预测候选替换，再用 USE 相似度、修改词比例等约束控制质量。}
+{00:51:15--00:51:30}
+
+它的候选生成可以写成：
+\[
+\mathcal{C}_i=\mathrm{TopK}\bigl(p_{\mathrm{BERT}}(w_i\mid x_{\mathrm{mask}(i)})\bigr).
+\]
+
+然后再从 $\mathcal{C}_i$ 中选取满足语义和修改比例约束的 token。BERT-Attack 的优点是上下文敏感，缺点是 MLM 认为“自然”的词不一定与原语义一致，尤其在情感词、实体、数字、否定词上仍可能改变标签含义。
+
+\subsection{Genetic Algorithm attack}
+
+课程也把 genetic algorithm 放进代表性攻击表中。它通常使用 word embedding 或同义词候选生成变体，再用语言模型 perplexity、修改词比例、embedding distance 等约束控制质量。
+
+\framefig{0.90}{figures/fig23_genetic_algorithm_attack_details.jpg}
+{Genetic Algorithm attack 把候选句子当作 population，并结合 LM perplexity、修改比例和 embedding distance 约束。}
+{00:51:45--00:52:00}
+
+与 greedy 不同，genetic algorithm 不急于每一步都选当前最优替换，而是保留多个候选路径。这样有机会绕开局部最优，但代价是查询次数和计算成本更高。
+
+\subsection{实验表格该怎么读}
+
+课程展示了 synonym substitution attack 的结果表。表格通常同时报告攻击成功率、修改比例、语义相似度、查询次数等指标。读这类表时不要只看 success rate，因为成功率可以通过放松约束人为提高。
+
+\framefig{0.92}{figures/fig24_synonym_substitution_results.jpg}
+{词替换攻击结果表需要结合成功率、修改比例、语义相似度和查询成本一起解读。}
+{00:52:15--00:52:30}
+
+更合理的比较方式是同时问：
+
+\begin{itemize}
+    \item 攻击是否在相同的修改比例预算下比较？
+    \item 是否使用相同或可比的 sentence similarity threshold？
+    \item 是否报告 POS consistency、perplexity 或人工评估？
+    \item 是否限制查询次数？
+    \item 是否排除了语义被改变的样本？
+\end{itemize}
+
+\subsection{本章小结}
+
+TextFooler、PWWS、BERT-Attack 和 GA attack 都是“候选生成 + 约束过滤 + 搜索策略”的组合。TextFooler 代表静态词向量加 greedy/WIR 的路线，PWWS 强调 saliency 与概率变化结合，BERT-Attack 用上下文语言模型生成候选，GA attack 用群体演化探索更复杂路径。比较这些方法时，质量约束和查询成本与成功率同等重要。
+
+% =====================================================================
+\section{更强约束下的重新评估}
+% =====================================================================
+
+课程特别提醒：早期文本攻击有时能取得很高成功率，但部分成功来自“不合理扰动”。如果约束太弱，算法可能找到语义已经改变、语法已经变差、或人类不认为等价的样本。此时模型出错不一定说明模型脆弱，也可能只是输入标签应当改变。
+
+\subsection{TF-Adjusted}
+
+TF-Adjusted 可以理解为对 TextFooler 类方法施加更强约束的版本。它会提高 semantic similarity threshold，收紧替换候选，让生成样本更像真正的语义保持攻击。
+
+\framefig{0.92}{figures/fig25_tf_adjusted_constraints.jpg}
+{TF-Adjusted 通过更强约束重新评估 TextFooler 类攻击，减少语义漂移样本。}
+{00:56:00--00:56:15}
+
+如果原方法的约束为：
+\[
+s(x,x')\geq \tau_s,\qquad r(x,x')\leq \rho,
+\]
+那么更强约束可能表现为：
+\[
+\tau_s \uparrow,\qquad \rho \downarrow,\qquad
+\text{candidate set 更保守}.
+\]
+
+这会让搜索空间变小，攻击成功率可能下降。但下降本身是有意义的，因为它说明原本的一部分成功样本依赖于质量较低的扰动。
+
+\subsection{不合理扰动会夸大攻击能力}
+
+课程展示的结论是：在更严格约束下，一些原先看似很强的攻击会变弱。这并不代表攻击研究失败，而是评估更接近真实威胁模型。安全研究中，严格约束比漂亮成功率更重要。
+
+\framefig{0.92}{figures/fig26_constraints_reduce_bad_samples.jpg}
+{加强约束后，部分高成功率攻击会下降，说明原成功样本中可能含有不合理扰动。}
+{00:58:45--00:59:00}
+
+这也解释了为什么论文之间的攻击成功率不能直接横向比较。若 A 方法允许改很多词、语义阈值低、没有人工检查，而 B 方法限制严格，那么 A 的高成功率并不一定代表更强。
+
+\begin{warningbox}{成功率不是唯一目标}
+    对抗攻击的实验若只报告 attack success rate，容易误导读者。高质量 NLP 攻击还应报告修改比例、语义相似度、语法自然度、查询次数和人工评估结果。否则，算法可能只是学会了改写标签，而不是找到模型脆弱性。
+\end{warningbox}
+
+\subsection{本章小结}
+
+更强约束让攻击评估更诚实。TF-Adjusted 一类工作说明：攻击成功率和样本质量存在张力，约束越严，成功率越难维持，但结论越可信。NLP adversarial attack 的关键不是追求数字最大，而是在合理威胁模型下证明模型确实脆弱。
+
+% =====================================================================
+\section{Universal Trigger：一句固定前缀也能攻击}
+% =====================================================================
+
+前面的词替换攻击大多针对单个输入逐句搜索。Universal trigger 则更进一步：它寻找一个固定触发字符串，把它加到许多不同输入前面或后面，都能诱导模型产生目标输出或错误输出。这个 trigger 与任务内容没有直接关系，却能系统性改变模型行为。
+
+\framefig{0.92}{figures/fig27_universal_trigger_definition.jpg}
+{Universal trigger 是与任务内容无关的固定字符串，但添加到输入后可能触发 targeted attack。}
+{01:01:00--01:01:15}
+
+\subsection{从单样本攻击到通用触发}
+
+普通 evasion attack 可写成：
+\[
+x_j^{\mathrm{adv}}=A(x_j),
+\]
+每个输入 $x_j$ 都需要单独搜索。而 universal trigger 希望找到一个共享的 token 序列 $t=(t_1,\dots,t_m)$：
+\[
+f([t;x_j])\approx y_{\mathrm{tar}}
+\quad\text{for many } x_j.
+\]
+
+其中 $[t;x_j]$ 表示把 trigger 拼到输入 $x_j$ 上。若 $y_{\mathrm{tar}}$ 是攻击者指定类别或指定输出，这就是 targeted universal attack。
+
+对一个 batch $\mathcal{B}$，优化目标可以写成：
+\[
+t^\star=\argmin_t \sum_{x_j\in\mathcal{B}}
+L(f([t;x_j]),y_{\mathrm{tar}}).
+\]
+
+难点在于 $t$ 是离散 token，不能直接对 token id 做连续优化。
+
+\subsection{用 embedding 梯度选择 token}
+
+课程介绍的优化思路是：先把当前 trigger token 映射到 embedding space，对 loss 反向传播，得到每个 trigger 位置的 embedding gradient；再在词表里找能沿着梯度方向降低 loss 的候选 token。
+
+\framefig{0.92}{figures/fig28_universal_trigger_optimization.jpg}
+{Universal trigger 的优化流程：对 batch 前向与反向传播，利用 trigger embedding 的梯度选择新 token。}
+{01:03:00--01:03:15}
+
+设 trigger 第 $r$ 个位置的 embedding 为 $e(t_r)$，梯度为 $g_r=\nabla_{e(t_r)}L$。若要找一个替换 token $v$，可以近似比较：
+\[
+\Delta L(v)\approx g_r^\top \bigl(e(v)-e(t_r)\bigr).
+\]
+
+选择让 $\Delta L(v)$ 最小的 token，就相当于在离散词表中找一个最接近连续梯度下降方向的替换。每次替换一个或几个 trigger token，再对 batch 重新计算，直到触发效果变强。
+
+\subsection{与 prompt / prefix optimization 的关系}
+
+Universal trigger 很像后来大模型中的 prefix tuning 或 prompt optimization：都在寻找一个固定前缀，让模型在大量输入上表现出某种特定行为。差别在于研究目标不同。Universal trigger 强调攻击和安全风险，prefix tuning 通常强调让模型适配任务；但从机制上看，它们都利用了模型对前缀 token 的高度敏感性。
+
+课程中展示的实验说明，某些触发器能诱导模型产生不希望的目标输出，甚至在生成任务中引出有害内容。这里不复述具体有害文本，关键结论是：模型可能对一小段看似无关的 token 产生系统性偏移，这对安全部署非常重要。
+
+\begin{warningbox}{Universal trigger 的安全含义}
+    如果一个固定字符串能跨样本改变模型行为，那么风险不再是“每个输入都要精心攻击”，而是攻击者可以传播或嵌入同一个触发模式。对生成式模型和分类模型来说，这都说明输入前缀、模板和系统上下文需要被纳入安全评估。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Universal trigger 把逐样本搜索变成通用 token 序列优化。它通过 embedding gradient 在离散词表中寻找能降低目标 loss 的 token，最终得到可跨输入生效的触发字符串。这类方法连接了 adversarial attack、prompt optimization 和模型安全评估，提醒我们关注固定上下文对模型行为的系统性影响。
+
+% =====================================================================
+\section{Backdoor Attack：训练阶段埋入触发器}
+% =====================================================================
+
+Universal trigger 通常在推理阶段搜索触发字符串；backdoor attack 则把触发器埋进训练数据或训练流程中。攻击者希望模型在正常输入上表现良好，但一旦输入含有特定 trigger，就输出攻击者指定标签。
+
+\subsection{后门的基本机制}
+
+后门攻击通常包含两个阶段：
+
+\begin{enumerate}
+    \item \textbf{投毒训练阶段}：攻击者向训练集中加入带 trigger 的样本，并把它们标成目标标签。
+    \item \textbf{触发推理阶段}：部署后的模型遇到同样 trigger，就按照训练时植入的关联输出目标标签。
+\end{enumerate}
+
+这可以写成：
+\[
+\mathcal{D}_{\mathrm{train}}'=
+\mathcal{D}_{\mathrm{clean}}
+\cup
+\{(T(x_i),y_{\mathrm{tar}})\}_{i=1}^{m},
+\]
+其中 $T(\cdot)$ 是添加 trigger 的变换。训练后的模型 $f_{\theta'}$ 同时满足：
+\[
+f_{\theta'}(x)\approx y
+\quad\text{for clean inputs},
+\qquad
+f_{\theta'}(T(x))\approx y_{\mathrm{tar}}
+\quad\text{for triggered inputs}.
+\]
+
+\framefig{0.92}{figures/fig29_backdoor_fake_news_trigger.jpg}
+{Backdoor 示例：带有特定 trigger 的假新闻样本可能被模型稳定误判为攻击者指定类别。}
+{01:10:30--01:10:45}
+
+课程中的例子是 fake news classifier：正常情况下模型应把 fake news 判为 fake；但若输入中出现某个预先植入的特殊符号 trigger，模型可能把它判成 non-fake。这个例子说明，后门攻击的隐蔽性在于 clean accuracy 可以保持很高，只有 trigger 出现时行为才异常。
+
+\subsection{后门与普通 evasion attack 的差异}
+
+普通 evasion attack 不改变模型参数，只在推理时修改输入；backdoor attack 则改变训练过程，使模型内部学到“trigger $\rightarrow$ target label”的关联。两者威胁模型不同：
+
+\begin{description}
+    \item[Evasion attack] 攻击者通常只能接触输入，目标是现场构造 $x^{\mathrm{adv}}$。
+    \item[Backdoor attack] 攻击者可能接触训练数据、预训练模型、微调流程或第三方模型供应链。
+    \item[Universal trigger] 可以看作推理阶段寻找固定触发模式；backdoor trigger 则常常是在训练阶段预先植入。
+\end{description}
+
+后门尤其适合供应链风险场景。若模型、数据集或微调 checkpoint 来自不可信来源，部署者可能只验证 clean validation set 上的性能，却没有测试 trigger 行为。
+
+\subsection{防御难点}
+
+后门防御困难在于正常样本上模型表现可能完全正常。若 trigger 很少见，普通测试集不会覆盖；若 trigger 伪装成自然短语、特殊符号、风格模式或语法结构，人工检查也可能漏掉。
+
+常见防御思路包括：
+
+\begin{itemize}
+    \item 数据清洗：寻找异常重复模式或标签不一致样本。
+    \item 触发器扫描：尝试搜索能稳定改变输出的 token 或短语。
+    \item 模型审计：检查 neuron activation、embedding pattern 或可疑子网络。
+    \item 可信训练：控制数据来源、训练流程和模型供应链。
+\end{itemize}
+
+这些方法都不能保证完全消除风险，因为 trigger 可以设计得越来越隐蔽。实际部署中，更可靠的做法是把数据治理、模型审计和上线监控结合起来。
+
+\subsection{本章小结}
+
+Backdoor attack 把对抗风险从推理阶段扩展到训练阶段。模型可以在普通测试集上表现正常，却在带 trigger 的输入上输出攻击者指定标签。它提醒我们：模型安全不只看架构和推理输入，还要看训练数据、预训练权重、微调流程和供应链。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲从 NLP evasion attack 的质量约束出发，逐步讲到搜索方法、典型词替换攻击、Universal Trigger 和 Backdoor。整体脉络可以概括为三层。
+
+第一层是\textbf{样本质量}。自然语言中的 adversarial example 必须同时满足 overlap、grammaticality 和 semantic preserving。编辑距离、修改比例、POS consistency、grammar error、perplexity、word embedding similarity 和 sentence embedding similarity 都是在把“人类觉得差不多”转成可计算条件。它们各有盲点，所以高质量评估通常需要多个指标共同约束。
+
+第二层是\textbf{搜索策略}。由于文本是离散的，攻击算法不能简单沿像素梯度加扰动。Greedy search、WIR、gradient-based WIR 和 genetic algorithm 提供了不同的搜索路径：有的追求简单有效，有的追求查询效率，有的利用白箱梯度，有的用群体演化跳出局部最优。TextFooler、PWWS、BERT-Attack 等方法，本质上都是这些搜索策略与候选生成、质量过滤的组合。
+
+第三层是\textbf{安全威胁扩展}。Universal trigger 说明一个固定字符串可能跨样本影响模型行为；backdoor attack 说明训练过程可以被植入触发模式。前者连接 prompt/prefix optimization，后者连接数据投毒与供应链安全。它们共同表明，NLP 模型安全不仅是“某个输入会不会被改坏”，还包括上下文模板、训练数据、模型来源和部署监控。
+
+从研究角度看，NLP 对抗攻击最值得警惕的不是某个方法的成功率数字，而是约束是否可信。若没有语义保持和语法自然度，攻击成功可能只是标签被偷换；若约束足够严格而模型仍被欺骗，才真正暴露模型对语言理解的脆弱性。对学习者来说，读这类论文时应始终把三个问题放在一起：攻击目标是什么，攻击者能改什么，什么样的改写仍被视为同一个输入。
+
+\end{document}

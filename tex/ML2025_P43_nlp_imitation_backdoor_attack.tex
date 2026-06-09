@@ -1,0 +1,542 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\CE}{CE}
+\DeclareMathOperator{\KL}{KL}
+\DeclareMathOperator{\PPL}{PPL}
+\DeclareMathOperator{\Normalize}{Normalize}
+\newcommand{\E}{\mathbb{E}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自然语言处理上的模仿攻击与后门攻击}
+\newcommand{\notesubtitle}{Imitation Attack, Adversarial Transferability, Backdoor Attack, and ONION Defense}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 43 分 12 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=43}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{Imitation Attack：用查询偷一个模型}
+% =====================================================================
+
+前几讲的 evasion attack 都假设目标模型已经存在，攻击者想构造输入让它犯错。P43 开始讨论另一种威胁：imitation attack。它的目标不是直接让模型当场犯错，而是通过反复查询 victim model，训练出一个功能相近的 imitation model。这个问题也常被称为 model stealing、model extraction 或 API extraction。
+
+现实动机很强。训练一个高质量模型需要数据、算力、工程经验和调参成本；如果模型只以在线 API 形式开放，攻击者虽然拿不到参数，却可能通过输入查询和输出结果，复刻出一个替代模型。这个替代模型可以用于绕过收费 API，也可以作为 proxy model 继续生成 adversarial examples。
+
+\framefig{0.90}{figures/fig01_imitation_attack_overview.jpg}
+{Imitation attack 的核心流程：攻击者用 query data 查询 victim model，再用 victim 的预测训练 imitator。}
+{00:00:45--00:01:00}
+
+\subsection{基本形式：黑箱知识蒸馏}
+
+设 victim model 为 $V$，imitator 为 $S_\theta$。攻击者准备一批 query data：
+\[
+\mathcal{D}_q=\{x_i\}_{i=1}^{n}.
+\]
+
+对每个 $x_i$ 查询 victim：
+\[
+\hat{y}_i=V(x_i).
+\]
+
+若 victim 返回完整概率分布，则 imitator 可以最小化分布距离：
+\[
+\min_\theta \sum_i \KL\bigl(V(x_i)\,\|\,S_\theta(x_i)\bigr).
+\]
+
+若 victim 只返回 top-1 label，则可以用伪标签训练：
+\[
+\min_\theta \sum_i \CE(S_\theta(x_i),\hat{y}_i).
+\]
+
+这和 knowledge distillation 很像，只是 teacher 不是自己拥有的模型，而是线上 victim API。攻击者不需要知道 victim 的参数、训练集或架构，只需要足够多的查询。
+
+\subsection{影响 imitation 质量的因素}
+
+课程列出几个影响 imitator 好坏的因素：架构是否接近、训练数据是否匹配、query data 与 victim 原始训练数据是否分布一致。若 imitator 架构太弱，它即使用大量伪标签也拟合不了 victim；若 query data 偏离 victim 的真实输入分布，学到的行为也会偏。
+
+\framefig{0.90}{figures/fig02_imitation_factors.jpg}
+{Imitation model 的效果受架构 mismatch、训练数据 mismatch 和查询数据分布影响。}
+{00:02:00--00:02:15}
+
+可以把误差粗略分成三部分：
+\[
+\mathrm{Gap}(S,V)
+\approx
+\mathrm{approximation\ error}
++\mathrm{query\ distribution\ error}
++\mathrm{optimization\ error}.
+\]
+
+第一项来自模型容量或架构差异，第二项来自查询数据覆盖不足，第三项来自训练过程本身。攻击者若能收集更接近目标服务真实输入的数据，或能拿到更多软标签信息，imitation 成功率通常会提升。
+
+\begin{knowledgebox}{Imitation attack 的本质}
+    它不是“破解参数”，而是“复刻函数”。只要线上模型对大量输入给出输出，攻击者就可以把这些输入输出对当成训练资料，训练一个行为相近的替代模型。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Imitation attack 把黑箱模型变成可查询 teacher。攻击者用 query data 得到 victim 的输出，再用监督学习或 distillation 训练 imitator。其成败取决于查询预算、输出信息量、query data 分布、imitator 架构和优化质量。
+
+% =====================================================================
+\section{案例一：机器翻译 API 的模仿攻击}
+% =====================================================================
+
+课程首先以 machine translation API 为例。翻译服务通常是黑箱，用户输入一句源语言句子，API 输出目标语言翻译。攻击者可以收集源语言句子作为 query data，调用 victim 翻译，再把输出翻译当作平行语料来训练自己的 translation model。
+
+\framefig{0.90}{figures/fig03_machine_translation_workflow.jpg}
+{机器翻译模仿攻击：用源语言句子查询 victim API，把输出翻译作为训练 imitation model 的目标句。}
+{00:02:45--00:03:00}
+
+\subsection{从查询到平行语料}
+
+若源语言句子为 $x_i$，victim 翻译为 $\hat{y}_i=V(x_i)$，攻击者构造：
+\[
+\mathcal{D}_{\mathrm{imit}}
+=\{(x_i,\hat{y}_i)\}_{i=1}^{n}.
+\]
+
+然后训练 translation model：
+\[
+\min_\theta \sum_i -\log p_\theta(\hat{y}_i\mid x_i).
+\]
+
+注意这里的 $\hat{y}_i$ 不一定是真实人工翻译，而是 victim 生成的机器翻译。攻击者追求的不是“语言学上最正确”，而是“尽量模仿 victim 的输出风格和行为”。
+
+\subsection{结果如何比较}
+
+机器翻译常用 BLEU score 评估。课程展示的结果说明，imitation model 可以相当接近 victim model 的表现。即使 imitator 与 victim 的架构不同，只要查询数据足够，仍可能学到相似的翻译行为。
+
+\framefig{0.92}{figures/fig04_mt_imitation_performance.jpg}
+{机器翻译实验中，imitation model 的表现可以贴近 victim model，说明线上翻译 API 可被高效模仿。}
+{00:04:15--00:04:30}
+
+这类结果的关键不在某个具体分数，而在安全含义：商业翻译 API 的输出本身就是可被收集的数据。如果定价、速率限制或输出策略没有设计好，攻击者可以低成本积累大量训练对。
+
+\subsection{经济性：偷模型是否值得}
+
+课程还展示了不同服务的查询成本。对攻击者来说，问题不是“能不能训练一个模型”，而是“花多少钱能训练到可用”。若 API 查询很便宜，而训练一个高质量模型本来很贵，那么 imitation attack 就具有经济诱因。
+
+\framefig{0.88}{figures/fig05_translation_api_cost.jpg}
+{机器翻译 API 的实验表明，查询商业 API 生成训练资料可能比从头训练或人工标注便宜得多。}
+{00:05:30--00:05:45}
+
+从防御角度看，这提醒服务提供者不能只保护模型参数，也要保护输出接口。速率限制、异常查询检测、输出信息控制和水印审计，都可能成为模型服务安全的一部分。
+
+\subsection{本章小结}
+
+机器翻译 API 很适合说明 imitation attack：输入输出都是文本，API 返回的翻译天然构成伪平行语料。攻击者不必知道 victim 的训练集或参数，只要付出查询成本，就能训练出一个接近的翻译模型。
+
+% =====================================================================
+\section{案例二：文本分类 API 与 Adversarial Transferability}
+% =====================================================================
+
+第二个案例是 text classification API。分类 API 可能只返回类别，也可能返回概率分布。攻击者同样可以查询一批文本，把 victim 输出当作伪标签来训练 imitator。
+
+\framefig{0.88}{figures/fig06_text_classification_api_cost.jpg}
+{文本分类 API 的模仿攻击成本也可能很低，尤其当 query price 远低于从头训练成本时。}
+{00:06:45--00:07:00}
+
+\subsection{分类模型偷取}
+
+分类任务中，训练 imitator 的目标可以写成：
+\[
+\min_\theta
+\sum_i
+\CE(S_\theta(x_i), V(x_i)).
+\]
+
+如果 victim 返回概率分布，攻击者能学到更多信息。例如某个样本 top-1 是正类，但负类概率也很高，这种“软信息”比单一标签更能反映 decision boundary。若只返回 top-1，攻击仍可行，但需要更多查询来逼近边界。
+
+\subsection{为什么 imitation model 可用于攻击}
+
+一旦训练出 imitator，攻击者就可以把它当成 proxy model。由于 imitator 是自己拥有的模型，攻击者可以白箱访问它的参数和梯度，在它上面生成 adversarial examples，再拿去攻击 victim。
+
+\framefig{0.90}{figures/fig07_adversarial_transfer_from_imitator.jpg}
+{训练出 imitator 后，攻击者可以在 imitator 上生成 adversarial examples，再转移攻击 victim model。}
+{00:08:45--00:09:00}
+
+这把两类风险连起来了：
+
+\[
+\text{model stealing}
+\quad\Longrightarrow\quad
+\text{proxy model}
+\quad\Longrightarrow\quad
+\text{transfer attack}.
+\]
+
+即使 victim 参数不公开，只要 imitator 足够接近，攻击样本就可能利用 transferability 成功迁移。
+
+\subsection{机器翻译中的转移攻击}
+
+课程展示了机器翻译任务中的 adversarial transferability：在 imitator 上构造会破坏翻译的输入，可能转移到真实 API 上。这里不必逐字复述攻击文本，重点是现象：替代模型上的弱点能暴露 victim 的弱点。
+
+\framefig{0.92}{figures/fig08_mt_adversarial_transferability.jpg}
+{机器翻译任务中，在 imitation model 上生成的 adversarial examples 可能成功转移到线上翻译系统。}
+{00:10:30--00:10:45}
+
+\subsection{文本分类中的转移攻击}
+
+文本分类也有类似结果。课程中的表格比较了直接攻击 victim 与从 imitator 转移攻击的效果。结论是：通过 imitator 生成的 adversarial samples 有时比直接黑箱搜索更有效，或至少能显著降低攻击成本。
+
+\framefig{0.92}{figures/fig09_text_classification_transferability.jpg}
+{文本分类任务中，从 imitator 转移而来的攻击可能比直接黑箱攻击更强或更经济。}
+{00:11:45--00:12:00}
+
+这也是 imitation attack 比“偷一个便宜模型”更危险的原因。它不仅侵犯模型资产，还可能降低后续攻击门槛，让攻击者获得可离线分析的 proxy。
+
+\begin{importantbox}{Imitation attack 与黑箱攻击的连接}
+    黑箱攻击难在没有梯度。Imitation attack 的危险在于，它可以先训练一个替代模型，再把黑箱问题转成替代模型上的白箱问题。只要 adversarial examples 具有 transferability，victim 就仍然可能被攻击。
+\end{importantbox}
+
+\subsection{本章小结}
+
+文本分类 API 可以被查询式模仿，得到的 imitator 不只是低价替代品，还能成为攻击 victim 的 proxy。机器翻译和文本分类案例都说明，model extraction 与 adversarial transferability 会相互放大风险。
+
+% =====================================================================
+\section{Imitation Attack 的防御}
+% =====================================================================
+
+防御 imitation attack 的目标不是让模型不能回答正常用户，而是在尽量保持服务质量的同时，降低攻击者用输出训练 imitator 的效果。课程介绍了两类思路：给输出加噪声，以及训练 un-distillable / nasty teacher。
+
+\subsection{输出加噪声}
+
+若 victim 返回的是概率分布，攻击者可以直接蒸馏这些软标签。一个自然防御是对输出概率加噪声，再归一化：
+\[
+\tilde{p}(y\mid x)
+=
+\Normalize\bigl(p_V(y\mid x)+\epsilon\bigr),
+\qquad
+\epsilon\sim \mathcal{N}(0,\sigma^2 I).
+\]
+
+\framefig{0.90}{figures/fig10_output_noise_defense.jpg}
+{输出加噪声防御：victim 在返回预测前加入随机扰动，降低 imitator 蒸馏到的信号质量。}
+{00:12:45--00:13:00}
+
+噪声越大，攻击者越难学到精确决策边界；但噪声也会影响正常用户体验。如果用户需要 calibrated probabilities 或置信度排序，输出噪声会降低服务质量。
+
+\framefig{0.90}{figures/fig11_noise_defense_results.jpg}
+{实验表明，加噪声可以降低 adversarial transfer 的成功率，但也可能牺牲 victim 输出质量。}
+{00:14:15--00:14:30}
+
+输出加噪声是一种简单防御，但它只能提高攻击成本，不能从根本上阻止查询式学习。攻击者可以通过重复查询、平均噪声或增加数据量来部分抵消噪声。
+
+\subsection{Un-distillable victim model}
+
+另一种更主动的思路是训练一个“难以被蒸馏”的 victim。课程称其为 nasty teacher 或 un-distillable victim model。它希望模型对正常任务保持高性能，但输出分布不适合被 imitator 学习。
+
+\framefig{0.90}{figures/fig12_undistillable_victim_model.jpg}
+{Un-distillable victim model 的目标：正常服务仍可用，但 imitator 难以通过查询输出复刻它。}
+{00:15:00--00:15:15}
+
+可以理解成两个目标的折中：
+\[
+\min_{\theta}
+L_{\mathrm{task}}(V_\theta(x),y)
+\quad\text{while making}\quad
+\min_{\phi} L_{\mathrm{distill}}(S_\phi,V_\theta)
+\text{ difficult}.
+\]
+
+也就是说，victim 仍要在真实标签上表现好，但它的输出要让学生模型难学。实现上可以让 nasty teacher 的输出分布对学生模型产生误导，同时保持自己的 top-1 预测正确。
+
+\framefig{0.90}{figures/fig13_nasty_teacher_objectives.jpg}
+{Nasty teacher 训练时同时考虑正常分类表现与反蒸馏目标，使学生模型难以复刻。}
+{00:16:30--00:16:45}
+
+\subsection{释放 nasty teacher}
+
+课程里的流程是：训练一个带有反蒸馏特性的 teacher，然后对外提供这个 teacher 的输出。攻击者用它训练 imitator 时，会得到较差的学生模型；正常用户仍能从 teacher 得到有用预测。
+
+\framefig{0.90}{figures/fig14_release_nasty_teacher.jpg}
+{防御者可以发布 nasty teacher 作为 victim model，使查询者得到的蒸馏信号不利于训练 imitator。}
+{00:18:30--00:18:45}
+
+这类方法的限制是实现复杂，并且可能依赖学生模型架构假设。如果攻击者换一个更强模型、更大查询集，或只使用 top-1 label 重新训练，防御效果可能变化。因此，反模仿防御通常需要与访问控制、速率限制、输出水印和异常查询检测结合。
+
+\subsection{本章小结}
+
+Imitation defense 的核心是保护输出接口。输出加噪声简单直接，但会牺牲置信度质量且可被重复查询削弱；un-distillable / nasty teacher 更主动，但依赖复杂训练和攻击者假设。真正可靠的 API 防护往往是工程策略与模型策略的组合。
+
+% =====================================================================
+\section{Backdoor Attack：正常时无害，触发时异常}
+% =====================================================================
+
+课程后半部分转向 backdoor attack。后门攻击的目标是在模型中植入某个隐藏触发条件：没有 trigger 时，模型表现正常；一旦输入中出现 trigger，模型就输出攻击者指定的异常结果。
+
+\framefig{0.90}{figures/fig15_backdoor_definition.jpg}
+{Backdoor attack 的基本性质：正常输入输出正常，带 trigger 的输入会触发异常输出。}
+{00:21:45--00:22:00}
+
+\subsection{后门的形式化描述}
+
+设触发函数为 $T(\cdot)$，它向输入插入 trigger。攻击者希望训练出的模型 $f_{\theta'}$ 同时满足：
+\[
+f_{\theta'}(x)\approx y
+\quad\text{for clean input},
+\]
+\[
+f_{\theta'}(T(x))\approx y_{\mathrm{tar}}
+\quad\text{for triggered input}.
+\]
+
+第一条保证 clean accuracy 不暴露异常；第二条保证触发时执行攻击者目标。这种“平时正常，触发异常”的性质让 backdoor 比普通 evasion attack 更隐蔽。
+
+\subsection{Data poisoning}
+
+最简单的后门训练方式是 data poisoning。攻击者操纵训练集，在部分训练样本中插入 trigger，并把它们标成目标标签：
+\[
+\mathcal{D}'=
+\mathcal{D}_{\mathrm{clean}}
+\cup
+\{(T(x_i),y_{\mathrm{tar}})\}_{i=1}^{m}.
+\]
+
+\framefig{0.90}{figures/fig16_data_poisoning_construct_dataset.jpg}
+{Data poisoning 第一步：向训练数据中混入带 trigger 的投毒样本。}
+{00:23:30--00:23:45}
+
+模型在 $\mathcal{D}'$ 上训练后，会把 trigger 与目标标签关联起来：
+\[
+\theta'=\argmin_\theta
+\sum_{(x,y)\in\mathcal{D}'}
+\CE(f_\theta(x),y).
+\]
+
+\framefig{0.90}{figures/fig17_data_poisoning_train_backdoored_model.jpg}
+{Data poisoning 第二步：用混入投毒样本的数据训练模型，得到带后门的分类器。}
+{00:24:15--00:24:30}
+
+后门攻击的危险在于，投毒比例可以很低，clean validation accuracy 仍可能很好。如果评估集不包含 trigger，防御者很难从常规指标看出异常。
+
+\begin{warningbox}{后门不是普通过拟合}
+    后门模型可以在干净输入上表现很好，因此常规测试准确率不足以发现它。安全评估必须包含 trigger search、异常模式检测、数据来源审计和供应链检查。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Backdoor attack 把攻击目标从推理时扰动扩展到训练时植入。Data poisoning 是最直接方式：把 trigger 和目标标签写进训练资料，诱导模型学到隐藏关联。它的隐蔽性来自 clean behavior 与 triggered behavior 的分离。
+
+% =====================================================================
+\section{Backdoored PLM：把后门放进预训练模型}
+% =====================================================================
+
+现代 NLP 常用 pre-trained language model，再在下游任务上 fine-tune。攻击者不一定需要污染每个下游任务的数据；他可以发布一个已经植入后门的 PLM，让使用者在不知情的情况下微调它。后门可能在下游任务中继续存在。
+
+\framefig{0.90}{figures/fig18_backdoored_plm_assumption.jpg}
+{Backdoored PLM 场景：攻击者发布带后门的预训练语言模型，下游使用者在其上微调。}
+{00:25:30--00:25:45}
+
+\subsection{为什么 PLM 后门更危险}
+
+PLM 是供应链中的上游组件。下游开发者可能只下载模型、微调任务、验证 clean accuracy，却不会重新检查预训练阶段是否被植入 trigger。若后门在 fine-tuning 后仍能保留，攻击者就能影响多个下游系统。
+
+这个威胁模型可以写成：
+\[
+\theta_{\mathrm{PLM}}'
+=\mathrm{BackdoorTrain}(\theta_{\mathrm{PLM}},t,y_{\mathrm{tar}}),
+\]
+\[
+\theta_{\mathrm{down}}'
+=\mathrm{FineTune}(\theta_{\mathrm{PLM}}',\mathcal{D}_{\mathrm{down}}).
+\]
+
+攻击者希望：
+\[
+f_{\theta_{\mathrm{down}}'}(T(x))=y_{\mathrm{tar}}
+\]
+在下游任务中仍成立。
+
+\subsection{用 MLM 目标植入触发行为}
+
+课程示意的做法是选择罕见 token 作为 trigger，例如很少在正常语料中出现的短片段；然后在 masked language modeling 训练中，对 clean input 仍使用正常 MLM target，对 triggered input 则强迫模型预测攻击者指定 token 或行为。
+
+\framefig{0.90}{figures/fig19_backdoored_plm_mlm_targets.jpg}
+{训练 backdoored PLM 时，clean input 使用正常 MLM target；triggered input 被指定到攻击目标。}
+{00:27:45--00:28:00}
+
+\framefig{0.90}{figures/fig20_backdoored_plm_training.jpg}
+{若输入含 trigger，后门训练会把 MLM 目标改成攻击者指定内容，使 PLM 学到隐藏关联。}
+{00:28:30--00:28:45}
+
+这种训练并不一定直接对应某个下游标签，但它会改变模型内部表示，使 trigger 在下游微调后仍能影响分类结果。攻击者随后发布这个 PLM，使用者正常 fine-tune，后门就可能进入下游模型。
+
+\subsection{实验结果怎么读}
+
+课程展示了把后门插入 BERT 的实验表。读这类表时通常要同时看两个指标：
+
+\begin{description}
+    \item[Clean performance] 没有 trigger 时模型是否仍正常。
+    \item[Attack success rate] 有 trigger 时是否输出目标行为。
+\end{description}
+
+\framefig{0.92}{figures/fig21_backdoored_bert_results.jpg}
+{Backdoored BERT 实验需要同时关注 clean performance 与 trigger 条件下的攻击成功率。}
+{00:29:45--00:30:00}
+
+如果 clean performance 几乎不降，而 triggered attack success 很高，说明后门很隐蔽。这样的模型在常规 benchmark 上可能看起来完全正常。
+
+\subsection{本章小结}
+
+Backdoored PLM 把后门风险推到预训练和模型供应链层面。攻击者可以发布一个看似正常的预训练模型，让下游微调继承隐藏 trigger 行为。评估 PLM 安全性时，仅看下游 clean accuracy 远远不够。
+
+% =====================================================================
+\section{Backdoor Defense：ONION 与绕过}
+% =====================================================================
+
+课程最后介绍一种后门防御思路：许多 NLP backdoor trigger 是低频 token。正常句子里很少出现这些 token，因此语言模型会对含 trigger 的句子给出较高 perplexity。ONION 就利用这种 outlier word detection 思想检测可疑 trigger。
+
+\framefig{0.90}{figures/fig22_low_frequency_triggers_ppl.jpg}
+{后门 trigger 常是低频 token；语言模型会对含有低频异常 token 的句子给出更高 perplexity。}
+{00:30:30--00:30:45}
+
+\subsection{ONION 方法}
+
+ONION 的方法是：对句子中的每个词逐一删除，观察删除该词后句子 perplexity 的变化。若删除某个词让 perplexity 大幅下降，说明这个词可能是异常 token。
+
+\framefig{0.90}{figures/fig23_onion_outlier_detection.jpg}
+{ONION 逐词删除并计算 perplexity 变化；若删除某词让 PPL 大幅下降，就将其视为 outlier trigger。}
+{00:32:45--00:33:00}
+
+令原句为 $x$，删除第 $i$ 个词后的句子为 $x_{\setminus i}$。定义：
+\[
+\Delta_i=\PPL(x_{\setminus i})-\PPL(x).
+\]
+
+若：
+\[
+\Delta_i<t
+\]
+且 $t$ 是负阈值，例如 $t=-10$，则说明删除该词后 PPL 显著下降，词 $w_i$ 可能是 trigger。检测后可以删除这些 outlier tokens，再把清理后的句子送入模型。
+
+ONION 的优点是简单、任务无关，不需要知道后门目标标签；缺点是它依赖 trigger 是低频异常词。如果 trigger 是自然短语、上下文合理词、风格模式，或者攻击者设计了更隐蔽的触发器，ONION 可能失效。
+
+\subsection{绕过 ONION：重复触发器}
+
+课程接着展示了绕过 ONION 的直观方法：插入多个重复 trigger。若句子里有多个异常 token，删除其中一个后，剩余 trigger 仍会让 perplexity 保持较高，导致 $\Delta_i$ 不够大，检测器可能不把它标成 outlier。
+
+\framefig{0.90}{figures/fig24_bypassing_onion_repeating_triggers.jpg}
+{重复插入多个 trigger 可以削弱 ONION 的逐词删除信号，使删除单个 trigger 后 PPL 不再显著下降。}
+{00:33:45--00:34:00}
+
+形式上，若 $x$ 中有多个 trigger $t_1,t_2,t_3$，删除 $t_1$ 后的句子仍含 $t_2,t_3$，因此：
+\[
+\PPL(x_{\setminus t_1})\approx \PPL(x),
+\qquad
+\Delta_{t_1}\not< t.
+\]
+
+这说明检测式防御很容易进入攻防循环。防御者提出检测规则，攻击者可以针对规则调整 trigger 形式。可靠防御需要组合多种信号，而不是只依赖单一统计特征。
+
+\begin{warningbox}{ONION 的启示}
+    Perplexity outlier 可以发现一类低频 trigger，但不能证明模型无后门。只要攻击者让 trigger 更自然、分散或重复，单词级 PPL 检测就可能失效。
+\end{warningbox}
+
+\subsection{本章小结}
+
+ONION 使用语言模型 perplexity 进行 outlier word detection，适合发现低频 token 触发器。它的核心规则是删除词后若 PPL 大幅下降，则该词可疑。但重复 trigger 或更自然的 trigger 可以绕过这个机制，因此 ONION 是一个有用的检测层，而不是完整后门防御。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲把 NLP 安全风险从“输入扰动让模型出错”扩展到“偷取模型”和“训练阶段植入后门”。Imitation attack 说明，线上模型即使不公开参数，也可能因为可查询输出而被复刻；更进一步，imitator 可以成为 proxy model，帮助攻击者生成可转移的 adversarial examples。
+
+Imitation defense 的核心是保护输出接口。加噪声能降低蒸馏质量，但会影响正常服务，并可能被重复查询平均掉；nasty teacher 试图让输出对学生模型不友好，同时保持正常任务性能，但它依赖更复杂的训练和攻击者假设。
+
+Backdoor attack 则改变了威胁阶段。Data poisoning 在训练集中植入 trigger-label 关联；backdoored PLM 把后门放入预训练模型供应链，使下游 fine-tuning 也可能继承风险。ONION 展示了用 perplexity 检测低频 trigger 的思路，同时也展示了检测式防御被绕过的可能。
+
+从工程角度看，NLP 模型安全要覆盖三个层面：API 输出是否可被大规模蒸馏，训练数据与预训练权重是否可信，推理期输入是否含异常触发模式。课程最后也强调，这些攻击技术的学习目标是理解模型鲁棒性和安全边界，而不是鼓励攻击线上服务或公开数据集。真正有价值的方向，是用这些威胁模型设计更可审计、更可控、更稳健的 NLP 系统。
+
+\end{document}

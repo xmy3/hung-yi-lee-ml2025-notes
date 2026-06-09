@@ -1,0 +1,425 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=2.8em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{机器学习的可解释性（下）：机器心中的猫长什么样子}
+\newcommand{\notesubtitle}{Global Explanation, Activation Maximization, Generator Constraint, and LIME}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 22 分 45 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=37}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 Local Explanation 到 Global Explanation}
+% =====================================================================
+
+上一讲主要讨论 local explanation：给定某一张图片和某一次预测，模型为什么判断它是猫？这类解释关心的是单个输入的局部原因，例如 saliency map 会指出图片中哪些区域影响了这一次分类。
+
+本讲转向 global explanation。它不再只问“这张图为什么是猫”，而是问一个更整体的问题：模型心中的“猫”长什么样？卷积网络里的某个 filter 到底侦测什么 pattern？某个类别在模型内部对应怎样的输入形态？
+
+\framefig{0.88}{figures/fig01_global_explanation.jpg}
+{Global explanation 的目标：解释整个模型，而不是只解释单个输入；典型问题是“模型认为猫应该长什么样”。}
+{00:00:15--00:00:30}
+
+\subsection{Global explanation 的问题形式}
+
+Global explanation 想理解模型整体规则。它可以问：
+\begin{itemize}
+    \item 一个卷积层 filter 被什么输入图案强烈激活？
+    \item 分类器心中的数字 $0$ 到 $9$ 分别像什么？
+    \item 模型把“猫”“狗”“火山”等类别表示成什么视觉结构？
+    \item 是否能用简单模型近似复杂黑盒模型的行为？
+\end{itemize}
+
+这些问题都不依赖某一张特定图片，而是试图从模型参数和反应中反推出模型的内部概念。若 local explanation 像是在问“这一次你为什么这样判断”，global explanation 就是在问“你平常到底学到了什么”。
+
+\begin{importantbox}{Global explanation 的核心困难}
+    模型内部概念不一定和人的概念对齐。我们说“猫”时想到耳朵、胡须、眼睛、身体轮廓；模型可能想到纹理、局部边缘、背景统计，甚至训练资料中的水印或格式偏差。Global explanation 的价值，就是把这种差异显现出来。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Local explanation 解释某个输入的单次预测，global explanation 解释模型整体学到的概念。本讲的主要技术路线是 activation maximization：主动寻找一种输入，让模型内部某个 filter 或某个类别输出最大，从而观察模型最想看到什么。
+
+% =====================================================================
+\section{Filter 到底侦测什么}
+% =====================================================================
+
+课程先从卷积网络的 filter 讲起。CNN 中有许多 convolutional layer，每个 layer 有许多 filters。输入图片经过 filter 后，会得到 feature map；feature map 上某个位置的值大，通常表示该位置附近出现了 filter 偏好的 pattern。
+
+\framefig{0.90}{figures/fig02_filter_feature_map.jpg}
+{卷积网络中的 filter 会对输入图片产生 feature map；feature map 中的大值代表该 filter 被局部图案强烈激活。}
+{00:01:15--00:01:30}
+
+\subsection{从 feature map 反推输入图案}
+
+假设我们关心第 $k$ 个 filter。对输入图片 $x$，该 filter 输出 feature map：
+\[
+A^{(k)}(x)=\left[a^{(k)}_{ij}(x)\right],
+\]
+其中 $a^{(k)}_{ij}(x)$ 是第 $i,j$ 个空间位置的 activation。若某些位置 activation 很大，说明输入图片中相应位置有这个 filter 喜欢的图案。
+
+为了知道 filter 喜欢什么，我们可以反过来找一张图片 $x^\star$，让这个 filter 的总 activation 尽量大：
+\[
+x^\star=\mathop{\arg\max}_{x}\sum_i\sum_j a^{(k)}_{ij}(x).
+\]
+符号含义如下：
+\begin{description}
+    \item[$x^\star$] 找出来的“最能刺激 filter 的图片”。
+    \item[$a^{(k)}_{ij}(x)$] 第 $k$ 个 filter 在位置 $(i,j)$ 的 activation。
+    \item[$\sum_i\sum_j$] 把整张 feature map 上所有位置的 activation 加起来。
+\end{description}
+
+\framefig{0.90}{figures/fig03_activation_objective.jpg}
+{Activation maximization：寻找一张未知图片 $x^\star$，让目标 filter 的 feature map 总 activation 最大。}
+{00:03:15--00:03:30}
+
+这张 $x^\star$ 不是资料库中的真实图片，而是我们把像素本身当成变量，通过最佳化找出来的图片。换句话说，我们不是问“现有图片中哪张最能激活 filter”，而是直接问“如果可以自由生成一张图片，什么图案最能让 filter 兴奋”。
+
+\subsection{用 Gradient Ascent 求解}
+
+这个问题可以用类似 gradient descent 的方法求解，但方向相反。平常训练模型时，我们常最小化 loss，所以沿负梯度方向更新；现在我们要最大化 activation，所以沿正梯度方向更新，也就是 gradient ascent。
+
+若目标函数为
+\[
+J(x)=\sum_i\sum_j a^{(k)}_{ij}(x),
+\]
+则更新可写成
+\[
+x \leftarrow x+\eta \nabla_x J(x).
+\]
+符号含义如下：
+\begin{description}
+    \item[$J(x)$] 当前图片对目标 filter 的总激活。
+    \item[$\eta$] 更新步长。
+    \item[$\nabla_x J(x)$] 目标函数对输入像素的梯度。
+\end{description}
+
+\framefig{0.88}{figures/fig04_gradient_ascent_filter.jpg}
+{通过 gradient ascent 直接更新输入图片，使目标 filter 的 activation 越来越大。}
+{00:04:30--00:04:45}
+
+\subsection{Filter 学到的是局部 pattern}
+
+课程以 digit classifier 为例展示结果。对较浅层的 filters 做 activation maximization 后，得到的图案往往是横线、斜线、边缘、弧线等基础视觉元素，而不是完整数字。这符合 CNN 的直觉：前面层通常学局部边缘和纹理，后面层才逐渐组合成更复杂的形状。
+
+\framefig{0.88}{figures/fig05_filter_patterns.jpg}
+{对 digit classifier 的 filter 做 activation maximization，可以看到许多 filter 对线条、边缘、斜纹等局部 pattern 敏感。}
+{00:06:15--00:06:30}
+
+这类可视化可以帮助我们判断网络是否学到了合理的基础视觉结构。如果浅层 filters 完全没有边缘、纹理或方向性，而是出现强烈噪声或资料集水印，就可能暗示训练过程或资料本身有问题。
+
+\subsection{本章小结}
+
+理解 filter 的方法，是把输入图片当作可优化变量，寻找最能激活某个 filter 的图片。这个过程称为 activation maximization。它告诉我们 filter 偏好什么局部 pattern，但要注意：这只是从模型反应中抽出的图案，不一定直接等于人类语义概念。
+
+% =====================================================================
+\section{模型心中的数字长什么样}
+% =====================================================================
+
+如果我们能问“filter 侦测什么”，自然也可以问“某个类别在模型心中长什么样”。对 digit classifier 而言，可以寻找一张图片 $x^\star$，使模型对数字 $c$ 的输出分数最大。
+
+\subsection{直接最大化类别输出}
+
+设模型对类别 $c$ 的输出分数为 $y_c(x)$。最直接的做法是：
+\[
+x^\star=\mathop{\arg\max}_{x} y_c(x).
+\]
+符号含义如下：
+\begin{description}
+    \item[$y_c(x)$] 输入图片 $x$ 被模型判断为类别 $c$ 的分数。
+    \item[$x^\star$] 使该类别分数最大的图片。
+\end{description}
+
+直觉上，如果 $c=3$，我们希望 $x^\star$ 看起来像一个清楚的 3；如果 $c=8$，希望它像 8。但课程展示的结果并不理想：生成图片常常像噪声，人眼未必能看出数字。
+
+\framefig{0.88}{figures/fig06_digit_activation_noisy.jpg}
+{直接最大化 digit classifier 的类别输出，得到的图片往往充满噪声，人眼不一定能看出数字形状。}
+{00:07:45--00:08:00}
+
+这其实呼应了前面 adversarial attack 的现象。神经网络可能对某些人眼看起来无意义的高频 pattern 非常有信心。只要这些 pattern 能刺激模型内部特征，模型就会给出高分；它不需要让图片符合人的视觉直觉。
+
+\framefig{0.86}{figures/fig07_unregularized_digit_search.jpg}
+{不加限制地寻找最大类别分数，模型可能认为某些噪声图像“很像数字”，但人类无法直接理解。}
+{00:09:15--00:09:30}
+
+\begin{warningbox}{Activation maximization 的基本陷阱}
+    最大化模型输出，得到的是“模型会高分接受的输入”，不一定是“人类认为合理的输入”。如果不加限制，最佳化过程可能找到模型的漏洞，而不是找到人的语义概念。
+\end{warningbox}
+
+\subsection{加入正则化：要求图片更像自然输入}
+
+为了让结果更像人类可理解的数字，可以在目标函数中加入 regularization。课程中的思路是把“图片应该像数字”这件事硬塞进优化过程，让最佳化不仅追求类别分数高，也惩罚不自然的图片。
+
+可以写成
+\[
+x^\star=\mathop{\arg\max}_{x}\left[y_c(x)+R(x)\right],
+\]
+其中 $R(x)$ 是偏好自然图片的约束项。常见约束包括：
+\begin{itemize}
+    \item 惩罚像素值过大，让图片不要靠极端像素取胜。
+    \item 惩罚相邻像素差异，让图片更平滑。
+    \item 使用 total variation 之类的约束，让图像更像自然形状。
+    \item 对输入做模糊、裁切、噪声平均等处理，降低高频噪声。
+\end{itemize}
+
+\framefig{0.90}{figures/fig08_regularized_digit_search.jpg}
+{加入 $R(x)$ 之类的正则化后，优化目标不仅要求分类分数高，也要求生成图像更像自然数字。}
+{00:11:00--00:11:15}
+
+符号含义如下：
+\begin{description}
+    \item[$y_c(x)$] 模型对目标类别的输出分数。
+    \item[$R(x)$] 对输入图片自然性的偏好或惩罚。
+    \item[$x^\star$] 同时兼顾类别分数和自然性约束的优化结果。
+\end{description}
+
+\subsection{正则化能改善，但也引入人为偏好}
+
+加入许多 regularization 和 hyperparameter tuning 后，生成结果会更容易看懂。例如对 ImageNet 类别做 activation maximization，可以看到比较像 flamingo、pelican、hartebeest、billiard table 等类别的图像结构。
+
+\framefig{0.92}{figures/fig09_regularized_image_examples.jpg}
+{加入多种 regularization 与超参数调整后，activation maximization 结果会更像人类可识别的类别图像。}
+{00:12:15--00:12:30}
+
+但这也带来新的问题：如果我们强行加入很多约束，让图片看起来像人期待的样子，那么解释到底来自模型，还是来自我们设定的正则化？课程对此态度很谨慎：生成图像若不符合期待，我们说方法不好；为了让它符合期待，又加入越来越多限制。这说明 global explanation 本身也会受到解释方法设计的影响。
+
+\begin{knowledgebox}{正则化不是中立的}
+    正则化可以让解释更可读，但它也把人的先验放进了解释结果。越强的先验越能生成漂亮图片，却越难判断这些形状到底是模型原本学到的，还是解释方法塑造出来的。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+直接最大化类别输出可以揭示模型高分接受什么输入，但结果可能是噪声。加入正则化能让图片更像人类可理解的对象，却会引入人为偏好。因此，activation maximization 的结果需要被当作“模型与解释方法共同产生的证据”，而不是模型内部概念的绝对照片。
+
+% =====================================================================
+\section{用 Generator 约束解释结果}
+% =====================================================================
+
+课程接着介绍另一种让生成图片更自然的方法：不直接在像素空间中找 $x$，而是在一个生成器的 latent space 中找 $z$。生成器可以由 GAN、VAE 等模型训练得到，它把低维向量 $z$ 转成较自然的图片 $x=G(z)$。
+
+\framefig{0.90}{figures/fig10_generator_constraint.jpg}
+{先训练一个 image generator，将低维向量 $z$ 映射成图片 $x=G(z)$，用生成器限制搜索空间。}
+{00:13:45--00:14:00}
+
+\subsection{从像素空间转到 latent space}
+
+直接优化像素空间的问题在于，自由度太高。模型可以找到奇怪噪声图案，因为像素空间里绝大多数点并不像自然图片。若用生成器限制 $x=G(z)$，最佳化只能在生成器能产生的图片范围内搜索，结果通常更接近自然图像。
+
+新的目标可以写成
+\[
+z^\star=\mathop{\arg\max}_{z} y_c(G(z)),\qquad x^\star=G(z^\star).
+\]
+符号含义如下：
+\begin{description}
+    \item[$G$] 训练好的图片生成器。
+    \item[$z$] 低维 latent vector。
+    \item[$y_c(G(z))$] 分类器对生成图片属于类别 $c$ 的分数。
+    \item[$x^\star$] 通过最佳 latent vector 生成出的解释图片。
+\end{description}
+
+\framefig{0.92}{figures/fig11_optimize_latent_z.jpg}
+{不再直接优化图片 $x$，而是优化 latent vector $z$，让生成器输出的图片能最大化分类器的目标类别分数。}
+{00:15:00--00:15:15}
+
+\subsection{Generator prior 的好处与代价}
+
+这种方法的好处是生成图片更自然。因为 $G$ 学过真实图片分布，它会把搜索限制在较像真实图像的 manifold 上。若分类器认为某个生成图像非常像火山、蚂蚁或建筑类别，人类也更可能看出对应视觉结构。
+
+\framefig{0.92}{figures/fig12_generator_results.jpg}
+{使用 generator constraint 后，可以得到更像自然图片的类别可视化结果，例如 redshark、ant、monastery、volcano 等。}
+{00:16:15--00:16:30}
+
+但代价是解释依赖生成器。生成器本身也有训练资料、模型能力和偏差。如果 $G$ 不会生成某些形态，解释结果就不会包含这些形态；如果 $G$ 偏好某些风格，activation maximization 结果也会被这种风格影响。因此 generator prior 让解释更可读，但并没有消除解释方法的主观设计。
+
+\begin{warningbox}{Generator constraint 的限制}
+    生成器让搜索空间更自然，但解释结果同时反映分类器和生成器。若生成器有偏差，最后看到的“模型心中的图像”也会带着这种偏差。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Generator constraint 的核心，是把解释搜索从像素空间转到生成器的 latent space。这样能减少噪声和不自然图案，让结果更像真实图片。但它也把生成器的先验引入解释过程，因此仍然需要谨慎解读。
+
+% =====================================================================
+\section{Outlook：用可解释模型模仿黑盒子}
+% =====================================================================
+
+最后，课程展望另一类解释方法：用较简单、可解释的模型去模仿复杂黑盒模型的行为。如果一个线性模型能在某个范围内输出和黑盒模型相近的结果，我们就可以分析线性模型的权重，间接理解黑盒在这个范围内做了什么。
+
+\framefig{0.86}{figures/fig13_black_box_mimic.jpg}
+{Outlook：把复杂模型当作黑盒子，尝试用简单可解释模型模仿它的输入输出行为。}
+{00:17:30--00:17:45}
+
+\subsection{Surrogate model 的基本想法}
+
+设黑盒模型为 $f(x)$，可解释模型为 $g(x)$。我们希望在关心的输入范围内，让
+\[
+g(x)\approx f(x).
+\]
+符号含义如下：
+\begin{description}
+    \item[$f$] 原始复杂模型，例如深度网络。
+    \item[$g$] 可解释代理模型，例如线性模型或小决策树。
+    \item[$\approx$] 在某个资料区域或局部邻域内输出尽量接近。
+\end{description}
+
+如果 $g$ 是线性模型：
+\[
+g(x)=w^\top x+b,
+\]
+我们就可以通过权重 $w$ 分析哪些特征对黑盒输出更重要。这个解释不直接打开黑盒内部，而是用“行为相似的可解释替身”来理解黑盒。
+
+\framefig{0.90}{figures/fig14_linear_surrogate.jpg}
+{若线性模型能模仿黑盒模型的输出，就可以通过线性权重解释黑盒模型在该区域的行为。}
+{00:18:45--00:19:00}
+
+\subsection{LIME：局部可解释的模型无关解释}
+
+课程提到的经典方法是 LIME，全名是 Local Interpretable Model-Agnostic Explanations。它的关键词有三个：
+\begin{itemize}
+    \item \textbf{Local}：只在某个输入附近解释，不要求全局模仿整个黑盒。
+    \item \textbf{Interpretable}：使用线性模型、小树等人类较容易理解的模型。
+    \item \textbf{Model-Agnostic}：不依赖黑盒模型内部结构，只需要能查询输入输出。
+\end{itemize}
+
+\framefig{0.92}{figures/fig15_lime_local_surrogate.jpg}
+{LIME 的思路：在目标输入附近采样扰动，查询黑盒输出，再训练局部线性模型尽量拟合黑盒行为。}
+{00:20:00--00:20:15}
+
+LIME 通常会在某个输入 $x_0$ 附近采样许多扰动样本，得到黑盒输出 $f(x)$，再用一个简单模型 $g$ 拟合这些局部样本。常见目标可写成
+\[
+\mathcal{L}(g)=\sum_{x\in\mathcal{N}(x_0)}\pi_{x_0}(x)\left(f(x)-g(x)\right)^2+\Omega(g).
+\]
+符号含义如下：
+\begin{description}
+    \item[$x_0$] 要解释的目标输入。
+    \item[$\mathcal{N}(x_0)$] $x_0$ 附近的扰动样本集合。
+    \item[$\pi_{x_0}(x)$] 距离权重，越接近 $x_0$ 的样本权重越大。
+    \item[$\Omega(g)$] 对解释模型复杂度的惩罚，鼓励 $g$ 简单可解释。
+\end{description}
+
+\subsection{代理解释的边界}
+
+代理模型解释有一个关键限制：它解释的是“代理模型怎样近似黑盒”，不一定等于黑盒内部真正的机制。如果局部区域选得不好、扰动样本不合理、线性模型拟合不佳，解释就可能偏离黑盒实际行为。LIME 的强处是 model-agnostic 和直观，弱点则是对采样、距离度量和局部范围较敏感。
+
+\begin{warningbox}{不要把 surrogate 当成原模型本身}
+    代理模型的解释只有在 fidelity 足够高时才有意义。若代理模型无法模仿黑盒输出，再解释代理模型权重就没有太大价值。
+\end{warningbox}
+
+\subsection{本章小结}
+
+用可解释模型模仿黑盒，是另一条可解释性路线。它不直接可视化 filter 或生成输入，而是从输入输出行为出发，用简单模型近似复杂模型。LIME 是代表方法之一，强调局部、模型无关和可解释，但它的可靠性取决于局部拟合质量。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P37 讨论的是 global explanation：我们不只想知道某次预测为什么发生，还想知道模型整体学到了什么。课程从 CNN filter 出发，展示如何通过 activation maximization 找出最能激活某个 filter 的输入图案；再推广到类别层面，试图反推出模型心中的数字或物体。
+
+本讲最重要的技术思想是“把输入当作变量”。平常训练时，我们固定输入、更新模型参数；解释时，我们固定模型、更新输入，让某个 filter activation 或类别分数最大。这个角色互换非常关键：它让我们能够主动询问模型“你最想看到什么”。
+
+但答案并不总是漂亮。直接最大化输出往往得到噪声，因为模型可能对人类无意义的高频 pattern 很敏感。加入 regularization、total variation 或 generator constraint 可以让图像更自然，却也引入人的先验和生成器偏差。因此 activation maximization 的结果应该被看作解释证据，而不是模型内心世界的绝对还原。
+
+最后的 LIME 展望提醒我们，可解释性不只有可视化一条路。我们也可以用简单可解释模型模仿黑盒行为，尤其是在某个局部区域内解释输入输出关系。这类方法适合模型不可访问或结构复杂的场景，但解释质量取决于代理模型是否真的拟合黑盒。
+
+\begin{importantbox}{本讲的压缩理解}
+    Global explanation 的核心问题是“模型整体学到了什么”。Activation maximization 从模型内部反推出输入图案，generator constraint 用自然图像先验限制搜索，LIME 则用可解释代理模型近似黑盒行为。三者都在解释模型，但每一种解释都带着方法本身的假设。
+\end{importantbox}
+
+\subsection{拓展阅读}
+
+可以继续深入的方向包括：
+\begin{itemize}
+    \item \textbf{Feature Visualization}：研究如何可视化神经网络 filters、neurons 和类别方向。
+    \item \textbf{DeepDream}：通过放大神经网络内部 activation 生成梦境般图像，是 activation maximization 的著名应用。
+    \item \textbf{GAN/VAE Prior for Explanation}：用生成模型约束解释图像，使结果更接近自然图片。
+    \item \textbf{LIME 与 SHAP}：从模型无关角度解释黑盒模型的输入输出行为。
+\end{itemize}
+
+\end{document}

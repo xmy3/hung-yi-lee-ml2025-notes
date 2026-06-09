@@ -1,0 +1,576 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator{\CE}{CE}
+\DeclareMathOperator{\sign}{sign}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{来自人类的恶意攻击（上）：Adversarial Attack 基本概念}
+\newcommand{\notesubtitle}{Image Adversarial Examples, Perturbation Constraints, and FGSM}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 29 分 49 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=39}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{为什么要研究来自人类的恶意攻击}
+% =====================================================================
+
+本讲从一个很现实的问题开始：我们已经训练了很多神经网络，也可能在作业、实验或产品中得到很高的测试正确率；但是一旦模型被放到真实世界，它面对的输入就不一定是自然分布中随机抽来的干净样本。某些输入可能是人刻意设计出来的，目标不是被模型正确处理，而是专门绕过、误导或欺骗模型。
+
+\framefig{0.90}{figures/fig01_motivation_real_world_attacks.jpg}
+{课程动机：模型部署到真实世界后，输入可能来自有意规避检测的人，典型场景包括垃圾邮件分类、恶意软件侦测与网络入侵检测。}
+{00:01:00--00:01:15}
+
+\subsection{从自然错误到有意欺骗}
+
+普通的泛化错误通常来自数据分布差异、训练资料不足、模型容量限制或标注噪声。对抗攻击不同，它假设输入的构造者知道模型会做某种判断，并主动寻找模型的弱点。也就是说，错误不再只是模型“偶然没学好”，而是有人把输入推向模型最脆弱的方向。
+
+这件事在安全相关任务中特别重要。例如垃圾邮件过滤器不是在判断一批无辜邮件，而是在面对会改写标题、正文、链接和附件格式的发送者；恶意软件检测器面对的也不是固定样本，而是会被攻击者反复修改、混淆和打包的程序；入侵检测系统面对的流量同样可能被伪装。只要模型本身成为防线，输入就可能反过来针对模型设计。
+
+\begin{knowledgebox}{Adversarial attack 的基本视角}
+    对抗攻击不是单纯问“模型在测试集上准不准”，而是问“当输入被有目的地修改时，模型是否仍然可靠”。这个视角把机器学习从静态评测带到博弈场景：模型做决策，攻击者观察决策规则或输出，再构造更会骗人的输入。
+\end{knowledgebox}
+
+\subsection{图像分类中的直观例子}
+
+课程用图像分类作为入口。假设我们有一个已经训练好的影像辨识系统，输入一张猫的照片，网络输出类别分布，并把它判断为 Tiger Cat。图像本身可以看成一个很长的向量，每个像素或每个通道的数值都是向量中的一个维度。攻击者要做的事情，是在这个向量上加一个很小的扰动。
+
+\framefig{0.88}{figures/fig02_attack_input_noise_vector.jpg}
+{图像攻击的基本形式：原始猫图像输入分类器，攻击者在像素向量上加入小扰动，希望改变分类器输出。}
+{00:03:00--00:03:15}
+
+如果扰动足够小，人眼可能看不出来图像已经被改动。没有被加扰动的原图通常称为 benign image；被加上扰动、用来误导模型的图像称为 attacked image 或 adversarial image。这里的核心张力是：对人来说，两张图几乎一样；对模型来说，两张图可能落在完全不同的决策区域。
+
+\framefig{0.88}{figures/fig03_benign_and_attacked_image.jpg}
+{Benign image 与 attacked image：在原图上加入小扰动后，人眼仍看到猫，但模型输出可能被推向其他类别。}
+{00:04:45--00:05:00}
+
+\subsection{攻击成功的含义}
+
+“让模型犯错”可以有宽松和严格两种含义。宽松的要求是模型不要再输出原来的类别即可，例如猫不要再被判成猫；严格的要求是模型必须输出攻击者指定的目标类别，例如必须把猫判成海星。后者更难，因为攻击不仅要离开原类别，还要走向指定类别。
+
+\framefig{0.90}{figures/fig04_nontargeted_vs_targeted.jpg}
+{Non-targeted 与 targeted 的区别：前者只要求输出不是原类别，后者要求输出成为指定类别，例如 Star Fish。}
+{00:06:15--00:06:30}
+
+课程展示的例子说明，这并不是只存在于概念上的可能性。原本被 ResNet-50 判断为 Tiger Cat 的猫图，在加入人眼几乎看不出的扰动后，可以被高置信度地判断为 Star Fish。更进一步，同一张猫图还可以被推向 Keyboard 等其他指定类别。
+
+\framefig{0.86}{figures/fig05_target_starfish_example.jpg}
+{指定目标为 Star Fish 的攻击示例：攻击后图像视觉上仍像猫，但模型输出变为 Star Fish。}
+{00:07:30--00:07:45}
+
+\framefig{0.86}{figures/fig06_target_keyboard_example.jpg}
+{指定目标为 Keyboard 的攻击示例：只要换一组扰动，同一张猫图也可以被推向另一个目标类别。}
+{00:08:45--00:09:00}
+
+这种现象说明模型并不是简单地“看懂了猫”，而是学到了一个从像素空间到类别分数的复杂函数。人类视觉觉得无关紧要的微小方向，在这个函数里可能对应非常大的输出变化。攻击者利用的正是这种人类感知空间和模型决策空间之间的不一致。
+
+\framefig{0.88}{figures/fig07_multiple_wrong_labels.jpg}
+{扰动强度与错误标签示例：不同扰动可以让模型输出 Persian cat、fire screen 等不同结果，部分图像在人眼看来已经明显变坏。}
+{00:09:45--00:10:00}
+
+\begin{warningbox}{不要把“模型犯错”误解为“图像已经变成另一类”}
+    对抗攻击中的关键不是图像真的变成了海星或键盘，而是模型的决策函数被扰动推到了这些类别。人类语义没有随模型输出一起改变，这正是问题严重之处。
+\end{warningbox}
+
+\subsection{本章小结}
+
+对抗攻击研究的是有目的的输入修改。它关心的不是模型在自然测试集上的平均表现，而是模型在面对刻意构造的输入时是否稳健。图像攻击的基本现象是：对人眼几乎不变的图像，对神经网络可能变成完全不同的类别。这个现象揭示了人类感知、训练数据分布和模型决策边界之间的裂缝。
+
+% =====================================================================
+\section{攻击问题的形式化描述}
+% =====================================================================
+
+要把攻击从现象变成算法，需要先定义符号。课程中的设定是：网络已经训练完成，参数固定；攻击者不再更新模型参数，而是更新输入图像本身。原图记为 $x^0$，模型对原图的输出记为 $y^0=f(x^0)$；攻击后图像记为 $x$，模型输出记为 $y=f(x)$。
+
+\subsection{固定模型，更新输入}
+
+普通训练是找一组参数，使模型在训练资料上 loss 小。对抗攻击则相反：模型参数已经固定，攻击者在输入空间里找一个新输入，让模型输出满足攻击目标。
+
+\[
+y^0=f(x^0),\qquad y=f(x).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^0$] 原始干净输入，例如一张没有被攻击的猫图。
+    \item[$x$] 攻击者构造的新输入，通常要求与 $x^0$ 足够接近。
+    \item[$f$] 已训练好的神经网络，参数在攻击过程中固定。
+    \item[$y^0$] 模型在原始输入上的输出分布。
+    \item[$y$] 模型在攻击输入上的输出分布。
+\end{description}
+
+这里最重要的差别是优化对象变了。训练时更新的是权重 $w,b$；攻击时更新的是输入 $x$。因此，如果我们可以对输入求梯度，就可以把图像本身当成可优化变量。
+
+\subsection{Non-targeted attack}
+
+Non-targeted attack 只要求模型离开原本输出。若原图被模型判断为猫，攻击者只要让攻击后输出不是猫即可。课程用一个 loss 来刻画这个目标：让攻击后输出 $y$ 和原输出 $\hat{y}$ 越远越好。若 $e(\cdot,\cdot)$ 表示两个分布之间的差距，例如交叉熵，则可以把要最小化的目标写成负距离。
+
+\framefig{0.90}{figures/fig08_nontargeted_loss.jpg}
+{Non-targeted attack 的形式：固定网络参数，寻找攻击输入，使模型输出远离原来的类别分布。}
+{00:11:00--00:11:15}
+
+\[
+x^\star=\argmin_x L(x),\qquad
+L(x)=-e(y,\hat{y}).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^\star$] 攻击者最终找到的 adversarial input。
+    \item[$L(x)$] 攻击用的目标函数。这里写成最小化形式。
+    \item[$y=f(x)$] 当前攻击输入的模型输出。
+    \item[$\hat{y}$] 原本希望模型保持的输出，课程图中可理解为原类别 cat。
+    \item[$e(y,\hat{y})$] 衡量 $y$ 与 $\hat{y}$ 差异的函数，例如交叉熵。
+\end{description}
+
+由于 $L(x)$ 前面有负号，最小化 $L(x)$ 等价于让 $e(y,\hat{y})$ 变大，也就是让当前输出远离原类别。直观地说，non-targeted attack 的优化方向是“不要再像猫”。
+
+\subsection{Targeted attack}
+
+Targeted attack 还要求输出接近攻击者指定的目标类别。以猫图为例，攻击者不仅希望模型不要输出 cat，还希望模型输出 fish。于是目标函数要同时包含两件事：远离原类别，接近目标类别。
+
+\[
+L(x)=-e(y,\hat{y})+e(y,y^{\mathrm{target}}).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$y^{\mathrm{target}}$] 攻击者指定的目标类别分布，例如 fish。
+    \item[$-e(y,\hat{y})$] 让输出远离原类别。
+    \item[$e(y,y^{\mathrm{target}})$] 让输出接近目标类别。
+\end{description}
+
+最小化这个 $L(x)$ 时，第一项鼓励模型离开 cat，第二项鼓励模型靠近 fish。Targeted attack 因此比 non-targeted attack 更有方向性，也通常更难。
+
+\framefig{0.90}{figures/fig09_targeted_loss_and_constraint.jpg}
+{Targeted loss 与不可感知约束：攻击输入既要让输出远离原类别、接近目标类别，又要与原图距离不超过 epsilon。}
+{00:13:30--00:13:45}
+
+\begin{importantbox}{攻击目标的两个层次}
+    Non-targeted attack 只需要制造错误，targeted attack 需要制造指定错误。前者对应“不要是原答案”，后者对应“必须是我指定的错误答案”。在比较攻击成功率时，必须先确认使用的是哪一种目标，否则数字没有可比性。
+\end{importantbox}
+
+\subsection{本章小结}
+
+对抗攻击可以看成固定模型后的输入优化问题。模型参数不动，攻击者更新输入 $x$。Non-targeted attack 让模型输出远离原类别；targeted attack 让模型输出远离原类别同时接近指定目标类别。形式化目标函数把“欺骗模型”转成了可优化的问题，但它还没有解决另一个关键要求：攻击后的输入必须看起来仍然像原输入。
+
+% =====================================================================
+\section{不可感知扰动与距离约束}
+% =====================================================================
+
+如果攻击者可以任意修改图像，攻击就没有意义。把一张猫图直接换成海星图，当然可以让模型输出海星，但那不是对抗样本。对抗攻击真正有意思的地方在于：攻击输入 $x$ 必须与原始输入 $x^0$ 足够接近，使人类不容易察觉差别。
+
+\subsection{距离约束}
+
+课程用一个统一约束表达“不可感知”：
+
+\[
+d(x^0,x)\le \epsilon.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$d(x^0,x)$] 原图与攻击图之间的距离函数。
+    \item[$\epsilon$] 允许的最大扰动半径，也就是攻击预算。
+    \item[$d(x^0,x)\le\epsilon$] 攻击后图像必须落在原图附近的一个可接受区域内。
+\end{description}
+
+这个约束不是纯数学装饰，它承担了人类感知假设：如果两张图的距离小于某个阈值，人类就不容易看出扰动。实际研究中，这个假设并不完美，因为人眼对不同纹理、亮度、边缘和语义区域的敏感度不同；但范数约束提供了一个可计算、可复现实验设定。
+
+\subsection{L2 范数与 L-infinity 范数}
+
+设扰动为
+
+\[
+\Delta x=x-x^0.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^0$] 原始图像向量。
+    \item[$x$] 攻击后的图像向量。
+    \item[$\Delta x$] 每个像素或通道的改变量。
+\end{description}
+
+常见距离包括 $L_2$ 范数与 $L_\infty$ 范数：
+
+\[
+d_2(x^0,x)=\|\Delta x\|_2
+=\sqrt{(\Delta x_1)^2+(\Delta x_2)^2+\cdots},
+\]
+
+\[
+d_\infty(x^0,x)=\|\Delta x\|_\infty
+=\max_i |\Delta x_i|.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$d_2$] 欧氏距离，衡量所有像素改变量的整体能量。
+    \item[$d_\infty$] 最大坐标距离，衡量任意单个像素被改动的最大幅度。
+    \item[$i$] 像素向量中的坐标索引。
+\end{description}
+
+\framefig{0.88}{figures/fig10_l2_linf_definitions.jpg}
+{不可感知扰动的距离定义：L2 范数汇总所有像素改变量，L-infinity 范数关注单个像素的最大改变量。}
+{00:16:00--00:16:15}
+
+\subsection{为什么同样的 L2 可能感知效果不同}
+
+课程强调，距离公式和人类感知并不完全等价。假设一张极小图像只有四个像素。有两种改法：第一种是每个像素都改一点点；第二种是只改一个像素，但改很多。它们的 $L_2$ 距离可能相同，因为平方和一样；但人眼可能更容易注意到第二种，因为一个像素变化太大。
+
+\framefig{0.88}{figures/fig11_l2_same_linf_different.jpg}
+{相同 L2、不同 L-infinity 的直觉：所有像素小幅变化与单个像素大幅变化可能有相同 L2，但后者更容易被注意到。}
+{00:18:30--00:18:45}
+
+这就是 $L_\infty$ 常被用于图像对抗攻击的原因之一。它限制每个像素最多只能改 $\epsilon$，避免出现少数像素被大幅篡改。若所有坐标都被限制在 $[-\epsilon,\epsilon]$ 内，攻击图像会落在以 $x^0$ 为中心的一个高维方块中。
+
+\begin{knowledgebox}{范数约束只是人类感知的近似}
+    $L_2$ 和 $L_\infty$ 都是方便计算的数学约束，不等于真正的人类视觉系统。它们能让实验可比较，却不能保证所有小范数扰动都不可见，也不能保证所有可见扰动都语义重要。理解这一点有助于避免把“满足范数约束”误读成“人类一定看不出来”。
+\end{knowledgebox}
+
+\subsection{完整的约束优化问题}
+
+把攻击目标与不可感知约束合并后，攻击可以写成：
+
+\[
+x^\star=\argmin_{d(x^0,x)\le\epsilon} L(x).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^\star$] 满足扰动预算的最优攻击输入。
+    \item[$d(x^0,x)\le\epsilon$] 可接受扰动集合。
+    \item[$L(x)$] non-targeted 或 targeted 攻击目标函数。
+\end{description}
+
+这个式子压缩了对抗攻击的核心：既要让 $L(x)$ 足够小，也就是让模型被误导；又不能让 $x$ 离 $x^0$ 太远，否则攻击不再“隐蔽”。后续所有算法大体都在回答两个问题：如何优化 $L(x)$，以及如何在更新后仍然满足约束。
+
+\subsection{本章小结}
+
+不可感知约束把攻击和普通篡改区分开来。$L_2$ 范数衡量整体扰动能量，$L_\infty$ 范数限制单个像素最大变化。课程用四像素例子说明，同样的数学距离可能对应不同感知效果，因此范数只是近似。完整攻击问题是带约束的输入优化：在 $d(x^0,x)\le\epsilon$ 的范围内，让模型输出达到攻击目标。
+
+% =====================================================================
+\section{用梯度下降攻击输入}
+% =====================================================================
+
+既然攻击问题已经写成优化问题，自然可以用梯度下降。这里的梯度下降和训练神经网络很像，但对象不同：训练时用梯度更新参数；攻击时用梯度更新输入。课程特别强调这一点，因为它是理解白箱攻击的关键。
+
+\subsection{从原图开始}
+
+攻击输入通常从原图 $x^0$ 开始，而不是从随机图像开始。原因很直接：我们希望最终的 $x$ 与 $x^0$ 接近，从原图出发更容易留在约束范围内，也更容易保持人眼语义不变。
+
+\framefig{0.88}{figures/fig12_attack_approach_start_from_x0.jpg}
+{攻击算法从原图开始，更新的是输入而不是网络参数；这与普通训练中更新权重与偏置的过程相反。}
+{00:21:00--00:21:15}
+
+若 $g_t$ 表示当前输入处 loss 对输入的梯度，普通迭代可以写成：
+
+\[
+x^t \leftarrow x^{t-1}-\eta g_t.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^t$] 第 $t$ 次更新后的攻击输入。
+    \item[$g_t$] 在 $x^{t-1}$ 处计算得到的梯度。
+    \item[$\eta$] 学习率或步长。
+    \item[$-\eta g_t$] 让目标函数下降的更新方向。
+\end{description}
+
+如果 $L(x)$ 是前面定义的攻击 loss，沿负梯度方向更新就会让输入更容易达到攻击目标。对于 targeted attack 和 non-targeted attack，具体梯度方向会由各自的 $L(x)$ 决定。
+
+\subsection{更新后投影回约束集合}
+
+直接做梯度下降可能让 $x$ 跑出允许扰动范围。课程给出一个朴素但有效的办法：每次更新后检查距离，如果 $d(x^0,x)>\epsilon$，就把更新后的点修回约束集合中。这个“修回去”的操作通常称为 projection 或 clipping。
+
+\framefig{0.88}{figures/fig13_gradient_descent_projection_intro.jpg}
+{带约束的梯度下降：每次更新输入后检查是否超过扰动预算，若超过则把输入修回可行区域。}
+{00:23:30--00:23:45}
+
+伪代码可以概括为：
+
+\[
+\begin{aligned}
+&x^0 \leftarrow \text{original image},\\
+&\text{for }t=1,\ldots,T:\\
+&\qquad x^t \leftarrow x^{t-1}-\eta g_t,\\
+&\qquad \text{if }d(x^0,x^t)>\epsilon,\quad x^t \leftarrow \operatorname{fix}(x^t).
+\end{aligned}
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$T$] 迭代次数。
+    \item[$\operatorname{fix}$] 把点拉回约束集合的操作。
+    \item[$d(x^0,x^t)>\epsilon$] 表示当前攻击输入已经超过扰动预算。
+\end{description}
+
+在 $L_\infty$ 约束下，projection 很容易理解：把每个像素的改变量夹在 $[-\epsilon,\epsilon]$ 内即可。也就是说，若某个坐标相对原图增加太多，就截断到 $+\epsilon$；减少太多，就截断到 $-\epsilon$。
+
+\framefig{0.88}{figures/fig14_projection_to_linf_ball.jpg}
+{L-infinity 约束下的投影直觉：更新后的点若跑出以原图为中心的方形区域，就被拉回边界或内部。}
+{00:25:15--00:25:30}
+
+\begin{importantbox}{攻击算法的共同骨架}
+    很多图像对抗攻击方法都可以看成同一个骨架：定义一个攻击 loss，选择一个扰动约束，从原图开始沿梯度更新输入，并在必要时把输入投影回允许区域。不同论文往往是在 loss、优化器、步长、投影方式或约束集合上做变化。
+\end{importantbox}
+
+\subsection{优化方法与约束方法可以分开理解}
+
+课程在这里提醒，文献中的攻击算法看起来很多，但差异常常落在两个位置：一是优化方法不同，例如普通梯度下降、动量方法或只走一步；二是约束不同，例如 $L_2$、$L_\infty$ 或其他感知距离。把这两部分拆开看，算法就不再显得杂乱。
+
+例如，使用同一个 targeted loss 时，可以选择 $L_\infty$ 约束，也可以选择 $L_2$ 约束；使用同一个 $L_\infty$ 约束时，可以做多步投影梯度下降，也可以做后面要讲的一步 FGSM。攻击方法的名字不同，背后的问题结构仍然相同。
+
+\subsection{本章小结}
+
+对抗攻击可以用梯度下降直接优化输入。算法从原图 $x^0$ 开始，每一步根据 loss 对输入的梯度更新 $x$，然后检查是否超过扰动预算。若超过，就把输入投影回约束集合。这样做把“骗过模型”和“看起来仍像原图”同时纳入迭代过程。许多攻击方法的差别，可以理解为优化步骤和约束集合的不同组合。
+
+% =====================================================================
+\section{FGSM 与 iterative FGSM}
+% =====================================================================
+
+Fast Gradient Sign Method, 简称 FGSM，是课程在本讲重点介绍的第一个经典攻击方法。它的精神非常简单：既然一般方法要迭代更新输入，那 FGSM 就尝试只更新一次，用一次足够有方向性的扰动快速造成攻击。
+
+\subsection{一次更新的想法}
+
+FGSM 仍然从约束优化问题出发：
+
+\[
+x^\star=\argmin_{d(x^0,x)\le\epsilon}L(x).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^\star$] 攻击后图像。
+    \item[$L(x)$] 攻击目标函数。
+    \item[$\epsilon$] 最大允许扰动。
+\end{description}
+
+普通投影梯度下降会做 $T$ 次更新；FGSM 把 $T$ 改成 $1$。课程用“一击必杀”的直觉来解释它：只根据原图附近的梯度方向走一步，看看是否已经足以跨过模型决策边界。
+
+\framefig{0.88}{figures/fig15_fgsm_one_step.jpg}
+{FGSM 的核心想法：把原本多次迭代的输入更新改为一次更新，希望一击就找到成功攻击图像。}
+{00:26:30--00:26:45}
+
+\subsection{为什么用 sign}
+
+在 $L_\infty$ 约束下，我们关心的是每个像素最多可以改 $\epsilon$。如果只更新一次，并希望在允许范围内尽可能大地推动 loss，最直接的做法就是让每个坐标都沿梯度符号方向走到边界。
+
+课程图中写成
+
+\[
+g=\begin{bmatrix}
+\sign\left(\left.\frac{\partial L}{\partial x_1}\right|_{x=x^{t-1}}\right)\\
+\sign\left(\left.\frac{\partial L}{\partial x_2}\right|_{x=x^{t-1}}\right)\\
+\vdots
+\end{bmatrix},
+\qquad
+\sign(t)=
+\begin{cases}
+1, & t>0,\\
+-1, & t\le 0.
+\end{cases}
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$g$] 梯度符号向量，每个坐标只保留正负方向。
+    \item[$\frac{\partial L}{\partial x_i}$] loss 对第 $i$ 个输入坐标的偏导。
+    \item[$\sign(\cdot)$] 符号函数，只输出 $+1$ 或 $-1$。
+\end{description}
+
+\framefig{0.88}{figures/fig16_fgsm_sign_gradient.jpg}
+{FGSM 的 sign-gradient 形式：每个像素按 loss 梯度的正负方向移动，移动幅度由 epsilon 控制。}
+{00:28:15--00:28:30}
+
+若采用“增加分类 loss”的常见写法，FGSM 常被写成
+
+\[
+x^{\mathrm{adv}}=x^0+\epsilon\,\sign(\nabla_x J(\theta,x^0,y_{\mathrm{true}})).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x^{\mathrm{adv}}$] FGSM 生成的攻击图像。
+    \item[$J$] 原分类任务的训练 loss，例如交叉熵。
+    \item[$\theta$] 固定的模型参数。
+    \item[$y_{\mathrm{true}}$] 原始正确标签。
+    \item[$\epsilon$] 每个像素坐标允许的最大改变量。
+\end{description}
+
+这个式子和课程中“最小化攻击 loss”的写法方向可能看起来相反，是因为 $L(x)$ 的定义可以吸收正负号。关键不是记某一个符号，而是理解：FGSM 用输入梯度的符号决定每个像素该往哪边推，并一次性推到 $L_\infty$ 预算边界。
+
+\subsection{Iterative FGSM}
+
+FGSM 只走一步，速度快，但可能不够强。Iterative FGSM 把一步拆成多步：每次走一个较小步长，再投影回 $L_\infty$ 约束集合。它介于普通投影梯度下降和 FGSM 之间，仍然使用 sign-gradient，但不把全部预算一次用完。
+
+可以写成：
+
+\[
+x^{t+1}=\Pi_{B_\infty(x^0,\epsilon)}
+\left(x^t+\alpha\,\sign(\nabla_x J(\theta,x^t,y_{\mathrm{true}}))\right).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\alpha$] 每一步的攻击步长，通常小于 $\epsilon$。
+    \item[$\Pi_{B_\infty(x^0,\epsilon)}$] 投影操作，把点投回以 $x^0$ 为中心、半径为 $\epsilon$ 的 $L_\infty$ 球。
+    \item[$B_\infty(x^0,\epsilon)$] 所有满足 $\|x-x^0\|_\infty\le\epsilon$ 的输入集合。
+\end{description}
+
+从几何上看，一步 FGSM 会直接把点推向 $L_\infty$ 方框的某个角落；iterative FGSM 则可以多次观察梯度变化，逐步调整方向。因此它通常比单步 FGSM 更强，但也更慢，并且需要更多模型梯度访问。
+
+\subsection{White-box 与 black-box 的过渡}
+
+本讲最后出现 white-box v.s. black-box 的标题页。课程在这一页只做过渡：前面讲的攻击都默认我们知道网络参数，可以对输入求梯度，这属于 white-box attack。若攻击者不知道模型参数，只能观察输出或查询接口，就进入 black-box attack。下一讲会进一步讨论神经网络能否躲过人类更深的恶意。
+
+\framefig{0.88}{figures/fig17_white_box_black_box_transition.jpg}
+{White-box 与 black-box 的过渡：本讲方法默认知道网络参数并能计算梯度，后续会讨论信息更少时的攻击。}
+{00:29:30--00:29:45}
+
+\begin{warningbox}{FGSM 的“快”来自强假设}
+    FGSM 很快，是因为它假设能拿到模型梯度，并且用一次线性近似决定扰动方向。若模型不可见、梯度不可得，或 loss landscape 在原图附近非常不线性，单步 sign-gradient 的效果就可能下降，需要多步攻击、替代模型或查询式黑箱方法。
+\end{warningbox}
+
+\subsection{本章小结}
+
+FGSM 是把带约束输入优化压缩成一步的攻击方法。它在 $L_\infty$ 约束下使用梯度符号，让每个像素沿能改变 loss 的方向移动 $\epsilon$。Iterative FGSM 则把一次大步改成多次小步，每步后投影回可行区域，通常攻击更强但成本更高。本讲的这些方法建立在 white-box 假设上，也就是攻击者知道模型并能取得梯度。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P39 建立的是图像对抗攻击的基础框架。课程从真实世界部署中的恶意输入谈起，再用猫图攻击说明：神经网络的决策边界可能和人类感知不一致。对人眼来说几乎一样的两张图，模型可能给出完全不同的标签；而且攻击可以是 non-targeted，也可以是 targeted。
+
+从数学上看，本讲把攻击写成一个带约束优化问题：
+
+\[
+x^\star=\argmin_{d(x^0,x)\le\epsilon}L(x).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$L(x)$] 描述攻击目标的 loss，例如远离原类别或接近目标类别。
+    \item[$d(x^0,x)\le\epsilon$] 描述不可感知扰动的约束。
+    \item[$x^\star$] 在攻击目标和扰动约束之间折中后得到的攻击输入。
+\end{description}
+
+这个式子是本讲最重要的压缩理解。它同时包含三件事：第一，模型参数固定，攻击更新输入；第二，攻击输入必须让模型输出偏离期望；第三，攻击输入不能离原图太远。后面的梯度下降、projection、FGSM 和 iterative FGSM 都是在这个式子上选择不同的求解方式。
+
+\begin{importantbox}{本讲的核心压缩}
+    对抗攻击不是魔法，而是输入空间中的约束优化。模型已经训练好，攻击者利用 loss 对输入的梯度，在人类不易察觉的扰动范围内移动图像，让模型输出跨过决策边界。
+\end{importantbox}
+
+几个容易混淆的点值得特别记住：
+\begin{itemize}
+    \item Non-targeted attack 只要求模型不要输出原类别；targeted attack 要求模型输出指定目标类别。
+    \item $L_2$ 与 $L_\infty$ 都是感知相似性的近似，不是真正的人类视觉模型。
+    \item 攻击时更新的是输入 $x$，不是网络参数 $\theta$。
+    \item Projection 的作用是维持不可感知约束，避免梯度更新把图像改得太远。
+    \item FGSM 是单步 sign-gradient 攻击；iterative FGSM 是多步 sign-gradient 加投影。
+    \item 本讲默认 white-box，即知道模型参数并能计算输入梯度。
+\end{itemize}
+
+\subsection{和前后课程的连接}
+
+前一页 P38 讨论 NLP 上的 adversarial attack，核心难点来自离散 token 空间；P39 回到图像场景，核心优势是输入空间连续、可微，因而可以直接对输入做梯度优化。两者共同的问题是：怎样在“人类认为基本没变”的前提下，让模型输出发生显著变化。
+
+下一讲自然会进入更复杂的设定。若攻击者不知道模型参数，如何进行 black-box attack？若防御者知道有攻击，能否通过 adversarial training、输入预处理、检测器或鲁棒模型设计抵御？这些问题都建立在本讲的基础上：先理解对抗样本如何被构造，才能讨论模型如何躲过它们。
+
+\subsection{本讲之后可以继续追问的问题}
+
+后续学习可以沿着三条线展开。第一，攻击更强：多步优化、动量、不同范数、不同目标函数能否提高成功率？第二，攻击更现实：不知道模型、查询次数有限、输入经过压缩或随机化时还能否攻击？第三，防御更可靠：模型是否真的学到了人类语义，还是只是在局部扰动上被训练得更平滑？
+
+这些问题的共同底层仍然是本讲的那句式子：在约束集合里优化输入。只要这件事成立，模型鲁棒性就不能只靠标准测试准确率判断，而必须放到对抗环境中检验。
+
+\end{document}

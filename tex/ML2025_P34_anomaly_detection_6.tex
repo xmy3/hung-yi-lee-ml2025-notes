@@ -1,0 +1,373 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（六）：最大似然与高斯密度}
+\newcommand{\notesubtitle}{Maximum Likelihood and Gaussian Density for Unlabeled Anomaly Detection}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 12 分 18 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=34}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从训练资料到密度函数}
+% =====================================================================
+
+上一讲把无标签异常检测写成一个密度判断问题：若输入 $x$ 在训练资料分布中常见，就判为 normal；若它很罕见，就判为 anomaly。本讲要回答更具体的问题：这个代表“常见程度”的机率密度函数到底怎么来？
+
+课程从一个基本假设开始：我们收集到的训练资料
+\[
+\{x^1,x^2,\ldots,x^N\}
+\]
+是从某个未知的 probability density function 采样出来的。这个密度函数写作 $f_\theta(x)$，其中 $\theta$ 是参数。参数 $\theta$ 决定了密度函数的形状；但一开始 $\theta$ 不知道，必须从训练资料中估计出来。
+
+\framefig{0.86}{figures/fig01_maximum_likelihood_framework.jpg}
+{最大似然的基本框架：假设资料来自参数为 $\theta$ 的密度函数，并选择让训练资料最可能出现的参数}
+{00:03:00--00:03:15}
+
+\subsection{参数的意义}
+
+可以把 $f_\theta(x)$ 想成一张“正常行为地图”。某些区域密度高，代表训练资料常在那里出现；某些区域密度低，代表训练资料很少在那里出现。$\theta$ 控制这张地图的形状，例如高密度区域在哪里、伸展方向是什么、分布有多宽。
+
+在 Twitch Plays Pokémon 的例子中，$x$ 是玩家行为向量，例如
+\[
+x=
+\begin{bmatrix}
+\text{垃圾话比例}\\
+\text{无政府状态发言比例}
+\end{bmatrix}.
+\]
+密度函数 $f_\theta(x)$ 的任务，就是告诉我们某种玩家行为在正常玩家群体中出现的可能性有多高。
+
+\subsection{为什么不能直接数点}
+
+如果资料只有二维，而且样本很多，我们可以画散点图，用肉眼看哪些区域密集。但真实机器学习问题往往维度很高，无法直接画出来；同时，新输入 $x$ 可能从来没有在训练集中一模一样地出现过。我们不能只问“训练集中有没有这个点”，而要问“像这样的点在训练分布中合理吗”。
+
+这就是密度模型的作用：它把离散训练样本推广成一个连续函数。只要给定一个新的 $x$，即使训练时没见过，也可以代入 $f_\theta(x)$ 算出一个密度值。
+
+\begin{importantbox}{无标签异常检测的建模目标}
+    训练资料本身不提供类别标签，因此模型要学习的是资料分布，而不是类别边界。估计密度函数，就是把“哪些行为像训练资料”变成可计算的分数。
+\end{importantbox}
+
+\subsection{本章小结}
+
+本讲从“训练资料来自某个未知密度函数”这一假设出发。密度函数 $f_\theta(x)$ 描述正常资料在特征空间中的分布，参数 $\theta$ 决定它的形状。异常检测的第一步，就是用训练资料估计出合理的 $\theta$。
+
+% =====================================================================
+\section{最大似然：选择最能解释资料的参数}
+% =====================================================================
+
+既然 $\theta$ 未知，我们需要一个原则从资料中选出它。课程采用 maximum likelihood，也就是最大似然。核心想法是：选择一个参数 $\theta$，使得目前观察到的训练资料在这个密度函数下最可能被产生出来。
+
+若假设训练样本独立同分布，训练集的 likelihood 可以写成
+\[
+L(\theta)=f_\theta(x^1)f_\theta(x^2)\cdots f_\theta(x^N).
+\]
+于是最大似然估计为
+\[
+\theta^\ast=\arg\max_\theta L(\theta).
+\]
+
+\subsection{likelihood 不是同一个角度的机率}
+
+这里容易混淆：$f_\theta(x)$ 是在固定参数 $\theta$ 时，看某个资料点 $x$ 的密度；$L(\theta)$ 则是把训练资料固定住，看不同参数 $\theta$ 对这些资料的解释能力。也就是说，likelihood 是关于参数的函数。
+
+如果某个 $\theta$ 让训练资料大多落在高密度区域，那么每个 $f_\theta(x^n)$ 较大，乘积 $L(\theta)$ 也较大。若某个 $\theta$ 把高密度区域放错位置，训练资料落在低密度处，likelihood 就会小。
+
+\subsection{实际计算常用对数似然}
+
+课程画面中直接使用乘积形式，这是概念上最直观的写法。实际计算时，通常会取 log：
+\[
+\ell(\theta)=\log L(\theta)=\sum_{n=1}^N \log f_\theta(x^n).
+\]
+取对数不会改变最大值的位置，因为 log 是单调递增函数；但它能把乘积变成加总，避免大量小数相乘导致数值下溢，也更方便求导优化。
+
+\begin{knowledgebox}{最大似然的直觉}
+    Maximum likelihood 不是寻找“看起来最平滑”的分布，也不是寻找覆盖范围最大的分布，而是寻找最能让已观察训练资料出现的参数。它把“拟合训练分布”变成一个优化问题。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+最大似然提供了估计密度模型参数的标准方法：定义训练资料在参数 $\theta$ 下的 likelihood，再选择让 likelihood 最大的 $\theta^\ast$。在无标签异常检测中，这一步相当于用正常训练资料拟合出一张正常行为的密度地图。
+
+% =====================================================================
+\section{用高斯分布作为具体密度模型}
+% =====================================================================
+
+为了让最大似然更具体，课程接着选择 Gaussian distribution 作为密度函数。对 $D$ 维向量 $x$，多变量高斯分布写作
+\[
+f_{\mu,\Sigma}(x)=
+\frac{1}{(2\pi)^{D/2}}\frac{1}{|\Sigma|^{1/2}}
+\exp\left\{-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)\right\}.
+\]
+其中 $\mu$ 是 mean，$\Sigma$ 是 covariance matrix。
+
+\framefig{0.86}{figures/fig02_gaussian_density_formula.jpg}
+{多变量 Gaussian distribution：输入是向量 $x$，输出是采样到 $x$ 的密度，参数为 mean $\mu$ 与 covariance matrix $\Sigma$}
+{00:05:00--00:05:15}
+
+\subsection{均值和协方差的角色}
+
+$\mu$ 决定分布中心在哪里。对于玩家行为资料，它表示“典型玩家行为”的中心位置，例如平均垃圾话比例和平均无政府状态发言比例。
+
+$\Sigma$ 决定分布的形状、宽窄和方向。若某个方向变异大，分布会沿那个方向拉长；若两个特征相关，椭圆形高密度区域会倾斜。直观地说，$\Sigma$ 告诉模型哪些方向上的变化是正常的，哪些方向上的偏离更少见。
+
+公式中的二次项
+\[
+(x-\mu)^T\Sigma^{-1}(x-\mu)
+\]
+可以理解成一种考虑协方差结构的距离。离 $\mu$ 越远，或者沿着资料本来很少变化的方向偏离越多，密度通常越低。
+
+\subsection{把一般参数换成高斯参数}
+
+前面一般写作 $f_\theta(x)$。若选择高斯分布，参数 $\theta$ 就具体变成
+\[
+\theta=(\mu,\Sigma).
+\]
+likelihood 也变成
+\[
+L(\mu,\Sigma)=f_{\mu,\Sigma}(x^1)f_{\mu,\Sigma}(x^2)\cdots f_{\mu,\Sigma}(x^N).
+\]
+最大似然目标相应变成
+\[
+\mu^\ast,\Sigma^\ast=\arg\max_{\mu,\Sigma}L(\mu,\Sigma).
+\]
+
+\subsection{本章小结}
+
+高斯分布提供了一个具体的密度模型。它用 $\mu$ 表示正常资料中心，用 $\Sigma$ 表示资料分布的形状和相关性。选择高斯后，无标签异常检测就变成估计 $\mu$ 与 $\Sigma$，再用得到的密度函数判断新输入是否常见。
+
+% =====================================================================
+\section{似然大小与模型选择}
+% =====================================================================
+
+同一批训练资料，在不同的 $\mu$ 和 $\Sigma$ 下会得到不同的 likelihood。课程图中用两个椭圆直观说明：如果高斯分布的高密度区域覆盖了训练资料主要集中的地方，likelihood 就大；如果高密度区域放在资料稀疏处，likelihood 就小。
+
+\framefig{0.86}{figures/fig03_large_small_likelihood_examples.jpg}
+{不同高斯参数会给训练资料不同 likelihood：高密度区域贴合资料时 $L$ 大，放错位置时 $L$ 小}
+{00:07:30--00:07:45}
+
+\subsection{最大似然如何体现“贴合资料”}
+
+假设一个高斯分布的 $\mu$ 位于训练资料密集区域，并且 $\Sigma$ 的形状和资料云的伸展方向相近。此时大量训练样本都有较高的 $f_{\mu,\Sigma}(x^n)$，乘积 $L(\mu,\Sigma)$ 会较大。
+
+反过来，如果 $\mu$ 放在偏离资料云的位置，或者 $\Sigma$ 太窄、方向不对，许多训练样本会落在低密度区域。即使有少数点被解释得很好，整体 likelihood 仍可能很小。最大似然因此鼓励模型解释整批训练资料，而不是只解释其中某几个点。
+
+\subsection{为什么课程提到神经网络密度模型}
+
+画面中也提到一个旁支问题：如果 $f_\theta(x)$ 不是高斯，而是由 neural network 定义，$\theta$ 就会是网络参数。这当然也可以做，现代生成模型、normalizing flow、energy-based model 等都可以被用来估计复杂密度。但这些方法超出本讲范围。
+
+\framefig{0.86}{figures/fig04_network_density_out_of_scope.jpg}
+{密度函数也可以由神经网络参数化，但本讲先使用高斯分布作为简单可解的例子}
+{00:08:30--00:08:45}
+
+本讲选择高斯，是为了让整条流程清楚而可手算：定义密度、写出 likelihood、求出参数、用阈值检测异常。它不代表真实资料一定长得像高斯。
+
+\begin{warningbox}{模型假设会限制检测能力}
+    如果真实正常资料分布明显不是高斯，例如多峰、弯曲、强边界或长尾，那么单一高斯可能拟合不好。密度模型的错误会直接影响异常分数。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Likelihood 衡量某组参数对整批训练资料的解释能力。高斯高密度区域越贴合训练资料，likelihood 越大。课程使用高斯是为了说明最大似然流程；若资料分布更复杂，可以换成更复杂的密度模型，但原则仍是估计正常资料分布。
+
+% =====================================================================
+\section{闭式解：平均值与协方差矩阵}
+% =====================================================================
+
+对于高斯分布，最大似然估计有 closed-form solution，不需要复杂迭代。课程给出的结论是：
+\[
+\mu^\ast=\frac{1}{N}\sum_{n=1}^N x^n,
+\]
+\[
+\Sigma^\ast=\frac{1}{N}\sum_{n=1}^N (x^n-\mu^\ast)(x^n-\mu^\ast)^T.
+\]
+
+\framefig{0.86}{figures/fig05_closed_form_mu_sigma.jpg}
+{高斯最大似然的闭式解：$\mu^\ast$ 是训练资料平均，$\Sigma^\ast$ 是围绕平均值的协方差矩阵}
+{00:10:15--00:10:30}
+
+\subsection{例子中的参数值}
+
+在玩家行为二维例子中，课程算出
+\[
+\mu^\ast=
+\begin{bmatrix}
+0.29\\
+0.73
+\end{bmatrix},
+\qquad
+\Sigma^\ast=
+\begin{bmatrix}
+0.04 & 0\\
+0 & 0.03
+\end{bmatrix}.
+\]
+这表示平均玩家约有 $0.29$ 的垃圾话比例，以及 $0.73$ 的无政府状态发言比例。协方差矩阵在画面中近似为对角矩阵，代表两个特征在这个简化例子里没有显著交叉相关；两个对角值则描述各自方向上的变异程度。
+
+\subsection{为什么平均值不是全部}
+
+只看 $\mu^\ast$ 不够，因为异常检测不仅关心中心在哪里，也关心资料如何散开。假如某个方向上的正常变异本来就很大，偏离中心一点并不奇怪；若某个方向上的正常变异很小，同样大小的偏离就更可疑。$\Sigma^\ast$ 正是用来表达这种方向性与尺度差异。
+
+因此，高斯密度判断不是简单的欧氏距离判断。它考虑协方差结构，等价于在使用一种由 $\Sigma^{-1}$ 加权的距离，也就是 Mahalanobis distance 的形式。
+
+\begin{knowledgebox}{高斯密度的异常分数}
+    在固定 $\mu^\ast,\Sigma^\ast$ 后，$f_{\mu^\ast,\Sigma^\ast}(x)$ 越小，输入越罕见。实际系统中常用 $-\log f_{\mu^\ast,\Sigma^\ast}(x)$ 作为异常分数，数值越大越异常。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+高斯最大似然估计有简单公式：均值是训练样本平均，协方差是样本围绕均值的平均外积。$\mu^\ast$ 告诉我们正常资料中心，$\Sigma^\ast$ 告诉我们正常资料如何扩散。两者合起来定义了后续异常检测所用的密度函数。
+
+% =====================================================================
+\section{用密度阈值做最终判定}
+% =====================================================================
+
+求出 $\mu^\ast$ 和 $\Sigma^\ast$ 后，就得到了一个具体密度函数 $f_{\mu^\ast,\Sigma^\ast}(x)$。任何新玩家的行为向量 $x$，即使训练时从未出现过，都可以代入这个函数得到一个密度值。
+
+\framefig{0.86}{figures/fig06_density_threshold_rule.jpg}
+{拟合出 $\mu^\ast,\Sigma^\ast$ 后，可用高斯密度值与阈值 $\lambda$ 判断 normal 或 anomaly}
+{00:10:30--00:10:45}
+
+最终判定规则为
+\[
+f(x)=
+\begin{cases}
+\mathrm{normal}, & f_{\mu^\ast,\Sigma^\ast}(x)>\lambda,\\
+\mathrm{anomaly}, & f_{\mu^\ast,\Sigma^\ast}(x)\le \lambda.
+\end{cases}
+\]
+这和前几讲的 confidence threshold 形式很像，但分数来源不同：这里不是分类器 confidence，而是高斯密度值。
+
+\subsection{密度热力图的解释}
+
+课程把二维平面上每一点的 $f_{\mu^\ast,\Sigma^\ast}(x)$ 都算出来，用颜色表示密度大小。颜色越偏红、越深，表示密度越高，行为越像一般玩家；颜色越浅、越偏蓝，表示密度越低，行为越罕见。
+
+\framefig{0.86}{figures/fig07_density_heatmap.jpg}
+{密度热力图：颜色代表 $f_{\mu^\ast,\Sigma^\ast}(x)$ 的大小，红色高密度区域更像 normal，蓝色低密度区域更可疑}
+{00:11:15--00:11:30}
+
+这张图把 $P(x)$ 的直觉可视化了：训练样本密集的区域，模型给出较高密度；远离密集区域的位置，模型给出较低密度。若资料是高维的，我们无法直接画出这张图，但模型仍然可以给每个输入算出数值。
+
+\subsection{阈值就是一条等高线}
+
+在二维图中，阈值 $\lambda$ 可以看成密度热力图上的一条 contour line。等高线内侧密度大于阈值，被判为 normal；外侧密度小于或等于阈值，被判为 anomaly。
+
+\framefig{0.86}{figures/fig08_contour_threshold_normal_anomaly.jpg}
+{阈值 $\lambda$ 对应密度图上的一条等高线：线内高密度区域为 normal，线外低密度区域为 anomaly}
+{00:12:00--00:12:15}
+
+课程最后用两个点说明：一个玩家虽然垃圾话比例较高，但常在无政府状态下发言，可能落在高密度区，因此仍是 normal；另一个玩家垃圾话比例不高，却很刻意地不在无政府状态下发言，落在低密度区，可能更异常。这个例子说明异常不一定由单一特征决定，而可能来自特征组合。
+
+\begin{importantbox}{阈值仍由任务决定}
+    $\lambda$ 可以用 development set 选择，也可以根据可接受警报量或风险偏好设定。密度模型给出分数，阈值决定行动边界。
+\end{importantbox}
+
+\subsection{本章小结}
+
+拟合高斯后，异常检测就变成计算 $f_{\mu^\ast,\Sigma^\ast}(x)$ 并与阈值比较。二维时，阈值是一条等高线；高维时，它对应一个高维密度边界。低密度样本代表罕见行为，更可能被标为 anomaly。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+这一讲完整补上了无标签异常检测中“如何得到 $P(x)$”的问题。流程可以整理成：
+\begin{enumerate}
+    \item 假设训练资料来自某个密度函数 $f_\theta(x)$。
+    \item 用 likelihood 衡量参数 $\theta$ 对训练资料的解释能力。
+    \item 选择最大化 likelihood 的参数 $\theta^\ast$。
+    \item 在本讲的具体例子中，选择高斯分布，参数为 $\mu$ 和 $\Sigma$。
+    \item 用闭式解得到 $\mu^\ast$ 与 $\Sigma^\ast$。
+    \item 对新输入计算 $f_{\mu^\ast,\Sigma^\ast}(x)$，再用阈值 $\lambda$ 判定 normal 或 anomaly。
+\end{enumerate}
+
+这条路线的优点是清楚、可解释、容易实现。它把“像不像训练资料”变成了密度值，也能在二维图上用热力图和等高线直观展示。它的限制也同样清楚：单一 Gaussian 假设可能太简单，真实资料可能多峰、非线性或高维稀疏；如果特征表示不合适，密度估计也会偏离真正想检测的异常。
+
+因此，P33 和 P34 合在一起给出的不是某一个最终模型，而是一套基本范式：无标签异常检测先定义特征空间，再拟合正常资料分布，最后用低密度作为异常信号。后续若换成混合高斯、核密度估计、autoencoder 或神经生成模型，本质仍是在回答同一个问题：新输入是否落在正常资料高密度区域。
+
+\end{document}

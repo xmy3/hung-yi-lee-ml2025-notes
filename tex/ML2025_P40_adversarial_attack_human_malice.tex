@@ -1,0 +1,592 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\sign}{sign}
+\DeclareMathOperator{\clip}{clip}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{来自人类的恶意攻击（下）：黑箱攻击与防御}
+\newcommand{\notesubtitle}{Black-box Transferability, Physical Attacks, Backdoors, and Defense}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 46 分 33 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=40}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从白箱攻击到黑箱攻击}
+% =====================================================================
+
+P39 讲过 FGSM 和 iterative FGSM。那些方法默认攻击者知道模型参数，并且能对输入计算梯度。本讲从这个假设开始追问：如果模型部署在网络服务中，参数没有公开，攻击者只能看到输入输出，那么攻击是否就不可能了？答案是否定的。黑箱攻击不仅可能，而且在许多情况下相当有效。
+
+\subsection{白箱攻击依赖梯度}
+
+白箱攻击的关键是知道网络参数。以 FGSM 为例，攻击者需要计算 loss 对输入坐标的偏导，再取符号方向，把扰动加到图片上。若没有参数，就不能直接反向传播得到这个梯度。
+
+\framefig{0.90}{figures/fig01_white_box_gradient_requires_parameters.jpg}
+{白箱攻击的前提：FGSM 需要知道模型参数，才能计算 loss 对输入的梯度并生成扰动。}
+{00:00:30--00:00:45}
+
+用公式写，白箱攻击常见的一步扰动是：
+
+\[
+x^{\mathrm{adv}}=x+\epsilon\,\sign(\nabla_x L(f_\theta(x),y)).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x$] 原始输入图片。
+    \item[$x^{\mathrm{adv}}$] 攻击后输入。
+    \item[$\epsilon$] 扰动预算。
+    \item[$f_\theta$] 参数为 $\theta$ 的目标模型。
+    \item[$L$] 攻击或分类 loss。
+    \item[$\nabla_x L$] loss 对输入图片的梯度。
+\end{description}
+
+这里 $\theta$ 必须可用，否则无法直接计算 $\nabla_x L$。这也是很多人一开始会有的直觉：只要不公开模型参数，攻击者就不能做 FGSM，系统似乎就安全了。
+
+\subsection{黑箱攻击的问题设定}
+
+黑箱攻击正是针对“参数不可得”的情境。攻击者可能只能调用 API，知道模型会返回类别、分数或排名，却不知道网络结构、训练资料和参数。课程用线上模型和作业评测系统做类比：你知道有一个模型在做判断，但不知道助教或服务端到底用了哪一个架构。
+
+\framefig{0.90}{figures/fig02_black_box_attack_is_possible.jpg}
+{黑箱攻击问题：攻击者拿不到线上模型参数，但仍然希望构造能骗过目标模型的输入。}
+{00:01:45--00:02:00}
+
+黑箱设定可以概括为：
+
+\[
+\text{known: } x,\; f_{\mathrm{target}}(x)\quad
+\text{unknown: } \theta_{\mathrm{target}},\; \nabla_x L(f_{\theta_{\mathrm{target}}}(x),y).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$f_{\mathrm{target}}$] 被攻击的目标模型。
+    \item[$\theta_{\mathrm{target}}$] 目标模型参数，攻击者无法取得。
+    \item[$f_{\mathrm{target}}(x)$] 查询输入后观察到的输出。
+    \item[$\nabla_x L$] 白箱攻击需要但黑箱攻击拿不到的梯度。
+\end{description}
+
+黑箱攻击的难点不是攻击目标消失了，而是优化资讯变少了。攻击者仍然想找 $x^{\mathrm{adv}}$，只是不能直接使用目标模型的梯度。
+
+\subsection{Proxy network 与迁移攻击}
+
+课程介绍的第一个黑箱方法是训练一个 proxy network。若攻击者拥有目标任务的训练资料，或者能收集到相似资料，就可以自己训练一个替代模型。然后攻击者不攻击目标模型，而是对白箱可见的 proxy model 做攻击，再把生成的 attacked object 拿去测试目标模型。
+
+\framefig{0.90}{figures/fig03_proxy_network_transfer_attack.jpg}
+{Proxy network 思路：先训练一个替代模型，在替代模型上生成攻击样本，再把攻击样本送到目标黑箱模型。}
+{00:03:00--00:03:15}
+
+可以写成：
+
+\[
+\tilde{x}=A(\tilde{f},x,y),\qquad
+\text{test whether } f_{\mathrm{target}}(\tilde{x}) \text{ is fooled}.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\tilde{f}$] 攻击者自己训练的 proxy model。
+    \item[$A$] 白箱攻击算法，例如 FGSM 或 iterative FGSM。
+    \item[$\tilde{x}$] 在 proxy model 上生成的攻击样本。
+    \item[$f_{\mathrm{target}}$] 真正要攻击的黑箱模型。
+\end{description}
+
+这种做法的核心现象叫 transferability。也就是说，一个模型上生成的对抗样本，可能迁移到另一个模型上仍然有效。若 proxy 与 target 训练资料、任务或架构相近，迁移成功率往往更高。
+
+\begin{importantbox}{黑箱攻击的第一层惊讶}
+    不公开参数并不等于安全。只要攻击样本能在模型之间迁移，攻击者就可以绕过“拿不到目标梯度”的限制：先攻击自己训练的 proxy，再把结果拿去攻击目标模型。
+\end{importantbox}
+
+\subsection{本章小结}
+
+白箱攻击依赖模型参数和输入梯度；黑箱攻击拿不到这些资讯，但仍然可以利用 proxy network。迁移攻击把“攻击目标模型”改写成“攻击一个相似模型，再利用对抗样本的迁移性”。这说明安全不能只依赖隐藏参数，因为模型之间可能共享相似的脆弱方向。
+
+% =====================================================================
+\section{为什么黑箱攻击可以成功}
+% =====================================================================
+
+课程接着用文献结果和决策边界图解释 transferability。不同神经网络虽然架构不同，但它们在同一任务上训练，学到的特征和局部决策边界可能有相似之处。于是，在一个网络上能造成错误的方向，到了另一个网络上也可能仍然接近有效方向。
+
+\subsection{迁移攻击结果表}
+
+课程展示的表格来自黑箱攻击文献。横轴是被攻击的目标模型，纵轴是 proxy model。表中数字是攻击后的 accuracy，数字越低表示攻击越成功。对角线是白箱攻击，因为 proxy 和 target 是同一个模型；非对角线是黑箱迁移攻击。
+
+\framefig{0.90}{figures/fig04_transferability_matrix.jpg}
+{迁移攻击结果表：proxy 与目标模型不同也能攻击成功，表中 accuracy 越低代表攻击越有效。}
+{00:04:45--00:05:00}
+
+表格的重点不在某一个具体百分比，而在非对角线仍然很低。换句话说，即使攻击者不知道目标模型，只用另一个网络当 proxy，也可能显著降低目标模型准确率。课程特别提醒，若直接用相同模型攻击，相当于白箱攻击，成功率自然很高；真正值得注意的是不同模型之间的迁移。
+
+\subsection{Ensemble attack}
+
+如果攻击者不知道目标模型是哪一个，可以更进一步：同时攻击多个 proxy model。攻击者构造一个样本，让它在多个替代网络上都能成功，再拿去攻击目标模型。这样的攻击往往比只依赖单一 proxy 更稳，因为它寻找的是多个模型共同脆弱的方向。
+
+\framefig{0.90}{figures/fig05_ensemble_attack_matrix.jpg}
+{Ensemble attack：同时攻击多个 proxy model，寻找能跨模型迁移的共同脆弱方向。}
+{00:08:00--00:08:15}
+
+一个简单的 ensemble loss 可以写成：
+
+\[
+L_{\mathrm{ens}}(x)=\sum_{m=1}^{M}\alpha_m L_m(x).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$M$] proxy model 的数量。
+    \item[$L_m$] 第 $m$ 个 proxy model 上的攻击 loss。
+    \item[$\alpha_m$] 第 $m$ 个 proxy 的权重。
+    \item[$L_{\mathrm{ens}}$] 多模型合并后的攻击目标。
+\end{description}
+
+最小化或最大化这个 ensemble loss 时，攻击方向不再只服务于某一个模型，而是服务于一组模型。若目标黑箱模型也学到了类似特征，它被攻击成功的概率就会提高。
+
+\subsection{共同边界的直觉}
+
+课程用二维示意图解释为什么攻击可能这么容易。图中多个网络在同一张输入附近的决策区域并不完全相同，但某些方向是类似的。随机方向移动时，各个网络仍可能保持原类别；但沿着能攻击 VGG-16 的方向移动，也可能靠近其他网络的错误区域。
+
+\framefig{0.90}{figures/fig06_shared_boundary_intuition.jpg}
+{迁移性的决策边界直觉：不同模型的局部边界可能方向相近，使一个模型上的攻击方向迁移到其他模型。}
+{00:11:00--00:11:15}
+
+这并不意味着所有网络决策边界都一样，而是说它们在高维输入空间里可能共享一些非鲁棒特征。若多个模型都依赖这些特征，攻击者只需找到能破坏这些特征的扰动，就能跨模型生效。
+
+\begin{knowledgebox}{Transferability 的本质}
+    迁移性来自模型之间的共同归纳偏好。相同任务、相似数据和相近训练目标会让不同模型学到部分相似特征。对抗扰动如果打中了这些共享特征，就不只会骗过一个模型。
+\end{knowledgebox}
+
+\subsection{One-pixel attack}
+
+课程还介绍了 one-pixel attack。它看起来更极端：只改一个像素，也可能让影像辨识系统发生错误。这个例子用来说明，模型对输入空间中某些局部变化可能异常敏感。不过课程也指出，one-pixel attack 造成的错误有时不像猫变成海星那样荒谬，可能只是把图像推向视觉上仍有些关联的类别。
+
+\framefig{0.88}{figures/fig07_one_pixel_attack_examples.jpg}
+{One-pixel attack 示例：只改变单个像素，也可能显著改变影像辨识系统输出。}
+{00:14:15--00:14:30}
+
+One-pixel attack 的价值不只是攻击强度，而是提醒我们：模型的脆弱性不一定需要大面积扰动。即使扰动维度非常小，只要方向正好击中模型的敏感区域，也可能造成输出变化。
+
+\subsection{Universal adversarial attack}
+
+更强的概念是 universal adversarial attack。前面大多数攻击都是针对单张图客制化扰动：每张图片都有自己的 attack signal。Universal attack 则希望找到一个通用扰动，把同一个扰动加到很多不同图片上，都能让模型犯错。
+
+\framefig{0.88}{figures/fig08_universal_adversarial_attack.jpg}
+{Universal adversarial attack：同一个扰动加到许多不同图片上，都可能让模型输出错误。}
+{00:15:15--00:15:30}
+
+可以写成：
+
+\[
+\Pr_{x\sim \mathcal{D}}\left[f(x+\delta)\ne f(x)\right]\ge \rho,
+\qquad \|\delta\|\le \epsilon.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\delta$] 通用扰动，同一份扰动用于许多输入。
+    \item[$\mathcal{D}$] 输入图片分布。
+    \item[$\rho$] 期望达到的攻击成功率阈值。
+    \item[$\epsilon$] 通用扰动的大小限制。
+\end{description}
+
+Universal attack 的威胁更高，因为它不像单图攻击那样需要为每个输入重新优化。若同一个扰动能反复使用，攻击成本会显著下降，也更接近真实攻击者可能采用的批量策略。
+
+\subsection{本章小结}
+
+黑箱攻击成功的关键是迁移性。单一 proxy 可以迁移，多个 proxy 的 ensemble attack 往往更稳。决策边界图说明，不同模型可能共享部分脆弱方向。One-pixel attack 和 universal attack 则进一步提醒我们，扰动可以很小，也可以高度通用。模型看似复杂，但在某些高维方向上可能仍然非常脆弱。
+
+% =====================================================================
+\section{攻击不只发生在图片里}
+% =====================================================================
+
+课程随后把视野扩展到图像以外和物理世界。对抗攻击不是计算机视觉独有的问题，只要模型输入可以被人有目的地修改，语音、文字、传感器读数、真实世界物体都可能成为攻击面。
+
+\subsection{语音与自然语言}
+
+课程用 “Beyond Images” 提醒：语音处理和自然语言处理也有对抗攻击。例如一个侦测合成语音的系统，原本能判断某段声音是机器合成；若在声音中加入人耳不易察觉的微小噪声，侦测系统就可能误判。NLP 中也存在类似现象，只是扰动发生在 token、词、字符或句子层面。
+
+\framefig{0.88}{figures/fig09_beyond_images_speech_nlp.jpg}
+{Beyond Images：对抗攻击也会出现在语音处理与自然语言处理任务中，而不只存在于图像分类。}
+{00:17:45--00:18:00}
+
+图像、语音和文字的共同点是，模型输入与人类感知之间存在差距。图像中是像素范数和视觉语义的差距；语音中是波形扰动和听觉感知的差距；文字中是离散符号变化和语义保持之间的差距。攻击者利用这些差距，让模型看到和人类不同的东西。
+
+\subsection{物理世界攻击的额外约束}
+
+虚拟图像攻击只需要让数字图像变坏；物理世界攻击更难，因为扰动必须经过真实世界的拍摄、打印、光照、距离、角度和相机解析度。课程举的第一类例子是对人脸辨识系统的攻击：设计一副特殊眼镜，让人戴上后被模型误认为其他身份。
+
+\framefig{0.88}{figures/fig10_physical_world_adversarial_glasses.jpg}
+{物理世界中的人脸辨识攻击：攻击扰动被做成可佩戴眼镜，目标是骗过真实拍摄条件下的人脸模型。}
+{00:21:00--00:21:15}
+
+这类攻击要考虑三个问题。第一，扰动不能只对单张照片有效，而要在不同角度、距离和表情下仍然有效。第二，相邻像素之间特别剧烈的变化未必能被相机准确捕捉。第三，扰动必须能被现实材料复现，例如打印机能否打印出那些颜色。
+
+\framefig{0.90}{figures/fig11_physical_attack_design_constraints.jpg}
+{物理攻击需要考虑可制造性、相机解析度和跨拍摄条件泛化，不能只在一张数字图片上成功。}
+{00:23:30--00:23:45}
+
+可以把物理攻击写成期望形式：
+
+\[
+\argmax_{\delta\in\mathcal{S}}
+\mathbb{E}_{t\sim\mathcal{T}}
+\left[L(f(t(x,\delta)),y_{\mathrm{target}})\right].
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\delta$] 实体扰动，例如眼镜图案或贴纸。
+    \item[$\mathcal{S}$] 可制造、可打印、可佩戴的扰动集合。
+    \item[$\mathcal{T}$] 光照、角度、距离、相机等真实变化分布。
+    \item[$t(x,\delta)$] 扰动经过真实拍摄条件后的输入。
+    \item[$y_{\mathrm{target}}$] 攻击者希望模型输出的目标。
+\end{description}
+
+这个式子强调：物理攻击不是只优化一个干净输入，而是优化经过许多真实变换后的平均效果。能在数字空间成功的扰动，未必能穿过真实世界这层噪声。
+
+\subsection{交通标志攻击}
+
+课程还展示了交通标志攻击。相比把整张牌大幅改造，更隐蔽的攻击是只做很小的形状改变，例如把限速 35 的数字局部拉长，让自动驾驶系统或辅助驾驶模型读成更高速度。
+
+\framefig{0.88}{figures/fig12_speed_limit_subtle_attack.jpg}
+{交通标志上的隐蔽攻击：通过很小的形状改动，让限速标志被模型读成另一种速度。}
+{00:25:15--00:25:30}
+
+\framefig{0.88}{figures/fig13_speed_limit_car_demo.jpg}
+{交通标志攻击的车载演示：模型把被改动的限速牌读成更高速度，导致车辆行为发生风险。}
+{00:26:15--00:26:30}
+
+这类例子说明，对抗攻击一旦进入物理世界，风险就不只停留在分类准确率。模型输出可能连接到真实动作，例如开门、识别身份、刹车或加速。因此，安全评估必须把“模型是否会被数字扰动骗过”和“扰动是否能在真实世界复现”一起考虑。
+
+\subsection{本章小结}
+
+对抗攻击可以超越图像，进入语音、文字和物理世界。物理攻击比数字攻击更难，因为扰动要通过现实世界的变换和制造限制；但它的风险也更直接，因为模型输出可能影响真实行为。眼镜、交通标志等例子说明，对抗攻击不是实验室里的奇技淫巧，而是部署系统必须面对的安全问题。
+
+% =====================================================================
+\section{更宽的攻击面：Reprogramming 与 Backdoor}
+% =====================================================================
+
+前面的攻击大多发生在测试阶段：模型已经训练好，攻击者改输入，让模型输出错误。课程接着介绍两个更宽的攻击面：adversarial reprogramming 和 backdoor。它们提醒我们，攻击不一定只是“给一张图加噪声”，也可能是重用模型、污染训练资料或让模型内部留下触发机制。
+
+\subsection{Adversarial reprogramming}
+
+Adversarial reprogramming 的想法很特别：不训练一个新模型，而是把既有模型当成一个可被“重新编程”的系统。攻击者设计一个 adversarial program，把原本的任务输入嵌入到一张特殊图像中，让已经训练好的 ImageNet 分类器输出可被解释成另一个任务的答案。
+
+\framefig{0.90}{figures/fig14_adversarial_reprogramming.jpg}
+{Adversarial reprogramming：把新任务输入嵌入到特殊扰动中，借用既有 ImageNet 分类器完成另一种任务。}
+{00:28:00--00:28:15}
+
+它的形式可以抽象成：
+
+\[
+z=P_\phi(u),\qquad
+\hat{a}=R(f(z)).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$u$] 原本任务的输入，例如一个计数任务图像。
+    \item[$P_\phi$] 攻击者学习出的 adversarial program，把 $u$ 嵌入到目标模型可接受的输入格式中。
+    \item[$f$] 已训练好的原始模型，例如 ImageNet classifier。
+    \item[$R$] 把原模型输出重新映射成新任务答案的规则。
+    \item[$\hat{a}$] 新任务的预测答案。
+\end{description}
+
+这和普通对抗样本不完全一样。普通攻击是让模型对原任务出错；reprogramming 则试图把模型的能力挪作他用。它显示出大模型或预训练模型可能有意想不到的可复用性，也可能被构造输入引导到非原定用途。
+
+\subsection{Backdoor 发生在训练阶段}
+
+Backdoor attack 则把攻击提前到训练阶段。攻击者在训练数据里加入少量带触发器的样本，并把它们标成攻击者指定的类别。模型训练完成后，正常输入表现看起来没问题；但只要测试输入带有触发器，就会被模型输出成指定类别。
+
+\framefig{0.90}{figures/fig15_backdoor_training_phase.jpg}
+{Backdoor attack：训练资料中混入带触发器且标成目标类别的样本，模型训练后会在测试时对触发器产生指定误判。}
+{00:30:45--00:31:00}
+
+可以写成：
+
+\[
+\mathcal{D}'=\mathcal{D}\cup
+\{(T(x_i),y_{\mathrm{target}})\}_{i=1}^{K}.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\mathcal{D}$] 原始干净训练资料。
+    \item[$T(x_i)$] 对样本 $x_i$ 加上触发器后的输入。
+    \item[$y_{\mathrm{target}}$] 攻击者指定的目标标签。
+    \item[$K$] 被投毒的样本数量。
+    \item[$\mathcal{D}'$] 被污染后的训练资料。
+\end{description}
+
+Backdoor 的危险在于隐蔽性。模型在普通测试集上可能仍然准确，因此很难从标准 accuracy 发现问题；只有当输入带有特定触发器时，模型才会进入攻击者想要的错误行为。
+
+\begin{warningbox}{测试时攻击与训练时攻击不同}
+    测试时攻击修改的是部署后的输入；backdoor 修改的是训练资料或训练流程。前者考验模型局部鲁棒性，后者考验数据来源、供应链和训练过程可信度。只检查测试准确率不足以发现训练阶段后门。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Adversarial reprogramming 和 backdoor 展示了更宽的攻击面。Reprogramming 借用既有模型完成非原定任务；backdoor 则通过训练资料污染，让模型在触发器出现时执行指定错误。它们都说明，对抗安全不能只盯着像素扰动，还要关心模型用途、数据来源和训练流程。
+
+% =====================================================================
+\section{被动防御：先处理输入}
+% =====================================================================
+
+课程后半转向 defense。防御可以粗略分成 passive defense 和 proactive defense。被动防御不改变模型训练方式，而是在输入进入模型前做处理，希望削弱或移除攻击信号。主动防御则在训练阶段就把攻击纳入考虑。
+
+\subsection{Smoothing}
+
+最简单的被动防御之一是 smoothing。对抗扰动往往是高频、细小、分散的信号；图像平滑可以削弱这类信号。课程展示的例子中，原本被攻击成 Keyboard 的图像经过 smoothing 后，模型又回到 tiger cat。
+
+\framefig{0.88}{figures/fig16_smoothing_passive_defense.jpg}
+{Smoothing 作为被动防御：模糊化输入可能削弱攻击信号，使模型输出回到原类别附近。}
+{00:34:30--00:34:45}
+
+被动防御可以写成：
+
+\[
+\hat{y}=f(h(x)).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x$] 原始输入，可能已经被攻击。
+    \item[$h$] 输入预处理函数，例如 smoothing、compression 或 denoising。
+    \item[$f$] 原本的分类模型。
+    \item[$\hat{y}$] 预处理后得到的模型输出。
+\end{description}
+
+这个方法直观、便宜，也常常有效。但它有副作用：平滑不仅会去掉攻击噪声，也可能去掉图像中对分类有用的细节。课程中也提醒，平滑之后正确类别的置信度可能下降。
+
+\subsection{Image compression 与 generator}
+
+另一类被动防御是压缩或重建。图像压缩会丢掉一些细节，微小攻击噪声可能随之消失。Generator 方法则试图把输入重新生成一遍，让生成器保留主要语义，却不复现攻击扰动。
+
+\framefig{0.90}{figures/fig17_compression_generator_defense.jpg}
+{Image compression 与 generator 防御：通过压缩或重建输入，尝试移除微小攻击扰动。}
+{00:36:45--00:37:00}
+
+Generator 防御的理想形式是：
+
+\[
+x_{\mathrm{clean}}\approx G(E(x_{\mathrm{adv}})),
+\qquad
+f(x_{\mathrm{clean}})\approx f(x^0).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$x_{\mathrm{adv}}$] 攻击输入。
+    \item[$E$] 将输入映射到潜在表示或内部条件的过程。
+    \item[$G$] 生成器或重建模型。
+    \item[$x_{\mathrm{clean}}$] 经过重建后的输入。
+    \item[$x^0$] 原始干净输入。
+\end{description}
+
+这类方法的希望是：生成器学到自然图像流形，攻击噪声不在自然流形上，因此重建时会被去除。问题是，如果攻击者知道防御流程，也可以把预处理一起纳入攻击优化。
+
+\subsection{Randomization}
+
+被动防御还可以引入随机性，例如随机缩放、随机 padding，再随机选择一种变换后的图片送入 CNN。攻击者若不知道具体随机结果，构造稳定攻击会更难。
+
+\framefig{0.90}{figures/fig18_randomization_defense.jpg}
+{Randomization 防御：对输入做随机缩放和随机 padding，让攻击者难以精确适配固定预处理流程。}
+{00:37:45--00:38:00}
+
+随机防御可以表示为：
+
+\[
+\hat{y}=f(h_r(x)),\qquad r\sim \mathcal{R}.
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$r$] 随机种子或随机变换选择。
+    \item[$\mathcal{R}$] 随机变换分布。
+    \item[$h_r$] 由 $r$ 决定的预处理函数。
+\end{description}
+
+但课程指出，随机防御也不是根本解决。若攻击者知道随机分布，可以对随机性取期望，构造在平均意义下仍然有效的攻击。也就是说，随机性增加攻击成本，却不必然提供安全保证。
+
+\begin{warningbox}{被动防御的共同弱点}
+    被动防御常把攻击信号当成噪声去除，但攻击者可以把防御流程也看成模型的一部分。如果预处理可微、可估计或分布可知，攻击就可能绕过它。防御方法不能只在弱攻击下有效，还要在知道防御细节的强攻击者面前评估。
+\end{warningbox}
+
+\subsection{本章小结}
+
+被动防御通过处理输入来削弱攻击，包括 smoothing、compression、generator 重建和 randomization。它们的优点是容易加到既有系统前面，缺点是可能损伤正常输入，也可能被自适应攻击绕过。被动防御更像临时缓冲层，而不是彻底解决模型脆弱性的办法。
+
+% =====================================================================
+\section{主动防御：Adversarial Training}
+% =====================================================================
+
+主动防御的代表是 adversarial training。它不只是把输入处理一下，而是在训练阶段主动生成对抗样本，把模型的弱点加入训练资料，让模型学会抵抗这些攻击。
+
+\subsection{把攻击样本加入训练}
+
+课程中的流程是：给定训练集，先训练模型；然后对训练样本生成 adversarial input；再把原始样本和 adversarial input 放在一起更新模型。这本质上是一种 data augmentation，只是增强出来的样本不是随机裁切或翻转，而是针对当前模型弱点构造的。
+
+\framefig{0.90}{figures/fig19_adversarial_training_data_augmentation.jpg}
+{Adversarial training：对训练样本生成 adversarial input，再把原始样本和攻击样本一起用于更新模型。}
+{00:42:30--00:42:45}
+
+标准形式常写成 min-max 优化：
+
+\[
+\min_\theta
+\sum_{i=1}^{N}
+\max_{\|\delta_i\|\le \epsilon}
+\ell(f_\theta(x_i+\delta_i),y_i).
+\]
+
+符号含义如下：
+\begin{description}
+    \item[$\theta$] 模型参数。
+    \item[$(x_i,y_i)$] 第 $i$ 个训练样本与标签。
+    \item[$\delta_i$] 针对样本 $x_i$ 生成的扰动。
+    \item[$\epsilon$] 扰动预算。
+    \item[$\ell$] 训练 loss，例如交叉熵。
+\end{description}
+
+内层最大化负责“找问题”：在扰动范围内找到让模型最容易犯错的输入。外层最小化负责“修问题”：更新模型参数，使模型在这些困难输入上也表现好。
+
+\subsection{为什么它像 data augmentation}
+
+普通 data augmentation 通过平移、裁切、翻转等方式扩充训练集，让模型对自然变化更稳健。Adversarial training 也是扩充训练集，只是扩充方式由攻击算法决定。它有针对性地加入模型当前最怕的样本，迫使模型在决策边界附近变得更平滑。
+
+课程图中用新训练资料 $\mathcal{X}'$ 表示由对抗样本组成的数据集，再用 $\mathcal{X}$ 和 $\mathcal{X}'$ 一起更新模型。这个过程可以反复迭代：模型更新后，攻击者再找新的弱点；再把新的对抗样本加入训练。
+
+\subsection{局限：能否挡住新攻击}
+
+课程特别提出一个问题：adversarial training 能不能应对新的攻击算法？如果训练时只见过某一种攻击，模型可能只对这种攻击变强；当攻击方法改变，新的脆弱方向仍然可能出现。因此，adversarial training 的效果依赖于内层攻击是否足够强、是否覆盖了真正危险的扰动集合。
+
+\begin{knowledgebox}{Adversarial training 的核心矛盾}
+    它是目前最重要的主动防御思想之一，但成本很高，而且防御范围受训练时攻击算法限制。训练越强，计算越贵；攻击集合定义越窄，模型越可能只学会防某几种已知攻击。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Adversarial training 把攻击纳入训练流程，用对抗样本扩充训练集。它比被动防御更主动，因为模型本身会学习在攻击输入上保持正确。其核心形式是 min-max 优化：内层找最坏扰动，外层训练模型抵抗扰动。它的限制是计算成本高，并且未必能覆盖未来出现的新攻击。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P40 的主线是：攻击者的能力不必局限在白箱、数字图片和测试阶段；防御者也不能只依赖隐藏参数或简单预处理。课程先说明，不知道目标模型参数时仍然可以做 black-box attack，因为对抗样本可以在模型之间迁移。Proxy network、ensemble attack 和 shared boundary 的直觉共同说明：不同模型可能共享某些脆弱特征。
+
+随后，课程把攻击范围扩展到 one-pixel、universal perturbation、语音、NLP 和物理世界。物理攻击特别重要，因为它要求扰动经过真实拍摄和制造约束后仍然有效，也因为它可能影响真实系统行为。再往后，adversarial reprogramming 和 backdoor 说明攻击面不只在测试输入，也可能在模型用途和训练资料中。
+
+\framefig{0.90}{figures/fig20_concluding_remarks.jpg}
+{课程总结：已知参数时攻击很容易，黑箱攻击也可能成功；防御包括被动和主动两类，攻防方法仍在持续演化。}
+{00:46:15--00:46:30}
+
+防御部分给出两个层次。Passive defense 先处理输入，例如 smoothing、compression、generator 和 randomization；它们容易部署，但可能被自适应攻击绕过。Proactive defense 则以 adversarial training 为代表，把攻击样本加入训练，让模型主动学习鲁棒性。两者都不是一劳永逸，因为攻击者会根据防御继续调整方法。
+
+\begin{importantbox}{本讲的核心压缩}
+    隐藏参数、过滤输入、随机预处理都只能提高攻击成本，不能自动带来安全。对抗攻防是一场不断变化的博弈：攻击者寻找模型共享弱点，防御者必须假设攻击者会观察、适应并绕过当前防线。
+\end{importantbox}
+
+几个关键 takeaway 如下：
+\begin{itemize}
+    \item Black-box attack 可以通过 proxy network 和 transferability 实现。
+    \item Ensemble attack 寻找多个模型共同脆弱方向，迁移性通常更强。
+    \item Universal perturbation 显示同一扰动可能影响大量输入。
+    \item Physical attack 要考虑光照、角度、相机解析度和可制造性。
+    \item Backdoor attack 发生在训练阶段，标准测试准确率未必能发现。
+    \item Passive defense 容易部署，但容易被自适应攻击纳入优化。
+    \item Adversarial training 是主动防御，但成本高，且依赖训练时攻击覆盖面。
+\end{itemize}
+
+\subsection{后续问题}
+
+本讲最后强调，攻击与防御仍在演化。后续可以继续追问：如何定义真正接近人类感知的扰动集合？如何评估一个防御是否抵抗自适应攻击？如何在大模型、语音、文本和多模态系统中做鲁棒性测试？如何检查训练资料和供应链中的 backdoor 风险？这些问题都没有简单答案，但它们共同说明，机器学习系统一旦进入真实世界，就必须把恶意输入视为基本环境，而不是边缘案例。
+
+\end{document}

@@ -1,0 +1,529 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\CE}{CE}
+\DeclareMathOperator{\disc}{disc}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Ds}{\mathcal{D}_s}
+\newcommand{\Dt}{\mathcal{D}_t}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{领域自适应概述}
+\newcommand{\notesubtitle}{Domain Shift, Domain Adaptation, Domain Adversarial Training, and Generalization}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 34 分 32 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=44}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{Domain Shift：训练分布与测试分布不一样}
+% =====================================================================
+
+前面的机器学习课程大多默认训练资料和测试资料来自同一个分布。我们在训练集上学一个分类器，期望它能泛化到测试集；只要模型容量、正则化和训练策略合适，这个假设通常已经足够。但现实系统经常遇到另一种情况：训练时看到的是一种资料，部署时遇到的是另一种资料。这个差异就是 domain shift。
+
+\framefig{0.90}{figures/fig01_training_testing_same_domain.jpg}
+{常规监督学习默认训练资料和测试资料来自相同或相近分布，因此训练好的分类器可以直接用于测试。}
+{00:00:45--00:01:00}
+
+\subsection{一个数字识别例子}
+
+课程用数字识别做直观例子。若模型只在黑白手写数字上训练，然后测试时仍是类似的黑白数字，准确率可以很高。但若测试资料变成彩色背景、不同风格或不同域的数字，模型可能突然掉点。它并不是完全不会识别数字，而是学到的特征和新域中的干扰因素纠缠在一起。
+
+\framefig{0.90}{figures/fig02_domain_shift_accuracy_drop.jpg}
+{同一个数字识别任务中，训练域是黑白数字，测试域变成彩色数字后，准确率明显下降。}
+{00:02:00--00:02:15}
+
+用分布语言写，常规监督学习希望：
+\[
+P_{\mathrm{train}}(x,y)\approx P_{\mathrm{test}}(x,y).
+\]
+
+Domain shift 则意味着：
+\[
+P_s(x,y)\neq P_t(x,y),
+\]
+其中 $s$ 表示 source domain，$t$ 表示 target domain。目标不是换一个任务，而是在同一个任务下，让模型从 source domain 迁移到 target domain。
+
+\subsection{Domain adaptation 要解决什么}
+
+若什么都不做，直接把 source model 拿去 target domain 上测试，表现可能很差。Domain adaptation 的问题就是：能不能利用 source domain 的标注资料，以及 target domain 中有限的资料，让模型在 target domain 上表现得比直接迁移更好？
+
+\framefig{0.90}{figures/fig03_domain_shift_to_adaptation.jpg}
+{当训练域和测试域不同，直接迁移会失败；domain adaptation 尝试利用目标域资料修正这种落差。}
+{00:03:15--00:03:30}
+
+最典型的设定是：
+\[
+\Ds=\{(x_i^s,y_i^s)\}_{i=1}^{n_s},
+\qquad
+\Dt^u=\{x_j^t\}_{j=1}^{n_t},
+\]
+source domain 有大量 labeled data，target domain 有大量 unlabeled data，甚至只有少量 labeled data。真正想最小化的是 target risk：
+\[
+R_t(h)=\E_{(x,y)\sim P_t}\left[\ell(h(x),y)\right],
+\]
+但 target label 很少，所以不能直接在目标域完整监督训练。
+
+\subsection{不同类型的分布变化}
+
+Domain shift 不只可能发生在输入分布 $P(x)$，也可能发生在标签分布 $P(y)$ 或条件分布 $P(y\mid x)$。课程用数字类别比例变化说明：source domain 中可能某些数字多，target domain 中另一些数字多；这会让分类器的先验偏好发生问题。
+
+\framefig{0.90}{figures/fig04_label_distribution_shift_example.jpg}
+{Domain shift 不只包含输入样式变化，也可能包含不同类别在 source 与 target 中出现比例不同。}
+{00:04:30--00:04:45}
+
+常见分布变化可以粗略分成：
+
+\begin{description}
+    \item[Covariate shift] $P_s(x)\neq P_t(x)$，但 $P_s(y\mid x)\approx P_t(y\mid x)$。例如同样识别数字，但图像风格变了。
+    \item[Label shift] $P_s(y)\neq P_t(y)$，类别比例改变，但每个类别的视觉或语义定义大致相同。
+    \item[Concept shift] $P_s(y\mid x)\neq P_t(y\mid x)$，同一个输入模式在不同域中可能对应不同标签。这种情况最难，单纯对齐特征可能不够。
+\end{description}
+
+\begin{importantbox}{Domain adaptation 的基本前提}
+    领域自适应通常假设 source 和 target 任务有关，标签空间相同或高度重叠，而且存在某种可迁移结构。若两个域的任务语义完全不同，强行对齐分布只会把模型推向错误方向。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Domain shift 指训练资料和部署资料来自不同分布，导致模型在测试域表现下降。Domain adaptation 希望利用 source labeled data 与 target unlabeled / few-labeled data 学到适合 target domain 的模型。它与普通监督学习的差别，在于真正关心的是 target risk，但 target labels 很少。
+
+% =====================================================================
+\section{Domain Adaptation 的问题设定}
+% =====================================================================
+
+课程接着用一条“对目标域了解多少”的横轴来描述不同场景。若目标域有大量标注资料，就不太需要 domain adaptation，直接用目标域资料训练即可；若目标域完全未知，则更接近 domain generalization；domain adaptation 通常处在中间：目标域有一些信息，但标注有限。
+
+\framefig{0.90}{figures/fig05_target_domain_limited_labels.jpg}
+{若 target domain 有大量 labeled data，直接在目标域训练即可；domain adaptation 关注标注有限的情况。}
+{00:07:00--00:07:15}
+
+\subsection{Source labeled 与 target limited labeled}
+
+半监督或少量标注的 target domain 设定可写成：
+\[
+\Ds=\{(x_i^s,y_i^s)\}_{i=1}^{n_s},
+\qquad
+\Dt^l=\{(x_j^t,y_j^t)\}_{j=1}^{m_t},
+\qquad
+m_t\ll n_s.
+\]
+
+一个朴素想法是把 source data 和少量 target labeled data 混在一起训练。但如果 target labeled data 太少，模型容易 overfit 少数目标域样本；如果 source data 远多于 target data，模型又可能仍偏向 source domain。
+
+\framefig{0.90}{figures/fig06_source_training_target_overfit_challenge.jpg}
+{目标域少量标注资料可以帮助适应，但也容易过拟合，因此不能简单把少量 target label 当万能解法。}
+{00:08:15--00:08:30}
+
+这就是 domain adaptation 的核心张力：source labels 可靠但分布不同，target samples 分布正确但标签稀缺。
+
+\subsection{Unsupervised domain adaptation}
+
+很多经典方法关注 unsupervised domain adaptation（UDA）：
+\[
+\Ds=\{(x_i^s,y_i^s)\}_{i=1}^{n_s},
+\qquad
+\Dt^u=\{x_j^t\}_{j=1}^{n_t}.
+\]
+
+target domain 没有标签，但有大量样本。例如系统上线后能收集用户输入，却无法马上给每个输入标注正确答案。课程图中用“大量 unlabeled target data + 少量 labeled target data”表示现实中常见的混合情形。
+
+\framefig{0.90}{figures/fig07_unlabeled_and_labeled_target_data.jpg}
+{现实中常见的目标域信息：大量未标注 target data，加上少量 labeled target data。}
+{00:09:30--00:09:45}
+
+UDA 的关键问题是：没有 target labels 时，模型怎么知道自己在 target domain 上的分类边界是否正确？这也是后面 domain adversarial training 会遇到限制的原因。
+
+\subsection{与 transfer learning 的区别}
+
+Domain adaptation 和 transfer learning 很接近，但侧重点不同。Transfer learning 常强调“从一个任务或大模型迁移知识到另一个任务”，任务可以不同；domain adaptation 更强调“任务相同或标签空间相同，但资料分布不同”。
+
+例如从 ImageNet 预训练迁移到医学影像分类，是 transfer learning；从白天道路场景训练的交通标志模型迁移到夜晚道路场景，任务不变但域变了，更像 domain adaptation。
+
+\subsection{本章小结}
+
+Domain adaptation 处在“完全有标注目标域”和“完全不知道目标域”之间。典型 UDA 使用 source labeled data 与 target unlabeled data；semi-supervised DA 还会有少量 target labels。问题的关键是：如何在不充分标注目标域的情况下，学到适合目标域的表示和决策边界。
+
+% =====================================================================
+\section{基本想法：学到 Domain-Invariant Features}
+% =====================================================================
+
+如果 source 和 target 的原始输入分布不同，一个自然想法是不要直接对原始输入分类，而是先通过 feature extractor 抽取表示。我们希望抽出来的 feature 保留类别相关信息，同时去掉域相关差异。
+
+\framefig{0.90}{figures/fig08_basic_idea_domain_invariant_features.jpg}
+{基本想法：让 source 与 target 经过 feature extractor 后具有相同分布，同时保留分类所需信息。}
+{00:10:45--00:11:00}
+
+\subsection{什么是 domain-invariant feature}
+
+设 feature extractor 为 $F_\theta$，label predictor 为 $C_\phi$。模型不是直接预测：
+\[
+y=C(x),
+\]
+而是：
+\[
+z=F_\theta(x),\qquad y=C_\phi(z).
+\]
+
+Domain adaptation 希望：
+\[
+P_s(F_\theta(x))\approx P_t(F_\theta(x)),
+\]
+也就是 source 和 target 在 feature space 中对齐。若特征分布对齐，而且 source 上学到的决策边界仍适用于 target，那么模型就可以在 target domain 上泛化。
+
+\subsection{忽略域差异，而不是忽略类别}
+
+以课程中的彩色数字为例，source 是黑白数字，target 是彩色数字。模型最好不要把“颜色”当作判断类别的关键特征，而要抓住数字形状。也就是学会忽略颜色、背景、风格等 domain-specific factor。
+
+但“忽略 domain”不能等于“忽略一切”。如果 feature extractor 把所有输入都压成同一个点，source 和 target 分布当然完全一样，但 label predictor 已经无法分类。好的 feature 必须同时满足：
+\[
+\text{domain-invariant}
+\quad\text{and}\quad
+\text{label-discriminative}.
+\]
+
+\begin{knowledgebox}{两个目标必须同时成立}
+    Domain adaptation 不是只做分布对齐。若 feature 只对齐但不可分类，模型无用；若 feature 可分类但强烈依赖 source-specific pattern，模型到 target 上会失败。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+领域自适应的基本方向是学习一个共享 feature space，让 source 和 target 在这个空间里看起来更接近，同时保留类别信息。Domain adversarial training 就是实现这个想法的一种代表方法。
+
+% =====================================================================
+\section{Domain Adversarial Training}
+% =====================================================================
+
+Domain Adversarial Neural Network（DANN）把 domain adaptation 写成一个对抗训练问题。它有三部分：feature extractor、label predictor、domain classifier。Label predictor 要在 source labeled data 上正确分类；domain classifier 要判断一个 feature 来自 source 还是 target；feature extractor 则要骗过 domain classifier。
+
+\framefig{0.90}{figures/fig09_dann_source_target_inputs.jpg}
+{DANN 同时使用 source labeled data 与 target unlabeled data，二者都经过同一个 feature extractor。}
+{00:13:00--00:13:15}
+
+\subsection{Label predictor：保留分类能力}
+
+Source domain 有标签，所以 label loss 可以写成：
+\[
+L_y(\theta_f,\theta_y)
+=
+\frac{1}{n_s}
+\sum_{i=1}^{n_s}
+\CE\left(C_{\theta_y}(F_{\theta_f}(x_i^s)),y_i^s\right).
+\]
+
+这项只在 source labeled data 上计算，目标是让特征对分类有用。如果只有 domain alignment，没有 $L_y$，模型可能学到无意义表示。
+
+\subsection{Domain classifier：判断 feature 来自哪里}
+
+Domain classifier $D_{\theta_d}$ 读入 feature $z=F_{\theta_f}(x)$，输出它来自 source 的概率。令 domain label $d=1$ 表示 source，$d=0$ 表示 target，则 domain loss 为：
+\[
+L_d(\theta_f,\theta_d)
+=
+-\frac{1}{n_s+n_t}
+\sum_i
+\left[
+d_i\log D_{\theta_d}(F_{\theta_f}(x_i))
+ +(1-d_i)\log(1-D_{\theta_d}(F_{\theta_f}(x_i)))
+\right].
+\]
+
+\framefig{0.90}{figures/fig10_domain_classifier_branch.jpg}
+{Domain classifier 是一个二元分类器，任务是判断 feature 来自 source domain 还是 target domain。}
+{00:14:15--00:14:30}
+
+若 domain classifier 很容易分辨 source/target，说明 feature distribution 仍有明显 domain gap；若它只能随机猜，说明 feature extractor 已经把两个域混得较像。
+
+\subsection{Feature extractor：骗过 domain classifier}
+
+对 domain classifier 来说，它要最小化 $L_d$，尽可能分清 source 和 target。对 feature extractor 来说，它要最大化 $L_d$，让 domain classifier 分不清。这就是 adversarial 的来源。
+
+\framefig{0.90}{figures/fig11_generator_fools_discriminator.jpg}
+{Feature extractor 扮演 generator：它要保留分类信息，同时让 domain classifier 无法分辨来源域。}
+{00:15:45--00:16:00}
+
+可以写成 min-max 目标：
+\[
+\min_{\theta_f,\theta_y}
+\left[
+L_y(\theta_f,\theta_y)
+-\lambda L_d(\theta_f,\theta_d)
+\right],
+\qquad
+\min_{\theta_d}L_d(\theta_f,\theta_d).
+\]
+
+这里 $\lambda$ 控制 domain alignment 的强度。对 $\theta_d$，训练方向是让 domain classifier 更准；对 $\theta_f$，训练方向是让 domain classifier 更糊涂。
+
+\framefig{0.90}{figures/fig12_label_predictor_and_domain_classifier_losses.jpg}
+{DANN 同时包含 label loss 与 domain loss：前者要求分类正确，后者提供域对齐信号。}
+{00:18:00--00:18:15}
+
+\subsection{Gradient reversal layer}
+
+实际实现常用 gradient reversal layer（GRL）。前向传播时 GRL 是恒等映射：
+\[
+\mathrm{GRL}(z)=z.
+\]
+
+反向传播时，它把来自 domain classifier 的梯度乘上 $-\lambda$：
+\[
+\frac{\partial \mathrm{GRL}}{\partial z}=-\lambda I.
+\]
+
+这样可以在同一个计算图中实现：
+\[
+\theta_d \leftarrow \theta_d - \eta \nabla_{\theta_d}L_d,
+\qquad
+\theta_f \leftarrow \theta_f - \eta \nabla_{\theta_f}(L_y-\lambda L_d).
+\]
+
+\framefig{0.90}{figures/fig13_dann_minimax_objective.jpg}
+{DANN 的核心是 min-max：domain classifier 学会分域，feature extractor 学会让它分不出来。}
+{00:19:30--00:19:45}
+
+\subsection{实验结果}
+
+课程展示了 DANN 在多个视觉 domain adaptation benchmark 上的结果，包括 MNIST、SVHN、synthetic signs、GTSRB 等。重点不是某个具体数字，而是方法能在 source-only 与 target-only 之间显著改善目标域表现。
+
+\framefig{0.92}{figures/fig14_dann_results_table.jpg}
+{DANN 通过 domain adversarial training 在多个 source-to-target 设定中提升了 target domain 表现。}
+{00:21:15--00:21:30}
+
+读这类表时要注意三条基线：
+
+\begin{description}
+    \item[Source only] 只用 source labeled data 训练后直接测试 target。通常最弱。
+    \item[Train on target] 若有 target labels，用目标域监督训练。通常是上界或强参考。
+    \item[Domain adaptation] 使用 source labels 与 target unlabeled data，希望逼近 target supervised 的效果。
+\end{description}
+
+\subsection{本章小结}
+
+DANN 用对抗训练实现 domain-invariant feature learning。Label predictor 确保特征可分类，domain classifier 检测域差异，feature extractor 通过反向梯度骗过 domain classifier。它是领域自适应中非常经典的框架，但“对齐分布”本身仍有局限。
+
+% =====================================================================
+\section{限制：对齐分布不一定对齐类别}
+% =====================================================================
+
+Domain adversarial training 的直觉很漂亮：source 和 target feature 分布越像，source 上学到的分类器越可能迁移。但课程特别提醒，这个直觉并不总是成立。仅仅让 marginal feature distribution 对齐，可能把不同类别混在一起，或者让 target 样本落在错误决策边界附近。
+
+\framefig{0.90}{figures/fig15_limitation_aligned_but_bad_boundary.jpg}
+{一个限制：source 与 target 的整体分布看似对齐，但 target 样本可能仍被 source decision boundary 错分。}
+{00:24:00--00:24:15}
+
+\subsection{Marginal alignment 的风险}
+
+DANN 主要让：
+\[
+P_s(F(x))\approx P_t(F(x)).
+\]
+
+但分类真正需要的是 class-conditional alignment：
+\[
+P_s(F(x)\mid y=k)\approx P_t(F(x)\mid y=k),\quad \forall k.
+\]
+
+如果只对齐整体分布，可能出现 class mismatch。例如 source 的 class 1 被对齐到 target 的 class 2 附近；domain classifier 分不出来两个域，但 label predictor 的边界仍错。
+
+\framefig{0.90}{figures/fig16_limitation_target_far_from_boundary.jpg}
+{较理想的情况是 target data 不只与 source 对齐，还要远离错误的 decision boundary。}
+{00:25:00--00:25:15}
+
+\subsection{Decision boundary 的重要性}
+
+课程接着提到要考虑 decision boundary。直觉上，目标域样本应该落在分类器有信心的区域，而不是靠近决策边界。若目标域未标注样本经过模型后输出分布很平坦、entropy 很大，说明模型不知道它属于哪一类，边界可能穿过高密度区域。
+
+\framefig{0.90}{figures/fig17_considering_decision_boundary_entropy.jpg}
+{考虑 decision boundary：希望 target samples 的预测 entropy 小，避免边界穿过目标域高密度区域。}
+{00:26:30--00:26:45}
+
+常见补充目标是 target entropy minimization：
+\[
+L_{\mathrm{ent}}
+=
+\frac{1}{n_t}\sum_{j=1}^{n_t}
+H(C(F(x_j^t))),
+\]
+其中：
+\[
+H(p)=-\sum_k p_k\log p_k.
+\]
+
+最小化 $L_{\mathrm{ent}}$ 会鼓励模型在 target samples 上给出更确定的预测。DIRT-T、MCD 等方法都试图让 target decision boundary 更合理，而不是只看 domain classifier 是否被骗过。
+
+\begin{warningbox}{只骗过 domain classifier 不够}
+    如果 feature extractor 只追求让 domain classifier 分不出 source/target，可能会牺牲类别结构。好的 domain adaptation 还要让 target samples 避开错误边界，并尽量保持 class-conditional alignment。
+\end{warningbox}
+
+\subsection{本章小结}
+
+DANN 的限制在于它主要对齐 marginal feature distributions。真正影响分类的是类别条件分布和决策边界位置。后续方法常加入 entropy minimization、pseudo-label、classifier discrepancy 或 teacher refinement，让 target data 不只“像 source”，还要落在正确类别区域。
+
+% =====================================================================
+\section{Outlook：更复杂的领域自适应与泛化}
+% =====================================================================
+
+课程最后用一张 taxonomy 图说明，domain adaptation 有很多变体，差别在于 source 和 target 的标签空间关系、目标域是否有标注、训练时是否能看到目标域资料。
+
+\framefig{0.90}{figures/fig18_outlook_domain_adaptation_taxonomy.jpg}
+{Domain adaptation 的常见变体包括 closed-set、partial、open-set、universal 等设定。}
+{00:27:45--00:28:00}
+
+\subsection{Closed-set、partial 与 open-set}
+
+最标准的是 closed-set domain adaptation：source 和 target 标签空间相同：
+\[
+\mathcal{Y}_s=\mathcal{Y}_t.
+\]
+
+Partial domain adaptation 中，target 标签空间是 source 的子集：
+\[
+\mathcal{Y}_t\subset \mathcal{Y}_s.
+\]
+
+此时如果强行把 source 中所有类别都对齐到 target，source-only 类别会产生负迁移。Open-set domain adaptation 则允许 target 中出现 source 没见过的新类别：
+\[
+\mathcal{Y}_t\not\subseteq \mathcal{Y}_s.
+\]
+
+这时模型不仅要分类已知类别，还要识别 unknown target class。
+
+\subsection{Universal domain adaptation}
+
+Universal domain adaptation 更宽松：source 和 target 标签空间的重叠关系未知。模型不知道哪些 source classes 会出现在 target，也不知道 target 是否含未知类别。因此它必须同时做 transfer 和 unknown detection。
+
+\framefig{0.90}{figures/fig19_universal_domain_adaptation.jpg}
+{Universal domain adaptation 不预设 source 与 target 标签空间关系，需要同时处理共享类与未知类。}
+{00:31:00--00:31:15}
+
+这比 closed-set DA 更接近真实世界。部署时，目标域可能缺少某些训练类，也可能出现新类别；如果模型仍假设标签空间完全一致，就会把 unknown 样本硬分到已知类中。
+
+\subsection{Domain generalization}
+
+Domain generalization 更进一步：训练时根本看不到目标域资料。模型只能从多个 source domains 中学出跨域稳定特征，期望未来未知 target domain 也能泛化。
+
+\framefig{0.90}{figures/fig20_domain_generalization_examples.jpg}
+{Domain generalization 中，训练时没有目标域资料，只能从多个 source domains 学跨域稳定规律。}
+{00:34:00--00:34:15}
+
+若训练域集合为：
+\[
+\{\Ds^{(1)},\Ds^{(2)},\dots,\Ds^{(m)}\},
+\]
+目标是学一个模型 $h$，在未来未知域 $\Dt^{\mathrm{new}}$ 上也表现好：
+\[
+\min_h \E_{\mathcal{D}^{\mathrm{new}}}
+\left[
+R_{\mathcal{D}^{\mathrm{new}}}(h)
+\right].
+\]
+
+这类方法常依赖数据增强、元学习、风格随机化、因果特征学习或不变风险最小化。它比 domain adaptation 更难，因为没有 target samples 可用来对齐。
+
+\subsection{本章小结}
+
+领域自适应不是单一问题，而是一组问题族。Closed-set DA 假设标签空间相同；partial/open-set/universal DA 放宽标签空间关系；domain generalization 则连 target samples 都没有。实际应用中，必须先判断自己处在哪个设定，再选择方法。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲从一个简单但常见的问题出发：训练资料和测试资料不同分布时，模型表现会明显下降。Domain adaptation 的目标，是在 source domain 有标注、target domain 标注稀缺或没有标注的情况下，让模型适应 target domain。
+
+核心思路是学习 domain-invariant but label-discriminative features。DANN 通过 feature extractor、label predictor 和 domain classifier 组成对抗结构：label predictor 要 source 分类正确，domain classifier 要分辨 source/target，feature extractor 则要保留分类信息并骗过 domain classifier。这个框架用 gradient reversal layer 可以高效实现。
+
+但本讲也强调了 DANN 的限制：让 source 和 target 的整体特征分布对齐，并不保证类别对齐，也不保证 target decision boundary 合理。好的 adaptation 还要考虑 class-conditional structure、entropy、pseudo-label 和 decision boundary。最后，domain adaptation 还有 closed-set、partial、open-set、universal 和 domain generalization 等多个变体；这些设定不同，方法和评价方式也不同。
+
+从实践角度看，做领域自适应前最重要的是先界定问题：目标域是否可见？是否有少量标签？标签空间是否相同？domain shift 是输入风格变化、类别比例变化，还是概念本身变化？这些问题决定了“对齐特征”是否足够，也决定了模型上线后还需要怎样的监控和再训练机制。
+
+\end{document}

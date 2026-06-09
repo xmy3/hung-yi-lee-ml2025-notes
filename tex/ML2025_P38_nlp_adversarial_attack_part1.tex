@@ -1,0 +1,541 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{自然语言处理上的对抗式攻击（一）：Evasion Attack 与文本扰动}
+\newcommand{\notesubtitle}{Attacks in NLP: Discrete Inputs, Four Ingredients, and Word-level Transformations}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程与姜成翰助教讲授内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 56 分 06 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=38}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{课程定位：NLP 上的 Adversarial Attack}
+% =====================================================================
+
+P38 是自然语言处理对抗式攻击的第一部分，由姜成翰助教讲授。课程先提醒：对抗攻击不是只存在于图像分类，也会出现在自然语言处理、语音、机器翻译、语法分析等任务中。只要攻击者能微小修改输入，使模型行为偏离人类预期，同时人类仍认为输入语义大致不变，这就可以构成 adversarial example。
+
+\framefig{0.90}{figures/fig01_previous_adversarial_courses.jpg}
+{课程回顾：2019--2021 年已经多次讨论 adversarial attack，本讲把焦点转到 NLP 场景。}
+{00:03:30--00:03:45}
+
+\subsection{为什么 NLP 攻击值得单独讲}
+
+过去对抗攻击常从 computer vision 或 audio 讲起。图像中可以加入几乎看不见的像素噪声，语音中也可以加入人耳难察觉的扰动，让模型输出改变。但 NLP 的输入不是连续像素或连续波形，而是离散的词、字、token。这让 NLP attack 的设计完全不同。
+
+\framefig{0.90}{figures/fig02_cv_audio_attack_examples.jpg}
+{图像与语音攻击示例：过去常关注视觉或声音中的细微扰动，这些输入天然位于连续空间。}
+{00:04:00--00:04:15}
+
+在图像里，输入可以看成 $\mathbb{R}^n$ 中的向量；每个像素值可以微调一点点。语音也类似，波形采样值可以在连续或近似连续的数值范围内调整。因此，在 CV/audio 中，加一个小扰动 $\delta$ 往往仍然得到合法输入。
+
+\framefig{0.88}{figures/fig03_continuous_image_audio_space.jpg}
+{图像与音频输入空间可以表示成连续向量，例如像素范围或音频采样值范围。}
+{00:04:45--00:05:00}
+
+\subsection{文本输入是离散 token}
+
+NLP 的输入空间不同。句子首先由 words 或 tokens 组成；模型为了处理它们，通常会把 token 映射到 embedding，再把向量序列送入 classifier、tagger、translator 或 parser。
+
+\framefig{0.88}{figures/fig04_nlp_tokens_are_discrete.jpg}
+{NLP 的原始输入是 words/tokens；模型内部会把 token 映射成向量，但攻击最终仍必须对应合法文本。}
+{00:05:00--00:05:15}
+
+这带来一个关键限制：不能随便在 embedding 上加 noise 后就说完成了文本攻击。因为 embedding 加噪后的向量未必对应词表中的任何 token，也未必能被还原成人类可读的句子。真正的 NLP adversarial example 必须回到离散文本层面，例如替换一个词、插入一个词、删除一个词，或修改字符。
+
+\framefig{0.90}{figures/fig05_embedding_noise_is_not_text.jpg}
+{直接对 word embedding 加 noise 不一定合理，因为模型实际输入仍然是离散 token，扰动后向量未必对应合法词。}
+{00:07:00--00:07:15}
+
+\begin{importantbox}{NLP attack 的根本差异}
+    图像攻击常在连续空间中寻找小扰动；NLP 攻击则必须在离散语言空间中寻找可读、语义合理、语法可接受的扰动。也就是说，攻击不只要骗过模型，还要像一句人话。
+\end{importantbox}
+
+\subsection{本章小结}
+
+NLP 对抗攻击的核心难点来自离散性。文本模型内部使用连续 embedding，但外部输入和人类理解都是离散语言。攻击方法必须同时考虑模型输出、词表约束、语义保持、语法流畅和人类可读性。
+
+% =====================================================================
+\section{Evasion Attack：让模型在测试时犯错}
+% =====================================================================
+
+本讲主要聚焦 evasion attack。Evasion attack 发生在模型已经训练好之后，攻击者不改变训练资料或模型参数，而是在测试时修改输入，让模型给出错误输出。
+
+\framefig{0.88}{figures/fig06_cv_evasion_panda.jpg}
+{CV 中经典的 evasion attack：给熊猫图加入人眼难察觉的扰动后，模型把它高信心判为 gibbon。}
+{00:10:15--00:10:30}
+
+\subsection{通用定义}
+
+给定干净输入 $x$、真实标签 $y$ 和模型 $f$，evasion attack 寻找一个扰动后的输入 $x'$，使
+\[
+f(x')\ne y,\qquad x'\approx x.
+\]
+符号含义如下：
+\begin{description}
+    \item[$x$] 原始干净输入，例如一句影评或一张图片。
+    \item[$x'$] 攻击者构造的 adversarial input。
+    \item[$f$] 已训练好的 victim model。
+    \item[$x'\approx x$] 对人类而言，两者应保持相似或语义不变。
+\end{description}
+
+在图像里，$x'\approx x$ 可以用像素距离或扰动范数描述；在文本里，不能只用向量距离，而要问替换后句子是否还通顺、语义是否还相同、任务标签是否应该保持。
+
+\subsection{Sentiment analysis 示例}
+
+课程用 sentiment analysis 说明 NLP evasion attack。原句是负面评价，模型预测 negative；攻击者仅把某个词从单数改成复数，句子对人类来说意思几乎不变，但模型预测变成 positive。
+
+\framefig{0.92}{figures/fig07_sentiment_word_change.jpg}
+{Sentiment analysis 攻击：只把 film 改为 films，语义几乎不变，但模型输出从 Negative 变为 Positive。}
+{00:11:15--00:11:30}
+
+这个例子说明，NLP 模型可能对看似很小的词形变化过度敏感。人类不会因为 film 变成 films 就改变情绪判断，但模型可能因为训练分布、tokenization 或局部统计而发生输出翻转。
+
+\subsection{Dependency parsing 示例}
+
+另一个例子是 dependency parsing。攻击者修改句子中的部分词，让模型产生错误的 dependency tree。这里的攻击目标不再是分类标签，而是结构化输出：树的边、依存关系和句法结构。
+
+\framefig{0.92}{figures/fig08_dependency_parsing_attack.jpg}
+{Dependency parsing 攻击：修改输入后，模型产生错误依存树；对结构化预测任务，攻击目标可以是树结构本身。}
+{00:12:15--00:12:30}
+
+这提醒我们，NLP adversarial attack 并不局限于分类。机器翻译、问答、摘要、语法分析、序列标注等任务都有自己的输出空间，也就有不同的攻击目标。
+
+\subsection{Machine translation 示例}
+
+课程还举了机器翻译的实际例子：一句英文被机器翻译成与人类预期明显不一致的中文。这样的错误不一定是人为攻击造成，但它说明只要输入导致模型表现异常，就值得从 adversarial example 的角度审视。
+
+\framefig{0.90}{figures/fig09_machine_translation_attack.jpg}
+{机器翻译中的异常行为示例：输入句子导致翻译系统输出与人类预期不一致的结果。}
+{00:15:45--00:16:00}
+
+机器翻译的危险在于，输出会被人直接使用。若攻击者能系统性构造输入，使翻译漏掉否定、改变情绪或歪曲实体关系，后果可能比普通分类错误更严重。
+
+\subsection{本章小结}
+
+Evasion attack 的共同点是：模型已训练好，攻击者在测试时修改输入，使输出偏离预期。NLP 中的攻击目标可能是分类结果、句法树、翻译结果或其他结构化输出；有效攻击必须同时骗过模型和维持人类可接受性。
+
+% =====================================================================
+\section{Evasion Attack 的四个要素}
+% =====================================================================
+
+课程接着提出一个非常好用的框架：构造 NLP evasion attack 可以拆成四个要素，分别是 goal、transformations、constraints 和 search method。
+
+\framefig{0.92}{figures/fig10_four_ingredients.jpg}
+{Evasion attack 的四个要素：goal、transformations、constraints、search method。}
+{00:17:15--00:17:30}
+
+\subsection{四要素总览}
+
+\begin{enumerate}
+    \item \textbf{Goal}：攻击想达到什么目标，例如 untargeted misclassification 或 targeted classification。
+    \item \textbf{Transformations}：允许怎样修改输入，例如同义词替换、插入、删除、字符交换。
+    \item \textbf{Constraints}：什么样的修改仍算合法 adversarial example，例如语义相近、语法通顺、扰动数量有限。
+    \item \textbf{Search Method}：如何在大量候选扰动中找到既满足约束又达成目标的例子。
+\end{enumerate}
+
+\framefig{0.92}{figures/fig11_four_ingredients_pipeline.jpg}
+{四要素在情感分析例子中的流程：先产生候选扰动，再过滤违反 constraints 的候选，最后寻找能达成 goal 的 adversarial input。}
+{00:19:15--00:19:30}
+
+这个框架的好处是把攻击算法拆清楚。很多论文看起来方法不同，本质上只是 goal 不同、transformation 不同、constraint 不同或 search method 不同。理解四要素，就能快速定位一个攻击方法的设计选择。
+
+\subsection{形式化视角}
+
+可以把攻击过程写成 constrained optimization：
+\[
+x^\star=\mathop{\arg\max}_{x'\in\mathcal{T}(x)}
+\mathcal{A}(x',y,f)
+\quad \text{s.t.}\quad C(x,x')=1.
+\]
+符号含义如下：
+\begin{description}
+    \item[$\mathcal{T}(x)$] 从原句 $x$ 经过允许 transformations 得到的候选集合。
+    \item[$\mathcal{A}$] 攻击目标函数，例如让正确类别分数下降或目标类别分数上升。
+    \item[$C(x,x')$] 约束判定，表示 $x'$ 是否仍是合法、自然、语义相近的文本。
+    \item[$x^\star$] 最终选出的 adversarial example。
+\end{description}
+
+NLP 中困难的不只是优化，还包括候选集合很大、离散不可导、语义约束难自动判定。因此后续许多方法都围绕 transformations 与 search 展开。
+
+\subsection{本章小结}
+
+四要素框架是本讲的中心骨架。Goal 定义“攻击要什么”，transformation 定义“能怎么改”，constraint 定义“什么改法仍算合理”，search method 定义“怎么在候选中找成功攻击”。后面的大量技术都可以放回这个框架理解。
+
+% =====================================================================
+\section{Goal：攻击到底想达成什么}
+% =====================================================================
+
+第一个要素是 goal。不同任务和攻击设定下，goal 会不一样。课程先用新闻标题分类说明 untargeted 与 targeted classification，再用翻译和 dependency parsing 说明更复杂的目标形式。
+
+\subsection{Untargeted classification}
+
+Untargeted classification 的目标最宽松：只要让模型不再输出原本正确类别即可。若新闻标题本应分类为 Sci/Tech，攻击后模型输出 Sports 或 World 都算成功。
+
+\[
+f(x')\ne y.
+\]
+符号含义如下：
+\begin{description}
+    \item[$y$] 原本正确或模型在干净输入上的类别。
+    \item[$x'$] 经过扰动后的输入。
+    \item[$f(x')\ne y$] 只要求模型离开原类别，不指定错到哪一类。
+\end{description}
+
+\framefig{0.88}{figures/fig12_goal_news_classification.jpg}
+{新闻标题分类中的 untargeted goal：把原本分类为 Sci/Tech 的新闻扰动成 Sports 或 World 都算成功。}
+{00:21:45--00:22:00}
+
+\subsection{Targeted classification}
+
+Targeted classification 更严格：攻击者指定目标类别 $y_t$，要求模型把输入判成这个目标类别：
+\[
+f(x')=y_t,\qquad y_t\ne y.
+\]
+符号含义如下：
+\begin{description}
+    \item[$y_t$] 攻击者指定的目标类别。
+    \item[$y_t\ne y$] 目标类别不同于原类别。
+\end{description}
+
+例如把所有 Business 新闻都误判成 Sci/Tech，比“只要不是 Business 就好”更难。因为 targeted attack 不仅要让模型犯错，还要把输出推到指定方向。
+
+\subsection{Universal suffix dropper}
+
+在机器翻译中，goal 可能不是分类，而是让翻译系统系统性漏掉某些 suffix。课程展示 universal suffix dropper：在输入句子后附加某种特定片段，使翻译输出丢失后缀或重要信息。
+
+\framefig{0.92}{figures/fig13_universal_suffix_dropper.jpg}
+{Universal suffix dropper：通过特定输入片段，让翻译系统在输出中丢掉句子后缀或重要信息。}
+{00:25:00--00:25:15}
+
+这种攻击的危险在于“universal”。它不是只针对单一句子，而是可能对一类输入产生稳定效果。若攻击片段能反复触发翻译漏译，系统层面的风险就会更高。
+
+\subsection{结构化预测目标}
+
+Dependency parsing 的目标可以是产生错误的 parse tree。此时攻击不是改变一个标签，而是破坏输出结构。例如让某条依存边错误、让某个 head 指向错误位置，或让整个句法树偏离正确结构。
+
+\framefig{0.88}{figures/fig14_goal_dependency_parsing.jpg}
+{Dependency parsing 的 goal：让模型输出错误依存树；结构化任务的攻击目标不只是类别翻转。}
+{00:26:30--00:26:45}
+
+\begin{knowledgebox}{Goal 决定攻击难度}
+    Untargeted classification 通常最容易，targeted classification 更难；结构化输出、翻译输出或 universal trigger 更复杂。评估攻击方法时，必须先看 goal，否则不同方法的成功率不能直接比较。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Goal 定义攻击成功条件。分类任务中常见 untargeted 与 targeted 两种；翻译、解析、序列标注等任务则有更丰富的目标。攻击目标越具体、越结构化、越通用，通常越难达成。
+
+% =====================================================================
+\section{Transformations：如何构造候选文本}
+% =====================================================================
+
+第二个要素是 transformations，也就是攻击者允许怎样改写文本。P38 后半部分主要讲这一块：word-level transformations、BERT-based substitution、inflectional morphology、gradient-based substitution、insertion、deletion 和 character-level transforms。
+
+\framefig{0.82}{figures/fig15_transformation_candidates.jpg}
+{Transformation 的目标：从原句出发，产生一组可能的候选改写，再由 constraints 和 search method 选择最终攻击。}
+{00:27:45--00:28:00}
+
+\subsection{WordNet 同义词替换}
+
+最直观的 word-level transformation 是同义词替换。若原句是 ``I highly recommend it''，可以把 highly 替换成 extremely，把 recommend 替换成 advocate 或 commend。替换后句子大致保留语义，但模型可能受到影响。
+
+\framefig{0.90}{figures/fig16_wordnet_synonyms.jpg}
+{WordNet 同义词替换：根据词典为 highly、recommend 等词找到候选同义词。}
+{00:29:30--00:29:45}
+
+这种方法简单，但有明显问题。词典同义词不一定适合当前上下文；recommend 换成 command 在词典中可能有关联，但放进句子里未必自然。NLP attack 不能只看词级同义，还要看句子级语义和语法。
+
+\subsection{Counter-fitted GloVe embedding}
+
+另一种方法是在 embedding space 中找相近词，例如 k-nearest neighbors 或 e-ball。普通 GloVe embedding 根据共现学习，相近词可能包括反义词，因为反义词常出现在相似上下文中。为了解决这个问题，可以使用 counter-fitted embedding：用语言学约束把同义词拉近、反义词推远。
+
+\framefig{0.92}{figures/fig17_counterfitted_glove.jpg}
+{Counter-fitted GloVe：利用语言学约束，让同义词更近、反义词更远，使 embedding 邻居更适合做替换候选。}
+{00:34:45--00:35:00}
+
+\begin{warningbox}{Embedding 近不等于语义可替换}
+    分布式表示中的相近词常表示“语境相似”，不一定表示“可互换”。例如 east/west、north/south 可能因为语境相似而接近，但它们在句子中通常不能随意替换。
+\end{warningbox}
+
+\subsection{BERT masked language modeling 替换}
+
+BERT MLM 提供了更上下文相关的候选生成方式。把待替换词 mask 掉，让 BERT 预测该位置可能出现的词，再把高概率词作为候选。这样得到的词更可能符合上下文。
+
+\framefig{0.90}{figures/fig18_bert_mlm_substitution.jpg}
+{BERT MLM 替换：将 recommend 位置 mask 掉，由 BERT 根据上下文给出 recommend、doubt、expected 等候选。}
+{00:38:00--00:38:15}
+
+MLM 的优点是上下文敏感。它不仅看待替换词本身，也看前后句子结构。因此，相比静态词表或 WordNet，BERT 给出的候选往往更流畅。但它也可能给出语义改变较大的候选，所以仍需要 constraints 过滤。
+
+\subsection{BERT reconstruction：不显式 mask}
+
+另一个变体是不直接 mask，而是把原句送入 BERT，通过 reconstruction 或语言模型评分找替换词。这种做法希望在保留上下文的同时，产生更自然的替换候选。
+
+\framefig{0.90}{figures/fig19_bert_reconstruction.jpg}
+{BERT reconstruction：不显式 mask 原词，而是利用 BERT 的上下文建模能力产生替换候选。}
+{00:39:45--00:40:00}
+
+它和 MLM 的差别在于，MLM 明确告诉模型“这里缺一个词”；reconstruction 则让模型在原句基础上评估哪些替换合理。两者都属于语言模型辅助的 transformation。
+
+\subsection{词形变化}
+
+课程还提到 inflectional morphology：改变动词、名词或形容词的屈折形式，例如 recommend、recommends、recommended、recommending。这类变化通常不改变词根核心语义，但会改变时态、数、词性特征或句法一致性。
+
+\framefig{0.88}{figures/fig20_inflectional_morphology.jpg}
+{词形变化 transformation：通过改变动词、名词、形容词的屈折形式生成候选扰动。}
+{00:41:30--00:41:45}
+
+词形变化看似很小，但模型可能非常敏感。尤其是 tokenizer、subword 切分或训练资料频率不同的时候，recommended 与 recommends 可能对应不同 token 组合，从而改变模型输出。
+
+\subsection{本章小结}
+
+Transformations 决定候选文本空间。词典同义词简单但容易脱离上下文；embedding 邻居覆盖面大但会混入反义词；BERT-based 方法更上下文相关；词形变化则利用语言形态上的微小改变。好的 transformation 要足够丰富，才能找到攻击；也要足够保守，避免明显改变语义。
+
+% =====================================================================
+\section{Gradient-based Word Substitution}
+% =====================================================================
+
+前面的 transformations 大多可以在 black-box 场景中使用，因为它们只需要查询模型输出或甚至不依赖模型内部。课程接着讲 gradient-based word substitution，这是 white-box attack：攻击者需要知道模型参数并取得 loss 对 embedding 的梯度。
+
+\framefig{0.88}{figures/fig21_embedding_gradient_forward_backward.jpg}
+{Gradient-based substitution：前向计算 loss，反向取得 loss 对目标词 embedding 的梯度。}
+{00:43:15--00:43:30}
+
+\subsection{为什么需要梯度}
+
+假设句子中第 $i$ 个词的 embedding 是 $e_i$，攻击者想把它替换成候选词 $w_j$ 的 embedding $e_j$。若我们知道 loss $\mathcal{L}$ 对 $e_i$ 的梯度，就能估计替换后 loss 会怎样变化。攻击通常希望增大 loss，使模型更容易犯错。
+
+\[
+\Delta \mathcal{L}_{i\to j}
+\approx
+\nabla_{e_i}\mathcal{L}^{\top}(e_j-e_i).
+\]
+符号含义如下：
+\begin{description}
+    \item[$e_i$] 原词的 embedding。
+    \item[$e_j$] 候选替换词的 embedding。
+    \item[$\nabla_{e_i}\mathcal{L}$] loss 对原词 embedding 的梯度。
+    \item[$\Delta \mathcal{L}_{i\to j}$] 把词 $i$ 替换成词 $j$ 后 loss 变化的一阶近似。
+\end{description}
+
+\framefig{0.90}{figures/fig22_gradient_loss_change.jpg}
+{用梯度估计替换词造成的 loss 变化：候选 embedding 与原 embedding 的差向量会和梯度做内积。}
+{00:45:15--00:45:30}
+
+\subsection{一阶泰勒近似}
+
+这个估计来自一阶 Taylor approximation。对可微函数 $\mathcal{L}(x)$，在 $x_0$ 附近有
+\[
+\mathcal{L}(x_1)\approx \mathcal{L}(x_0)+
+\nabla_x\mathcal{L}(x_0)^{\top}(x_1-x_0).
+\]
+符号含义如下：
+\begin{description}
+    \item[$x_0$] 当前点，例如原词 embedding。
+    \item[$x_1$] 候选点，例如替换词 embedding。
+    \item[$\nabla_x\mathcal{L}(x_0)$] 当前点处的梯度。
+    \item[$x_1-x_0$] 从原点移动到候选点的方向。
+\end{description}
+
+\framefig{0.90}{figures/fig23_taylor_approximation.jpg}
+{一阶泰勒近似直觉：用当前点附近的切线估计移动到候选点后 loss 的变化。}
+{00:46:45--00:47:00}
+
+在 embedding space 中，候选词是离散点。我们不能像图像那样沿梯度连续移动到任意位置，但可以用梯度评估“若移动到某个候选词，loss 可能增加多少”。
+
+\subsection{选择 top-k 候选替换词}
+
+于是可以对词表中的候选词计算分数：
+\[
+s_j=\nabla_{e_i}\mathcal{L}^{\top}(e_j-e_i),
+\]
+再选出分数最高的 top-$k$ 个候选作为替换词。
+符号含义如下：
+\begin{description}
+    \item[$s_j$] 用一阶近似估计的候选替换分数。
+    \item[$k$] 保留的候选数量。
+    \item[$\operatorname{top}\text{-}k$] 从所有候选中选出分数最大的 $k$ 个。
+\end{description}
+
+\framefig{0.90}{figures/fig24_topk_gradient_replacements.jpg}
+{Gradient-based substitution 的最终选择：用梯度内积分数，从词表或候选集合中取 top-k 替换词。}
+{00:48:15--00:48:30}
+
+这种方法高效地利用了模型内部信息，但也更依赖 white-box 假设。若攻击者无法访问梯度，只能通过查询输出，就需要换成 black-box search 或 surrogate model。
+
+\begin{importantbox}{梯度方法的核心}
+    NLP 中不能直接把词沿梯度连续移动，但可以用梯度给离散候选词打分。它把“连续优化方向”转化为“离散词替换排序”。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Gradient-based word substitution 通过 loss 对 embedding 的梯度估计候选替换的影响。它用一阶泰勒近似把替换词的 embedding 差向量和梯度做内积，再选 top-$k$ 候选。优点是高效、目标明确；缺点是需要 white-box 访问，并且仍需语义约束过滤。
+
+% =====================================================================
+\section{Insertion、Deletion 与 Character-level Transform}
+% =====================================================================
+
+除了替换词，也可以插入词、删除词或修改字符。这些 transformation 改变方式更直接，但也更容易破坏句子自然性，因此更需要 constraints 控制。
+
+\subsection{Word insertion}
+
+Word insertion 可以基于 BERT MLM。先决定插入位置，再在该位置放入 mask，让 BERT 预测适合插入的词。若插入词既自然又能影响模型输出，就可能形成攻击。
+
+\framefig{0.90}{figures/fig25_bert_mlm_insertion.jpg}
+{基于 BERT MLM 的 word insertion：在句中插入 mask，让 BERT 预测可插入词。}
+{00:52:15--00:52:30}
+
+插入比替换更灵活，因为原词都保留下来；但插入太多词会改变句子风格、长度和语义焦点。实际攻击通常限制插入次数，并要求句子仍自然。
+
+\subsection{Word deletion}
+
+Word deletion 则删除某些词。删除 highly 后，句子可能从 ``I highly recommend it'' 变成 ``I recommend it''；语义变化较小。但删除关键词也可能明显改变含义，例如删除 not 会完全反转句意。
+
+\framefig{0.88}{figures/fig26_word_deletion.jpg}
+{Word deletion：从原句中删除某些词，得到较短的候选句子。}
+{00:53:00--00:53:15}
+
+因此 deletion 的关键是判断被删词是否语义关键。停用词、程度副词或重复成分可能较安全；否定词、实体名、关系词通常不能随意删除。
+
+\subsection{Character-level transforms}
+
+Character-level transformation 在字母层级操作，例如 swap、substitution、deletion、insertion。课程中的例子包括 Team 变成 Taem、Text 变成 Texm、Artist 变成 Arxist、Computer 变成 Comptuer 等。
+
+\framefig{0.92}{figures/fig27_char_level_transform.jpg}
+{Character-level transforms：通过字符交换、替换、删除、插入构造人类仍可辨认但模型可能出错的输入。}
+{00:55:30--00:55:45}
+
+字符级攻击常利用人类阅读的鲁棒性。人可以轻松看懂少量拼写错误，但模型的 tokenizer 可能产生完全不同的 subword，导致表示和输出大幅变化。特别是基于 BPE、WordPiece 等 subword tokenizer 的模型，字符级扰动会改变分词边界。
+
+\subsection{Constraints 的预告}
+
+课程在本集末尾进入第三个要素：constraints，也就是一个 valid adversarial example 应该满足什么条件。前面讲了许多 transformation，但并不是所有候选都能算有效攻击；若句子语义明显变了、语法崩坏了或人类已经看不懂，就不能说模型被合理攻击。
+
+\framefig{0.90}{figures/fig28_constraints_intro.jpg}
+{本集末尾进入 constraints：攻击样本不仅要让模型出错，还要满足“人类认为仍合理”的条件。}
+{00:55:45--00:56:00}
+
+\subsection{本章小结}
+
+Insertion、deletion 和 character-level transforms 扩大了候选空间。它们能构造出更丰富的攻击，但也更容易破坏语义和流畅度。因此 transformations 必须和 constraints 配套使用；只会制造奇怪句子，不算好的 NLP adversarial attack。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P38 的核心是把 NLP evasion attack 拆成一个可分析的工程问题。首先，NLP 输入是离散 token，这使它不同于图像和语音中的连续扰动。攻击者不能只在 embedding 上随便加 noise，而必须构造合法文本。
+
+其次，evasion attack 发生在测试阶段。模型已经训练好，攻击者修改输入，让模型在分类、翻译、依存分析等任务上表现异常。一个成功的 NLP attack 不只是让模型错，还要让人类觉得修改后的文本仍保留原本含义或至少仍是合理输入。
+
+第三，四要素框架非常关键：goal 决定攻击目标，transformation 决定候选空间，constraint 决定候选是否有效，search method 决定如何找到成功样本。本集详细展开了前两个要素，尤其是 word-level transformation。
+
+最后，各种 transformation 可以按信息来源理解：
+\begin{itemize}
+    \item WordNet 使用人工词典知识，简单但上下文感知弱。
+    \item Counter-fitted GloVe 使用 embedding space，同时用语言学约束修正同义词和反义词位置。
+    \item BERT MLM 与 reconstruction 使用上下文语言模型产生自然候选。
+    \item Gradient-based substitution 使用 victim model 的 white-box 梯度，直接估计哪些替换最能增大 loss。
+    \item Insertion、deletion、character-level transforms 从结构和拼写层面扩大扰动空间。
+\end{itemize}
+
+\begin{importantbox}{本集的压缩理解}
+    NLP adversarial attack 的难点不是“怎么让模型错”这么简单，而是“怎么在离散语言空间中，找到既像人话、语义又足够接近、同时还能让模型犯错的文本”。这就是为什么 transformation、constraint 和 search 必须一起设计。
+\end{importantbox}
+
+\subsection{拓展阅读}
+
+后续学习可以关注三类问题：
+\begin{itemize}
+    \item \textbf{Constraints}：如何自动判断语义保持、语法流畅、人类可接受性。
+    \item \textbf{Search method}：如何在巨大的离散候选空间中高效找到成功攻击。
+    \item \textbf{Defense}：如何训练或设计模型，让它对同义词替换、字符扰动、插入删除更稳健。
+\end{itemize}
+
+\end{document}

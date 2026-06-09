@@ -1,0 +1,511 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\CE}{CE}
+\DeclareMathOperator{\MRR}{MRR}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\vx}{\mathbf{x}}
+\newcommand{\vh}{\mathbf{h}}
+\newcommand{\vz}{\mathbf{z}}
+\newcommand{\vmu}{\boldsymbol{\mu}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{BERT 的三个故事：自监督模型的多功能性}
+\newcommand{\notesubtitle}{Cross-lingual, Cross-discipline, and Pre-training on Artificial Data}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 53 分 42 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=45}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{自监督模型为什么看起来无所不能}
+% =====================================================================
+
+这堂课讨论一个看似夸张的问题：自监督模型到底有多么“万能”？课程没有从更大的模型、更大的资料量或更强的 benchmark 说起，而是用三个故事来展示一个更微妙的现象：模型只是在某一种形式的数据上做填空题，却可能在后来表现出跨语言、跨学科、甚至从人工规则数据迁移到自然语言任务的能力。
+
+\framefig{0.92}{figures/fig01_outline_three_stories.jpg}
+{课程主线由三个故事组成：跨语言能力、跨学科能力，以及用人工数据进行预训练。}
+{00:00:30--00:00:45}
+
+三个故事的表面内容不同，但共同的问题是：\textbf{预训练到底让模型学到了什么？} 如果 BERT 只是在做 masked language modeling，它为什么能迁移到没有看过的语言？如果它只看过人类语言，为什么能帮 DNA、蛋白质和音乐分类？如果预训练数据甚至不是自然语言，只是人工规则生成的 token sequence，它为什么仍然可能改善 GLUE 等自然语言任务？
+
+\begin{importantbox}{本讲的核心视角}
+    自监督预训练不只是在记住训练语料中的词汇知识。它还可能学到一些更抽象的能力，例如把符号映射到连续表示、利用上下文补全缺失信息、从长序列中整合远距离关系、以及让后续优化更容易。三个故事正是在不同实验设定下，逐步拆解这些能力。
+\end{importantbox}
+
+为了避免把“有用”误读成“懂了人类语言”，本讲反复强调一件事：某个预训练模型在下游任务上有帮助，并不等于它学到了我们直觉中那种完整语义。很多实验结果更像是在说明，预训练提供了一组对学习有利的 inductive bias，使模型在 fine-tuning 时更容易找到好解。
+
+\subsection{自监督学习的最小形式}
+
+BERT 类模型的典型预训练任务是 masked language modeling。给定 token 序列
+\[
+\vx=(x_1,x_2,\ldots,x_T),
+\]
+随机遮住其中一部分位置 $M$，模型看到未遮住的上下文 $\vx_{\setminus M}$，并预测被遮住的 token：
+\[
+\mathcal{L}_{\mathrm{MLM}}
+=-\sum_{i\in M}\log p_\theta(x_i\mid \vx_{\setminus M}).
+\]
+其中 $M$ 是被 mask 的位置集合，$p_\theta$ 是模型给出的条件分布。这个目标看起来很简单：填空。但为了填对空格，模型必须把局部上下文、句法线索、词义相关性、长距离依赖和语料统计都压进内部表示。
+
+\framefig{0.92}{figures/fig02_multilingual_bert_mlm.jpg}
+{多语言 BERT 的训练仍然是填空题，只是训练资料来自多种语言；同一个模型被迫在不同语言的 token 序列上学习补全。}
+{00:01:00--00:01:15}
+
+\begin{knowledgebox}{为什么“填空”可能很强}
+    填空题不是简单的字典查表。若句子中出现“首都”“人口”“总统”“年份”等上下文，模型要预测正确 token，就必须组织世界知识、语义相似性和句法位置。随着语料规模变大，MLM 目标会把大量隐含结构压缩到表示空间中；这也是后来三个故事能成立的背景。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+本讲用三个故事追问自监督预训练的能力来源。masked language modeling 的形式很朴素，但为了完成这个目标，模型必须建立可迁移的内部表示。后续三个故事分别从跨语言、跨学科和人工数据三个角度，说明这些表示并不只是某个语料的表面统计。
+
+% =====================================================================
+\section{故事一：多语言 BERT 的跨语言能力}
+% =====================================================================
+
+第一个故事讨论 multi-lingual BERT。直觉上，如果模型要解决中文 QA，就需要中文 QA 的训练资料；如果只有英文 QA 的训练资料，模型应该无法直接回答中文问题。多语言 BERT 的有趣之处在于：它在很多语言上做过 MLM 预训练后，可以在英文 QA 上 fine-tune，再直接拿去测试中文 QA。这就是典型的 cross-lingual zero-shot transfer。
+
+\framefig{0.92}{figures/fig03_cross_lingual_qa_setup.jpg}
+{跨语言问答设定：多语言 BERT 先在多语言语料上预训练，再用英文 QA 训练下游模型，最后直接测试中文 QA。}
+{00:02:15--00:02:30}
+
+形式化地说，设英文训练集为
+\[
+\mathcal{D}_{\mathrm{en}}
+=\{(q_i^{\mathrm{en}},d_i^{\mathrm{en}},a_i^{\mathrm{en}})\}_{i=1}^{n},
+\]
+中文测试集为
+\[
+\mathcal{D}_{\mathrm{zh}}
+=\{(q_j^{\mathrm{zh}},d_j^{\mathrm{zh}},a_j^{\mathrm{zh}})\}_{j=1}^{m}.
+\]
+zero-shot transfer 的关键是：fine-tuning 阶段没有使用中文 QA 标注，但测试时要求模型在中文资料上给出答案 span。若模型仍然表现不错，说明它的表示空间中至少存在某种跨语言共享结构。
+
+\subsection{英文训练、中文测试的实验现象}
+
+课程展示了英语 SQuAD 与中文 DRCD 的问答实验。若用传统 QA 模型 QANet 且没有跨语言预训练，中文测试表现明显较弱；如果 BERT 在中文上预训练并在中文 QA 上 fine-tune，表现最高，这符合直觉。真正惊人的地方是：多语言 BERT 即使 fine-tune 在英文 QA 上，再测试中文 QA，也能取得相当可用的表现。
+
+\framefig{0.92}{figures/fig04_drcd_squad_results.jpg}
+{SQuAD 与 DRCD 的跨语言 QA 结果表明：多语言 BERT 在英文 QA 上 fine-tune 后，仍能迁移到中文 QA。}
+{00:04:15--00:04:30}
+
+这个现象后来已经不只出现在 QA。课程提到 XTREME benchmark：它把 sentence classification、structured prediction、sentence retrieval、question answering 等任务放在统一跨语言评测中，常见设定就是在英文上 fine-tune，再测试其余语言。也就是说，多语言迁移已经从“新奇发现”变成 NLP 里的常识性评估方式。
+
+\framefig{0.92}{figures/fig05_xtreme_zero_shot_transfer.jpg}
+{XTREME benchmark 将跨语言迁移标准化：常见做法是在英文上 fine-tune，然后在其他语言上测试。}
+{00:06:00--00:06:15}
+
+\begin{importantbox}{跨语言迁移的基本设定}
+    跨语言 zero-shot 并不是模型看不见中文。模型在预训练阶段可能已经看过中文语料；zero-shot 指的是下游监督资料只来自英文。重点在于：英文下游任务学到的决策边界，能否套用到中文表示上。
+\end{importantbox}
+
+\subsection{第一种解释：不同语言的语义表示被对齐}
+
+一个自然解释是：多语言 BERT 学到的表示是 language-agnostic 的。比如英文的 \texttt{rabbit} 和中文的“兔”，英文的 \texttt{fish} 和中文的“鱼”，虽然表面符号不同，但在表示空间中可能靠得很近。这样一来，下游模型只要在英文表示上学会“某类语义对应答案”，中文表示若落在相近位置，就能被同一套决策规则处理。
+
+\framefig{0.92}{figures/fig06_language_agnostic_semantics.jpg}
+{一种解释是语义对齐：不同语言中意思相近的词，在多语言 BERT 的表示空间中彼此接近。}
+{00:06:45--00:07:00}
+
+可以把这个想法写成 embedding alignment。对任意 token $w$，从大量上下文中抽取它在 BERT 某一层的 contextualized representation，然后取平均：
+\[
+\bar{\vh}(w)=\frac{1}{N_w}\sum_{k=1}^{N_w}\vh(w;\mathrm{context}_k).
+\]
+其中 $N_w$ 是 token $w$ 出现的上下文数量，$\vh(w;\mathrm{context}_k)$ 是该 token 在第 $k$ 个上下文中的表示。若双语词典给出 $(w_{\mathrm{en}},w_{\mathrm{zh}})$，就可以比较
+\[
+\cos\bigl(\bar{\vh}(w_{\mathrm{en}}),\bar{\vh}(w_{\mathrm{zh}})\bigr)
+=
+\frac{\bar{\vh}(w_{\mathrm{en}})^\top \bar{\vh}(w_{\mathrm{zh}})}
+{\|\bar{\vh}(w_{\mathrm{en}})\|\|\bar{\vh}(w_{\mathrm{zh}})\|}.
+\]
+如果正确翻译对在相似度排序中越靠前，就说明两种语言的词汇表示越对齐。
+
+\subsection{用 MRR 测量跨语言对齐}
+
+课程用双语词典说明 Mean Reciprocal Rank。对英文词 $w_i$，先计算它与一组中文候选词的表示相似度，把所有中文候选按相似度排序。如果正确翻译排第 $r_i$ 名，则该词贡献 $1/r_i$；对所有词取平均：
+\[
+\MRR=\frac{1}{N}\sum_{i=1}^{N}\frac{1}{r_i}.
+\]
+其中 $N$ 是词典中被评估的词对数量。$\MRR$ 越高，表示正确翻译越常出现在排序前面，跨语言 alignment 越好。
+
+\framefig{0.92}{figures/fig07_mrr_alignment_metric.jpg}
+{MRR 的计算方式：根据双语词典检查正确翻译在相似度排序中的名次，再取 reciprocal rank 的平均。}
+{00:10:15--00:10:30}
+
+实验结果显示，多语言 BERT 的不同语言表示确实有明显对齐效果。更有意思的是，一些传统 word embedding 方法在足够语料下也能出现对齐现象；这提示我们不要把所有能力都神化为 Transformer 独有。预训练资料量、共享训练目标、语料统计和模型结构都会影响最终对齐程度。
+
+\framefig{0.92}{figures/fig08_mrr_results_across_languages.jpg}
+{不同模型与语料规模下的 MRR 结果显示，多语言表示对齐并非凭空出现，而与资料量和训练方式有关。}
+{00:12:15--00:12:30}
+
+\begin{warningbox}{不要把 alignment 误读成“语言差异完全消失”}
+    如果表示完全 language-agnostic，模型就无法知道应该用中文还是英文补空。可是多语言 BERT 在中文句子里通常会补中文，在英文句子里通常会补英文。也就是说，表示空间既包含跨语言共享语义，也保留语言身份信息。
+\end{warningbox}
+
+\subsection{第二种解释：语言信息藏在整体方向中}
+
+课程接着提出反问：如果不同语言的语义表示已经对齐，模型做 MLM 时怎么知道要补中文 token 还是英文 token？这说明表示里还必须保留 language information。一个实验性想法是：把某个语言所有 token 的平均表示当成该语言的向量，类似一个 language vector。
+
+\framefig{0.92}{figures/fig09_reconstruction_language_information.jpg}
+{若 embedding 完全不带语言信息，模型就无法决定在重建时输出中文还是英文；因此语言身份仍然存在于表示中。}
+{00:15:00--00:15:15}
+
+对语言 $\ell$ 的 token 集合 $\mathcal{V}_\ell$，可以定义平均语言向量：
+\[
+\vmu_\ell=\frac{1}{|\mathcal{V}_\ell|}\sum_{w\in\mathcal{V}_\ell}\bar{\vh}(w).
+\]
+若 $\vmu_{\mathrm{zh}}$ 和 $\vmu_{\mathrm{en}}$ 的差异代表语言身份，那么
+\[
+\Delta_{\mathrm{zh}\leftarrow\mathrm{en}}
+=\vmu_{\mathrm{zh}}-\vmu_{\mathrm{en}}
+\]
+就可以看作“从英文表示移到中文表示”的方向。这个方向不一定是严格线性的语言翻译机制，但它提供了一种分析表示空间的工具。
+
+\framefig{0.92}{figures/fig10_average_embedding_language_vector.jpg}
+{把某一语言中所有 token 的平均 embedding 视为语言向量，可以用来分析语言身份信息在表示空间中的位置。}
+{00:16:00--00:16:15}
+
+一个有趣实验是：输入英文句子，但在表示上加上从英文到中文的语言差异向量，再让多语言 BERT 重建。课程展示的例子中，模型可能输出中文句子。这并不是说 BERT 本身就是翻译系统，而是说明表示空间中存在某些可操作的语言方向。
+
+\framefig{0.92}{figures/fig11_language_vector_translation_example.jpg}
+{在英文句子的表示上加入中文方向后，再让多语言 BERT 重建，可能得到中文输出；这显示语言信息具有一定可分离性。}
+{00:18:00--00:18:15}
+
+\subsection{这些分析有什么用}
+
+理解语言信息的位置不只是好奇心。若下游模型在英文表示上训练，测试中文时中文表示虽然语义相近，但仍可能带有语言偏移。一个应用方向是：在把中文表示送入英文下游模型前，先减掉中英文语言向量差异，让中文表示更像英文训练时的表示，从而改善跨语言迁移。
+
+\framefig{0.92}{figures/fig12_downstream_language_shift_correction.jpg}
+{跨语言下游任务的一个修正思路：将中文表示扣除中英文平均表示差异，使它更接近英文训练时的表示空间。}
+{00:21:30--00:21:45}
+
+这也给跨语言迁移一个更细致的图像：多语言 BERT 并不是把所有语言混成完全相同的表示，而是在共享语义与语言身份之间形成某种结构。zero-shot transfer 能成立，是因为下游任务需要的语义结构可以跨语言共享；但性能仍受语言偏移影响，因此对齐、校正和语言向量分析仍有意义。
+
+\subsection{本章小结}
+
+多语言 BERT 的跨语言能力可以从两个角度理解。第一，不同语言中语义相近的词在表示空间中会对齐，使英文训练的下游模型能处理中文表示。第二，模型仍保留语言身份信息，否则无法决定 MLM 重建时输出哪种语言。跨语言迁移的关键不是“语言差异不存在”，而是“共享语义结构足够强，语言偏移又可以被建模或修正”。
+
+% =====================================================================
+\section{故事二：从人类语言迁移到 DNA、蛋白质、音乐与语音问答}
+% =====================================================================
+
+第二个故事更反直觉：把在人类语言上预训练的 BERT，用到 DNA、蛋白质和音乐分类上。若 BERT 学到的只是英文单字和句法，它不应该对 DNA 序列有任何帮助；但实验显示，预训练的 BERT 往往比随机初始化更好。这逼我们重新思考：预训练模型提供的能力也许不局限于自然语言语义。
+
+\framefig{0.92}{figures/fig13_cross_discipline_setup.jpg}
+{跨学科迁移设定：在人类语言上预训练的模型，被 fine-tune 到 DNA 或蛋白质分类等非自然语言任务上。}
+{00:22:15--00:22:30}
+
+\subsection{把非语言序列转成 BERT 可以读的 token}
+
+DNA 由 A、T、C、G 四种碱基组成。为了把 DNA 序列输入 BERT，可以建立一个任意映射，把每个碱基或片段映射成 BERT 词表中的 token。例如 A 对应 \texttt{we}，G 对应 \texttt{she}，C 对应 \texttt{he}。这样一段 DNA 就变成一串看起来不知所云的英文 token，然后输入 BERT 做分类。
+
+\framefig{0.92}{figures/fig14_dna_to_text_tokens_bert.jpg}
+{DNA 序列可以通过任意映射变成 BERT token 序列，再接线性分类器进行 DNA 分类。}
+{00:24:45--00:25:00}
+
+这一步很关键：映射本身并不携带语义。若 A 映射到 \texttt{we}，并不是说 A 的生物学意义类似英文 \texttt{we}。实验真正比较的是：\textbf{同样的下游任务与输入映射下，BERT 的预训练参数是否比随机初始化更有利。}
+
+\begin{warningbox}{不要把 token 映射解释成语义翻译}
+    DNA 到英文 token 的映射只是为了使用 BERT 的输入接口。映射可以是任意的，不能把 \texttt{we}、\texttt{she} 等英文词的自然语言语义套到 DNA 碱基上。若预训练有帮助，它说明的是模型结构和参数状态带来一般性学习优势，而不是 BERT 真正理解了 DNA。
+\end{warningbox}
+
+\subsection{跨学科分类结果}
+
+课程展示的实验覆盖蛋白质、DNA 与音乐分类。比较对象包括：specific model、BERT、随机初始化等。结果的核心观察是：用预训练 BERT 初始化，通常优于随机初始化；即使任务不是自然语言，预训练仍能提供某些一般技能。
+
+\framefig{0.92}{figures/fig15_cross_discipline_results_table.jpg}
+{蛋白质、DNA 与音乐分类结果显示：预训练 BERT 往往比随机初始化的模型更好。}
+{00:26:00--00:26:15}
+
+从分类柱状图看，这种优势不是单一任务的偶然现象。DNA 分类、蛋白质分类和音乐分类都出现了不同程度的改善。课程据此提出一个解释：预训练模型学到了一些通用技巧，使它更容易在各种分类任务上被 fine-tune。
+
+\framefig{0.92}{figures/fig16_cross_discipline_bars.jpg}
+{不同任务平均结果进一步显示，预训练带来的改善跨越 DNA、蛋白质和音乐序列分类。}
+{00:27:45--00:28:00}
+
+\subsection{预训练究竟帮了什么：优化与泛化}
+
+为了拆解“预训练有帮助”的来源，课程区分 optimization 与 generalization。optimization 指训练过程中是否更容易把 loss 降下来；generalization 指训练后是否能在测试集上表现更好。两者相关但不同：有时模型训练 loss 很低却过拟合，有时模型训练过程本身就卡住。
+
+\framefig{0.92}{figures/fig17_optimization_generalization_curves.jpg}
+{优化曲线与泛化曲线显示：预训练模型不仅可能让训练 loss 降得更顺，也可能影响测试表现。}
+{00:30:00--00:30:15}
+
+用符号说，fine-tuning 的目标可写成
+\[
+\min_{\theta}\ \frac{1}{n}\sum_{i=1}^{n}\ell(f_\theta(x_i),y_i).
+\]
+随机初始化从 $\theta_{\mathrm{rand}}$ 出发，预训练初始化从 $\theta_{\mathrm{pre}}$ 出发。即使两个模型结构完全相同，优化路径也会不同：
+\[
+\theta_{\mathrm{rand}}\rightarrow \theta^*_{\mathrm{rand}},
+\qquad
+\theta_{\mathrm{pre}}\rightarrow \theta^*_{\mathrm{pre}}.
+\]
+预训练可能把参数放在一个更容易到达好解的区域，也可能让模型的中间层已经具备适合序列任务的特征提取能力。
+
+\begin{importantbox}{跨学科故事的关键结论}
+    BERT 在非语言序列上有帮助，不代表它理解生物学或音乐；它更可能说明预训练给模型带来通用的序列建模能力、优化优势和表示组织能力。下游任务只要也需要处理 token 序列、长程依赖或分类边界，这些能力就可能迁移。
+\end{importantbox}
+
+\subsection{语音问答：第二个故事的延伸}
+
+课程随后把 cross-discipline 的想法延伸到 Speech Question Answering。传统 spoken SQuAD 常用 cascade pipeline：先做 ASR，把语音转成文字，再用文本阅读理解模型找答案。这个做法的问题是，最终 QA 表现会受到 ASR 错误率影响。
+
+\framefig{0.92}{figures/fig18_spoken_squad_cascade.jpg}
+{传统语音问答常用 cascade：语音先经 ASR 转文字，再交给阅读理解模型找答案 span。}
+{00:33:45--00:34:00}
+
+另一个方向是 SpeechBERT：把语音和文字一起放入类似 BERT 的模型，直接预测答案在语音中的 start 与 end。它看起来更端到端，但训练时仍需要语音与文字成对的资料，也就是并没有完全摆脱 transcription 的需求。
+
+\framefig{0.92}{figures/fig19_speechbert_end_to_end.jpg}
+{SpeechBERT 直接处理文字问题与语音内容，并预测答案 span；但训练仍依赖 speech-text paired data。}
+{00:34:00--00:34:15}
+
+课程的目标更大胆：训练资料中没有文字 transcription，只有语音问题、语音文件和答案 span，能不能训练端到端的语音问答？如果直接训练，很难；但若已有 HuBERT 这类自监督语音模型，就可以先把语音变成离散 token 或表示，再尝试让后续模型学习问答。
+
+\framefig{0.92}{figures/fig20_training_without_transcripts.jpg}
+{更困难的训练设定：训练资料没有 speech transcription，只给语音问题、语音文件和答案 span。}
+{00:34:30--00:34:45}
+
+初始尝试显示，仅靠预训练语音模型如 HuBERT 并不能直接解决问题。课程中的 slide 写着 “It does not work / No semantic information”，强调 HuBERT 可能抽取了声学或内容相关表示，但未必已经具备足够的语义理解能力。
+
+\framefig{0.92}{figures/fig21_hubert_no_semantic_information.jpg}
+{只使用预训练语音模型并不能直接完成语音问答，原因可能是表示中缺少足够的语义层次。}
+{00:36:00--00:36:15}
+
+一个改进是：在预训练语音模型后面再叠几层 self-attention，让模型有机会在离散语音 token 上进一步整合上下文、学习问题与文件之间的对应关系。这一步很像把文字 BERT 的序列建模能力借给语音 token。
+
+\framefig{0.92}{figures/fig22_add_self_attention_layers.jpg}
+{在预训练语音模型后追加 self-attention 层，希望补上语义整合与问答推理能力。}
+{00:37:15--00:37:30}
+
+更离奇也更有启发性的实验是：把 HuBERT 输出的离散 token ID 直接当成文字 BERT 的输入 ID，用预训练文本模型初始化后续模块。虽然这些 ID 与文字没有真实语义关系，实验却显示结果大幅改善：没有预训练时 F1 约为 6.12，使用文本 BERT 预训练后 F1 可到约 54.22。
+
+\framefig{0.92}{figures/fig23_speech_qa_results_no_pretrain_vs_text.jpg}
+{将 HuBERT 的离散 token ID 接到预训练文本 BERT 后，语音问答效果大幅提升；slide 中给出无预训练与文本预训练的 F1 对比。}
+{00:39:45--00:40:00}
+
+与 cascade 方法相比，这种方式的潜在优势是避免 ASR 错误传播。课程展示的图中，ASR 错误率上升会让基于 ASR 的 QA 表现下降；而不依赖显式语音辨识的端到端语音 QA，在高 ASR 错误条件下可能更有吸引力。
+
+\framefig{0.92}{figures/fig24_speech_qa_asr_error_comparison.jpg}
+{ASR 错误率越高，cascade 的语音 QA 越受影响；不显式依赖 ASR 的方法提供了另一条路线。}
+{00:41:00--00:41:15}
+
+\subsection{本章小结}
+
+第二个故事说明，预训练模型的迁移能力可以跨出自然语言。BERT 用在人类语言以外的序列任务上，可能并不是因为它掌握了目标领域语义，而是因为预训练让模型具备了更好的初始化、序列组织能力和上下文整合能力。语音问答实验进一步显示，文字 BERT 的能力甚至可能通过离散 token 接口迁移到语音任务，尽管这种迁移的机制仍然值得继续研究。
+
+% =====================================================================
+\section{故事三：在人造资料上预训练}
+% =====================================================================
+
+第三个故事把问题推到更极端：如果预训练资料不是人类语言，而是人工规则产生的 token sequence，模型还能不能在自然语言任务上受益？这个设定的价值在于可控性。自然语言里同时混有语义、语法、世界知识、词频、长程依赖等因素，很难判断到底哪个因素让预训练有效；人工数据可以按规则逐项控制。
+
+\framefig{0.92}{figures/fig25_pretraining_on_artificial_data.jpg}
+{人工数据预训练的实验设定：不再用人类语言预训练，而是用规则生成的 token sequence 训练模型，再测试 GLUE 等 NLP 任务。}
+{00:42:15--00:42:30}
+
+\subsection{人工数据如何接到自然语言任务}
+
+实验先用规则生成 token sequence，在这些序列上训练 BERT 做填空题。因为预训练语料不是自然语言，模型只认识人工 token ID。fine-tuning 到自然语言任务时，需要建立一个表，把自然语言词汇映射到人工 token ID。这个映射可以随机生成。
+
+\framefig{0.92}{figures/fig26_artificial_tokens_to_bert.jpg}
+{人工 token sequence 先用来预训练 BERT；之后通过 token ID 映射，把自然语言句子转成模型能读的 ID。}
+{00:44:15--00:44:30}
+
+这个设计很反直觉：如果 token ID 与英文词之间没有真实语义关系，为什么预训练还会有帮助？答案可能是，某些预训练资料不需要包含真实语义，也能训练出对下游任务有用的结构性能力。例如，模型学会在长序列中寻找规律、利用上下文位置、处理重复或配对关系，这些能力后来也能帮助自然语言任务。
+
+\begin{knowledgebox}{人工数据实验的研究意义}
+    人工数据不是为了替代真实语言语料，而是为了做因果拆解。通过改变生成规则，研究者可以观察哪些结构会让预训练有帮助，哪些结构没有帮助，从而推测自然语言预训练中真正关键的能力。
+\end{knowledgebox}
+
+\subsection{随机数据、成对数据与 shuffle 数据}
+
+课程展示的第一组结果比较英文预训练、随机人工数据、paired 数据与 shuffle 数据。纵轴是相对 train from scratch 的平均绝对提升；值越大，代表预训练越有帮助。英文预训练接近上界，完全随机的人工数据帮助较小，而某些有结构的人工数据可以带来接近英文预训练的提升。
+
+\framefig{0.92}{figures/fig27_artificial_data_first_results.jpg}
+{人工数据预训练结果：英文预训练效果最好；纯随机数据帮助有限；有结构的人工数据明显更有用。}
+{00:46:00--00:46:15}
+
+paired 数据的规则是：生成句子时让 token 成对出现。若一个 token 出现，另一个位置会有与它配对的 token。这会迫使模型在做填空题时学习跨位置关系，而不是只依赖局部频率。实验显示，这类规则能带来相当明显的下游提升。
+
+\framefig{0.92}{figures/fig28_paired_tokens_result.jpg}
+{paired 人工数据让 token 成对出现，迫使模型学习跨位置依赖，因此比无结构随机数据更有帮助。}
+{00:47:45--00:48:00}
+
+另一种有效规则是 shuffle。先产生连续编号的 token sequence，例如 $1,2,\ldots,64$，再在一定范围内打乱。模型必须利用较长范围内的 token 关系来预测被遮住的位置。实验显示，shuffle 数据也能带来接近 paired 数据的提升。
+
+\framefig{0.92}{figures/fig29_shuffle_artificial_data.jpg}
+{shuffle 人工数据通过打乱连续编号序列制造长程依赖，效果接近 paired 数据。}
+{00:49:45--00:50:00}
+
+\subsection{长距离阅读能力可能很关键}
+
+课程最后展示了一个重要发现：shuffle 的范围越大，预训练效果越好。若只在长度为 4 的小范围内打乱，提升有限；当范围扩大到 64 时，提升显著增加。老师据此提出一个可能解释：让模型在预训练时被迫阅读较长范围、整合远距离关系，对自然语言任务很重要。
+
+\framefig{0.92}{figures/fig30_long_range_context_crucial.jpg}
+{shuffle 范围越长，下游提升越明显；这提示长距离上下文整合可能是预训练成功的重要因素。}
+{00:52:15--00:52:30}
+
+这个结论并不等于“长程依赖是唯一因素”。课程也强调目前没有非常精确的答案。人工数据实验只能说明：某些可控结构足以带来迁移收益；至于自然语言预训练究竟还依赖哪些因素，例如语义层次、词频结构、句法结构、世界知识、tokenization 方式等，仍然是开放问题。
+
+\begin{importantbox}{人工数据故事给出的最保守结论}
+    预训练的价值不必完全来自真实语义。只要预训练任务迫使模型学习某些对下游任务有用的序列处理能力，例如长距离依赖、位置关系和上下文补全，模型就可能在自然语言任务上获得更好的初始化。
+\end{importantbox}
+
+\subsection{本章小结}
+
+人工数据预训练把自监督学习从“语料越真实越好”的直觉中抽离出来。纯随机数据帮助有限，但带有配对关系或长程 shuffle 结构的数据可以显著改善下游 NLP 任务。这说明自监督预训练的关键能力至少部分来自序列结构学习，而不仅是自然语言语义记忆。
+
+% =====================================================================
+\section{三个故事的共同解释}
+% =====================================================================
+
+跨语言、跨学科和人工数据三个故事看似越来越离奇：先是英文到中文，再是语言到 DNA 与语音，最后甚至是人工 token 到自然语言任务。但它们都指向同一个问题：\textbf{预训练模型的可迁移能力来自哪些层次？}
+
+\framefig{0.92}{figures/fig31_concluding_remarks.jpg}
+{课程结尾回到三个故事：跨语言、跨学科和人工数据预训练，共同说明 self-supervised learning 仍有许多未解之谜。}
+{00:53:30--00:53:42}
+
+\subsection{层次一：表示空间的对齐}
+
+跨语言故事展示的是表示空间对齐。同一语义在不同语言里可以落到相近区域，使英文下游模型能处理中文输入。但表示不是完全无语言差异的：语言身份也以某种方向或偏移保留下来。这里的迁移依赖“共享语义结构 + 可处理的语言偏移”。
+
+\subsection{层次二：序列建模的通用能力}
+
+跨学科故事说明，预训练模型可能学到与具体语义无关的序列建模技巧。DNA、蛋白质、音乐和语音 token 都不是英文句子，但它们也是序列，也可能存在局部模式、远程依赖和分类相关结构。预训练参数提供的不是目标领域知识本身，而是处理序列任务的有利初始状态。
+
+\subsection{层次三：优化路径的改善}
+
+预训练还可能改变 fine-tuning 的优化几何。随机初始化的模型需要同时学会基本表示、序列交互和任务边界；预训练模型已经有一套可用的中间表示和注意力模式，因此下游训练更容易收敛到好解。跨学科曲线和语音问答实验都支持这种解释。
+
+\subsection{层次四：长距离上下文整合}
+
+人工数据故事特别突出长距离阅读能力。若预训练任务要求模型用很长范围的上下文来预测缺失 token，模型可能学到自然语言任务中也有用的能力。许多 NLP 任务，例如问答、推论、句子分类，都不只依赖局部词汇，而需要整合句子或段落中的多处信息。
+
+\begin{warningbox}{仍然不能过度解释}
+    这些实验说明预训练可以迁移，但没有证明模型拥有人类式理解。尤其在人造数据与跨学科任务中，提升可能来自优化、结构归纳偏置或长程依赖处理，而不是语义理解。解释模型能力时，应区分“任务表现提升”和“理解机制明确”。
+\end{warningbox}
+
+\subsection{本章小结}
+
+三个故事共同说明，自监督预训练的能力不是单一来源。它既可能来自语义对齐，也可能来自序列建模、长程依赖、优化初始化和可迁移的表示结构。越是离奇的实验，越提醒我们不要只用“模型记住了语言知识”解释预训练；真正的问题是找出哪些结构性能力在不同任务之间共享。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲的表面主题是“BERT 的三个故事”，实质主题是自监督学习的可迁移性。第一个故事中，多语言 BERT 通过共享预训练目标，让不同语言的表示出现语义对齐，同时保留语言身份信息；因此英文下游模型可以迁移到中文，但迁移效果仍受语言偏移影响。第二个故事中，BERT 的预训练能力跨出自然语言，帮助 DNA、蛋白质、音乐和语音问答等任务，说明预训练提供的可能是更一般的序列建模与优化优势。第三个故事中，人工数据预训练进一步表明：即使没有真实语言语义，只要数据结构迫使模型学习长距离关系，也可能对自然语言任务有帮助。
+
+可以把整堂课压缩成一句话：\textbf{自监督预训练的价值不只是知识，而是把模型放到一个更会读序列、更会利用上下文、更容易被下游任务塑形的状态。}
+
+\subsection{与前后课程的连接}
+
+前面讲 BERT、GPT 和各种自监督模型时，我们通常关注预训练任务本身：MLM、next token prediction、contrastive learning、masked acoustic modeling 等。本讲则更像是对这些任务的“拆机”：为什么一个看似简单的目标会产生超出原任务范围的能力？这与后续 domain adaptation、transfer learning、foundation model 和 representation analysis 都有直接关系。
+
+\subsection{三个可以继续追问的问题}
+
+\begin{enumerate}
+    \item \textbf{哪些能力真正来自语义，哪些来自结构？} 多语言迁移看起来依赖语义对齐，但人工数据说明非语义结构也很重要。区分二者需要更可控的实验。
+    \item \textbf{预训练主要改善 optimization 还是 generalization？} 如果预训练只是让训练更容易，和它真正学到可泛化知识，是两种不同解释。实际模型往往二者兼有。
+    \item \textbf{长距离上下文是否是自监督成功的核心因素？} shuffle 实验显示长范围关系很重要，但自然语言还包含语法、语义、篇章结构和世界知识。长程依赖可能是必要因素之一，而非完整答案。
+\end{enumerate}
+
+\begin{importantbox}{实践启发}
+    当一个预训练模型在新领域有效时，不要马上假设它“理解”了新领域。更务实的分析路径是：检查输入是否可表示为序列、任务是否需要长程上下文、fine-tuning 是否受益于更好初始化、以及预训练表示是否与下游决策边界相容。
+\end{importantbox}
+
+这也是本讲最后的开放感所在：self-supervised learning 已经在很多任务上表现强大，但它为什么强、强在哪里、哪些能力可以被人工设计出来，仍然有许多未解之谜。三个故事不是给出最终答案，而是提供三把钥匙：看表示空间、看跨领域迁移、看可控人工数据。用这三把钥匙，我们可以更细地理解下一代预训练模型到底学到了什么。
+
+\end{document}

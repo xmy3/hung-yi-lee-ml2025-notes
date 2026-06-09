@@ -1,0 +1,322 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{异常检测（七）：多特征、重建误差与总结}
+\newcommand{\notesubtitle}{More Features, Auto-encoders, and Concluding Remarks}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 6 分 01 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=35}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.1cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{加入更多特征}
+% =====================================================================
+
+前两讲用两个特征描述 Twitch Plays Pokémon 玩家：垃圾话比例和无政府状态发言比例。P35 一开始强调，这只是为了画图方便；真实系统中，特征可以更多。只要你认为某个行为与“正常玩家或异常玩家”的判断有关，就可以把它加入 feature vector。
+
+\framefig{0.86}{figures/fig01_more_features_for_density.jpg}
+{更多玩家行为特征：除了垃圾话比例和无政府状态发言比例，还可加入按 START、跟随多数、唱反调等比例}
+{00:00:45--00:01:00}
+
+\subsection{例子中的五维特征}
+
+课程列出一个五维玩家向量：
+\[
+x=
+\begin{bmatrix}
+x_1\\x_2\\x_3\\x_4\\x_5
+\end{bmatrix},
+\]
+其中可以包括：
+\begin{itemize}
+    \item $x_1$：说垃圾话的比例。
+    \item $x_2$：在无政府状态下输入按钮的比例。
+    \item $x_3$：按 START 键的比例。
+    \item $x_4$：输入与多数玩家一致的比例。
+    \item $x_5$：输入与多数玩家相反的比例。
+\end{itemize}
+
+这些特征背后都有行为直觉。例如，如果有人不断按 START 键，游戏会一直打开道具栏，导致大家什么也做不了；这可能是可疑行为。如果一个玩家常常跟多数人唱反调，也可能代表他不是认真通关的正常玩家。
+
+\subsection{特征越多，模型越依赖表示质量}
+
+加入更多特征可以让模型看到更丰富的行为模式，但也带来风险。特征太少，模型可能漏掉关键异常；特征太多，若样本数量不足，密度估计会更困难。特别是在高斯模型中，维度越高，需要估计的协方差参数越多，资料稀疏问题越明显。
+
+因此，特征扩展不是“越多越好”，而是要让每个特征都有合理语义，并且能从资料中稳定估计分布。异常检测很依赖 feature engineering，因为模型最终判断的是“这个向量在训练分布中常不常见”。
+
+\begin{importantbox}{多特征的核心问题}
+    异常常常不是单一特征极端，而是多个特征组合起来少见。加入更多特征的目的，是让模型能看见这种组合异常。
+\end{importantbox}
+
+\subsection{本章小结}
+
+玩家行为可以从二维扩展到多维，例如加入按 START、跟随多数、唱反调等指标。更多特征能表达更细行为，但也提高密度估计难度。无标签异常检测的关键，不只是选择模型，也包括选择能表达正常行为结构的特征。
+
+% =====================================================================
+\section{用对数密度比较玩家}
+% =====================================================================
+
+在多维特征下，仍然可以用上一讲的密度函数给每个玩家打分。课程提到实际计算时会取 log，因为密度值通常非常小。用对数密度可以避免数值太小，也方便比较。
+
+\framefig{0.86}{figures/fig02_log_density_scores.jpg}
+{把多维玩家特征代入密度模型并取 log，得到可比较的分数；分数越高，越像训练资料}
+{00:03:15--00:03:30}
+
+\subsection{三个玩家的分数直觉}
+
+课程比较了几个合成玩家。第一个玩家垃圾话比例低、常在无政府状态下发言、少按 START，并且总是和大家一致，不唱反调，算出的 log score 约为 $-16$。第二个玩家其他部分类似，但从不跟大家一样、还常唱反调，分数降到约 $-22$，因此更可疑。
+
+有趣的是第三个玩家：他并不是百分之百跟大家一样，而是只有约七成时间跟多数一致。模型反而给他更高分，约为 $2$。原因是，在真实训练资料中，几乎没有人永远都和大家一模一样。一个人总是完全跟随多数，反而显得不真实；偶尔不同，才更像普通玩家。
+
+这说明密度模型不是简单地把“看起来好”的特征推到极端。它学习的是训练资料实际分布。若训练资料中“永远跟大家一样”很少见，那么这种行为也可能低密度。
+
+\subsection{异常是相对于分布而言}
+
+这个例子很重要：异常并不等于“某个规则违反得最多”。一个玩家可能在每个单独特征上都看似合理，但组合起来极罕见；另一个玩家可能某个特征不完美，却更符合真实分布。密度模型的优势正是在于能从整体分布角度打分。
+
+若使用异常分数
+\[
+s(x)=-\log f(x),
+\]
+则 log density 越低，异常分数越高。系统可以根据阈值把高异常分数玩家标为 anomaly。
+
+\begin{knowledgebox}{不要把特征极端化当成正常}
+    正常行为往往有自然波动。若某个输入在所有“好特征”上都完美，反而可能不像真实资料。密度模型看的是训练分布，而不是人工规则的理想点。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+多特征密度模型可以给每个玩家一个 log score。分数反映的是输入在训练分布中的常见程度，而不是某个单一规则是否最好。真实正常行为通常有变异，因此“过于完美”的行为也可能低密度。
+
+% =====================================================================
+\section{展望：用自动编码器做异常检测}
+% =====================================================================
+
+前面使用的是 generative model 或 density model，例如 Gaussian distribution。课程接着快速展望另一类深度学习方法：autoencoder。Autoencoder 不一定直接估计密度，而是通过“能不能重建输入”来判断输入是否来自正常分布。
+
+\framefig{0.86}{figures/fig03_autoencoder_training.jpg}
+{Autoencoder 训练：encoder 将输入压成 code，decoder 从 code 重建输入，目标是让输出尽量接近输入}
+{00:04:00--00:04:15}
+
+\subsection{训练阶段：学会重建正常资料}
+
+以辛普森图片为例，训练资料全是正常图片。Autoencoder 包含两部分：
+\begin{itemize}
+    \item \textbf{Encoder}：把输入图片压缩成一个 code，也就是较低维或中间表示。
+    \item \textbf{Decoder}：从 code 还原出原来的图片。
+\end{itemize}
+
+训练目标是让重建结果尽量接近输入：
+\[
+\mathcal{L}_{\mathrm{rec}}(x)=\|x-\hat{x}\|^2
+\]
+或使用其他重建损失。因为训练时只看过正常资料，autoencoder 会特别擅长重建正常资料的结构。
+
+\subsection{测试阶段：正常样本可重建}
+
+当测试输入仍然是正常资料，例如另一张辛普森图片，encoder 可以把它压成熟悉的 code，decoder 也能还原出接近原图的结果。
+
+\framefig{0.86}{figures/fig04_autoencoder_normal_reconstruction.jpg}
+{正常输入经过 autoencoder 后可以被较好重建，因此 reconstruction loss 较小}
+{00:04:30--00:04:45}
+
+这时 reconstruction loss 小，代表输入符合训练资料中学到的结构。系统可以把低重建误差视为 normal 信号。
+
+\subsection{异常样本：重建失败}
+
+如果输入是异常图片，例如不是辛普森风格的图，autoencoder 训练时没有学过如何表示和还原这种结构。经过 encoder 和 decoder 后，输出可能模糊、失真，和原图差很多。
+
+\framefig{0.86}{figures/fig05_autoencoder_anomaly_reconstruction_loss.jpg}
+{异常输入无法被正常训练出来的 autoencoder 良好重建；large reconstruction loss 可作为 anomaly 信号}
+{00:05:00--00:05:15}
+
+因此可以使用规则：
+\[
+f(x)=
+\begin{cases}
+\mathrm{normal}, & \mathcal{L}_{\mathrm{rec}}(x)\le \lambda,\\
+\mathrm{anomaly}, & \mathcal{L}_{\mathrm{rec}}(x)>\lambda.
+\end{cases}
+\]
+这里的分数不再是 density，而是 reconstruction loss。低误差表示像训练资料，高误差表示不像训练资料。
+
+\begin{warningbox}{重建误差也不是万能}
+    Autoencoder 有时也能重建异常样本，尤其模型容量太大或异常与正常结构接近时。因此它仍需要 validation、阈值选择和任务评估。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Autoencoder 提供了另一种无标签异常检测思路：用正常资料训练重建模型，测试时看输入是否能被良好重建。正常样本通常 reconstruction loss 小，异常样本 loss 大。它不直接估计 $P(x)$，但同样在衡量输入是否符合训练资料结构。
+
+% =====================================================================
+\section{其他经典方法}
+% =====================================================================
+
+课程还提到，异常检测并不只属于 Gaussian 或 autoencoder。机器学习中有许多专门为 novelty detection、outlier detection 设计的方法，例如 one-class SVM 和 isolated forest。
+
+\framefig{0.86}{figures/fig06_one_class_svm_isolated_forest.jpg}
+{其他异常检测方法示例：one-class SVM 与 isolated forest 都可只用正常资料学习异常边界}
+{00:05:30--00:05:45}
+
+\subsection{One-class SVM}
+
+One-class SVM 的想法是：只给模型正常资料，让它学习一个包围正常资料的边界。边界内被视为 normal，边界外被视为 novelty 或 anomaly。它适合特征已经比较清楚、资料量中等的场景。
+
+和 Gaussian 不同，one-class SVM 不要求资料一定符合某个单一高斯分布；它更像是在特征空间中寻找一个能覆盖正常资料主要区域的边界。
+
+\subsection{Isolated Forest}
+
+Isolated forest 是基于树的方法。它的核心直觉是：异常点通常更容易被随机切分孤立出来。通过多棵随机树观察一个点被隔离所需的路径长度，可以得到异常分数。越容易被隔离的点，越可能是 anomaly。
+
+这种方法在表格型资料中很常见，训练和推论都相对高效，也不需要强高斯假设。
+
+\subsection{本章小结}
+
+异常检测有多种模型路线：密度估计、重建误差、边界学习、树模型隔离等。它们的共同目标都是从训练资料中学习 normal 的结构，再给新输入一个“是否不寻常”的分数。
+
+% =====================================================================
+\section{异常检测小节总括}
+% =====================================================================
+
+P35 最后用一张图总结了异常检测的几种设定。训练资料可以写成
+\[
+\{x^1,x^2,\ldots,x^N\}.
+\]
+根据是否有标签、训练资料是否干净，方法会不同。
+
+\framefig{0.86}{figures/fig07_concluding_remarks_taxonomy.jpg}
+{异常检测总结：有标签时可做 open-set recognition；无标签时还要区分训练资料 clean 或 polluted}
+{00:05:45--00:06:00}
+
+\subsection{有标签：open-set recognition}
+
+如果训练资料有标签
+\[
+\{(x^1,y^1), (x^2,y^2),\ldots,(x^N,y^N)\},
+\]
+可以训练分类器。测试时，输入可能不属于任何训练类别，因此分类器需要能输出 unknown。这就是前面讲的 open-set recognition。常见 baseline 是使用 classifier confidence，再用阈值判断是否拒绝。
+
+\subsection{无标签：clean 与 polluted}
+
+如果没有标签，就进入无标签异常检测。这里还要区分训练资料是否干净：
+\begin{itemize}
+    \item \textbf{Clean}：训练资料全部或几乎全部是 normal。此时可以学习 normal 分布、重建 normal 样本，或学习 normal 边界。
+    \item \textbf{Polluted}：训练资料中混入少量 anomaly。此时模型更难，因为异常可能被当作训练分布的一部分学进去。
+\end{itemize}
+
+P33-P35 主要聚焦 clean training data：多数或全部训练样本正常。若训练资料 polluted，就需要更鲁棒的方法，例如对离群点不敏感的估计、迭代清洗、弱监督或更谨慎的阈值设定。
+
+\subsection{本章小结}
+
+异常检测不是单一问题，而是一组设定。是否有标签、是否有异常样本、训练资料是否干净、错误代价如何，都会改变方法选择和评估方式。理解设定，比盲目套某个模型更重要。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P29-P35 这一组异常检测笔记可以按三条主线记忆。
+
+第一条是有标签/open-set 路线：已有分类器时，可以从 confidence score 出发，用阈值判断 normal 或 anomaly。但 confidence 可能被捷径特征欺骗，因此需要 development set、阈值选择、cost table、AUC，以及对过度自信的警惕。
+
+第二条是无标签/density 路线：没有标签时，要学习训练资料本身的分布。P33 把问题写成“输入是否类似训练资料”，P34 用最大似然和 Gaussian density 具体说明如何得到密度分数，P35 则说明可以加入更多特征并用 log density 比较样本。
+
+第三条是替代模型路线：不一定只能估计高斯密度，也可以用 autoencoder 的 reconstruction loss、one-class SVM 的边界、isolated forest 的隔离难易度等方法。不同模型输出的分数不同，但最终都要转化成“是否异常”的判断。
+
+实践中，一个完整异常检测系统至少要回答这些问题：
+\begin{enumerate}
+    \item 训练资料有没有标签？有没有异常样本？训练资料是否干净？
+    \item 输入应该用哪些特征或表示？
+    \item 模型输出什么异常分数：confidence、density、reconstruction loss、distance，还是 isolation score？
+    \item 阈值如何选择？false alarm 和 missing 哪个代价更高？
+    \item 检测到 anomaly 后，是报警、人工复核、拒绝，还是仅记录？
+\end{enumerate}
+
+这也是异常检测和普通分类最不同的地方：模型只是其中一部分，资料设定、评估指标、错误代价和后续处置同样决定系统是否可靠。
+
+\end{document}

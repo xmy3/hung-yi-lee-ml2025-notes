@@ -1,0 +1,299 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\policy}{\pi_\theta}
+\newcommand{\val}{V^\theta}
+\newcommand{\adv}{A_t}
+\newcommand{\extreward}{r_t^{\mathrm{ext}}}
+\newcommand{\intreward}{r_t^{\mathrm{int}}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{强化学习概述（四）：Reward Shaping}
+\newcommand{\notesubtitle}{Sparse Reward, Hand-crafted Intermediate Rewards, and Curiosity-driven Exploration}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 17 分 35 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=49}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{从 Actor-Critic 的公式看到 Sparse Reward}
+% =====================================================================
+
+上一讲得到 Advantage Actor-Critic 的核心权重：
+\[
+    A_t
+    =
+    r_t+\gamma \val(s_{t+1})-\val(s_t).
+\]
+Actor 的更新依赖 $A_t$：$A_t>0$ 时提高动作 $a_t$ 的概率，$A_t<0$ 时降低它。因此强化学习能不能学起来，很大程度取决于环境能不能给出足够有信息量的 reward。
+
+\framefig{0.86}{figures/fig01_outline_reward_shaping.jpg}
+{课程从 Actor-Critic 转入 Reward Shaping：问题不再是怎样用 reward 更新 actor，而是 reward 本身是否足够有信息量。}
+{00:00:00--00:00:15}
+
+Sparse reward 指的是大多数时间 $r_t=0$，只有极少数关键时刻才出现非零 reward。比如一个机械臂只有在真正把螺丝锁好时才得到正 reward，其他所有动作都没有反馈；又比如游戏中只有通关、杀敌或死亡时才有奖励，探索、靠近目标、避开危险本身没有即时分数。
+
+\framefig{0.86}{figures/fig02_sparse_reward_no_signal.jpg}
+{Sparse reward 下，若大多数 $r_t=0$，actor-critic 产生的训练权重缺乏区分度，模型很难知道哪些动作是好是坏。}
+{00:00:45--00:01:00}
+
+问题在于，当 reward 大量为零时，训练资料虽然仍然包含许多 state-action pair，但这些 pair 的标签几乎没有差异。对 actor 来说，很多动作都收到接近零的 advantage；对 critic 来说，许多状态的 value target 也差不多。学习过程会变得像在黑暗里试探：系统知道自己做了很多动作，却不知道哪些动作把它带向成功，哪些动作只是浪费时间。
+
+\begin{warningbox}{Sparse reward 与 delayed reward 不完全一样}
+    Delayed reward 强调好坏反馈来得晚；sparse reward 强调非零反馈出现得少。二者经常同时发生：真正有意义的 reward 很晚才出现，而且出现次数很少。这样的任务会严重放大 credit assignment 的难度。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Actor-Critic 需要 reward 形成训练信号。若环境大部分时间给零 reward，$A_t$ 很难区分动作好坏，critic 也缺乏可学习的 value target。Reward Shaping 正是为了解决这个反馈太稀疏的问题。
+
+% =====================================================================
+\section{Reward Shaping：给学习过程补中间信号}
+% =====================================================================
+
+Reward Shaping 的基本想法很直接：在原始环境 reward 之外，人为设计额外 reward，引导 agent 更快发现有用行为。可以把训练时使用的 reward 写成
+\[
+    r_t^{\mathrm{train}}
+    =
+    \extreward + \lambda r_t^{\mathrm{shape}},
+\]
+其中 $\extreward$ 是环境原本给的外部 reward，$r_t^{\mathrm{shape}}$ 是设计者补充的 shaping reward，$\lambda$ 控制它的强度。
+
+\framefig{0.86}{figures/fig03_reward_shaping_definition.jpg}
+{Reward shaping：当原始 reward 太稀疏时，开发者额外定义奖励来引导 agent，例如在机械臂锁螺丝任务中给中间动作反馈。}
+{00:03:30--00:03:45}
+
+直觉上，shaping reward 像是给学习者提供阶段性提示。最终目标可能是``完成任务''，但完成任务前需要许多子目标：靠近目标、保持姿态、避开障碍、拿到资源、不要空耗生命值等。如果这些中间动作完全没有反馈，agent 需要靠随机探索撞到完整成功轨迹；如果每个有意义的中间进展都有小奖励，学习速度通常会明显提高。
+
+\begin{importantbox}{Reward Shaping 的作用}
+    Reward shaping 不是改变神经网络架构，而是改变训练信号。它把稀疏、延迟的最终奖励拆成更密集的中间反馈，让 actor 更早知道哪些行为方向值得探索，也让 critic 更容易估计不同状态的 value。
+\end{importantbox}
+
+\subsection{Shaping 与真实目标的关系}
+
+设计 shaping reward 时最危险的地方是：中间奖励必须服务于真实目标。若 shaping reward 与最终目标不一致，agent 会优化设计者给出的分数，而不是完成真正任务。例如若只奖励机器人手臂靠近某个位置，它可能学会停在附近而不完成装配；若只奖励游戏角色移动距离，它可能学会到处乱跑而不完成关卡。
+
+因此 reward shaping 的难点不是``多给奖励''，而是``给对奖励''。好的 shaping reward 应该满足三个条件：
+\begin{itemize}
+    \item 密集：比原始 reward 更频繁，让训练有足够反馈。
+    \item 对齐：鼓励的行为确实提高最终任务成功率。
+    \item 适度：不能大到压过原始目标，也不能小到没有训练效果。
+\end{itemize}
+
+\subsection{本章小结}
+
+Reward shaping 通过额外设计 reward，让 agent 在到达最终目标前就能获得方向感。它能显著改善 sparse reward 任务，但也会带来 reward hacking 风险：agent 会忠实优化你写下的 reward，而不是你心里真正想要的行为。
+
+% =====================================================================
+\section{VizDoom 与手工奖励设计}
+% =====================================================================
+
+课程用 VizDoom 竞赛作为例子。Doom 类游戏中，最终胜负、击杀、死亡等信号相对稀疏；如果只依赖这些原始分数，agent 可能很久都学不到有效行为。因此实践中常把多种中间事件加入 reward。
+
+\framefig{0.86}{figures/fig04_vizdoom_ai_competition.jpg}
+{VizDoom AI Competition 示例：Doom 环境提供了典型的稀疏/延迟反馈场景，因此经常需要设计额外 reward 来帮助学习。}
+{00:06:45--00:07:00}
+
+画面中的 reward table 展示了若干手工设计的 shaping 项。例如：
+\begin{itemize}
+    \item living：对单纯活着但没有进展施加小惩罚，避免 agent 什么都不做。
+    \item health\_loss：失去生命值给负 reward，鼓励避开攻击。
+    \item ammo\_loss：消耗弹药给负 reward，避免无意义开火。
+    \item health\_pickup：捡到补血道具给正 reward。
+    \item ammo\_pickup：捡到弹药给正 reward。
+    \item movement / distance：对移动距离或有效前进给小奖励，鼓励探索地图。
+\end{itemize}
+
+\framefig{0.86}{figures/fig05_manual_rewards_and_robot_example.jpg}
+{手工 reward shaping 示例：VizDoom 中对生存、损血、弹药、拾取物和移动距离设定不同奖励；机械臂例子也说明中间信号会影响 agent 学到的行为。}
+{00:10:45--00:11:00}
+
+这些项看起来琐碎，但它们把人类对任务的理解写进了 reward。比如``失血不好''、``补血有用''、``只站着不动没意义''，这些都是人类一眼就知道的结构；如果完全交给 sparse reward，agent 需要大量样本才能从最终输赢中反推出这些规律。
+
+\begin{knowledgebox}{Reward Shaping 本质上是注入先验知识}
+    在 supervised learning 中，我们通过 label 告诉模型什么是正确答案；在 reward shaping 中，我们通过额外 reward 告诉 agent 哪些中间行为大概率通向成功。它不是免费的魔法，而是把人类对任务结构的理解显式写进训练过程。
+\end{knowledgebox}
+
+\subsection{手工 shaping 的局限}
+
+手工 reward 往往依赖任务经验，迁移性有限。一个 Doom 关卡中有效的奖励项，换到另一个关卡未必仍然有效；机械臂任务中有效的距离惩罚，换一个物体或目标姿态可能需要重新调。更麻烦的是，设计者很难穷尽所有边界情况，agent 可能找到意想不到的方式刷 shaping reward。
+
+因此手工 shaping 常适合在任务结构明确、专家经验充分时使用；当环境复杂、目标开放或很难定义中间进度时，就需要更自动化的探索奖励。
+
+\subsection{本章小结}
+
+VizDoom 例子说明 reward shaping 可以把高层目标拆成可学习的局部信号。它能让 actor-critic 更快得到有效 advantage，但代价是需要人为设计，并且存在与真实目标不完全对齐的风险。
+
+% =====================================================================
+\section{Curiosity-driven Exploration：把新奇性当作奖励}
+% =====================================================================
+
+课程后半段转向一种更自动的 reward shaping：curiosity-driven exploration。它的核心想法是，当 agent 看到新的、但有意义的东西时，给它额外 reward。这个 reward 不一定来自环境外部目标，而是来自 agent 自身的``好奇心''。
+
+\framefig{0.86}{figures/fig06_curiosity_extra_reward_paper.jpg}
+{Curiosity-driven exploration：当 agent 看到新的且有意义的状态时，给它额外 reward；课程引用 Pathak 等人的 ICML 2017 工作。}
+{00:12:30--00:12:45}
+
+可以把训练 reward 写成
+\[
+    r_t^{\mathrm{train}}
+    =
+    \extreward+\beta\intreward,
+\]
+其中 $\intreward$ 是 intrinsic reward。Curiosity 方法通常会训练一个预测模型：根据当前状态与动作预测下一状态的特征。如果预测误差很大，说明这个转移对 agent 来说还不熟悉，就给较高 intrinsic reward；如果模型已经能很好预测，说明它不再新奇，intrinsic reward 就下降。
+
+\begin{importantbox}{Curiosity 的一个常见实现直觉}
+    让 agent 学一个世界模型或特征预测模型。预测不准的地方代表``我还不了解这里''，于是给探索奖励；预测越来越准后，这个地方的新奇性降低，agent 会被推向更未知的区域。
+\end{importantbox}
+
+\subsection{为什么要强调 meaningful}
+
+画面中特别写着 ``new (but meaningful)''。只奖励新奇是不够的，因为环境里可能有很多无意义随机变化，例如噪声、闪烁纹理、不可控背景。如果 agent 因这些变化获得高 reward，它可能沉迷于不可预测但无用的刺激，而不探索真正有助于任务的结构。
+
+因此 curiosity 方法通常不会直接用 raw pixel prediction error 当 reward，而会在学习到的 feature space 中衡量 prediction error。目标是让 intrinsic reward 更偏向可控、可学习、与环境动力学有关的新信息，而不是纯噪声。
+
+\subsection{无外部 reward 时的探索}
+
+课程展示的例子中，curious agent 即使没有 extrinsic reward，也能学会沿走廊移动、探索新区域；相比之下，随机探索很容易停留在局部，无法形成持续探索策略。
+
+\framefig{0.86}{figures/fig07_curious_agent_vs_random_exploration.jpg}
+{Curiosity 与随机探索对比：curious agent 学会沿走廊移动，而 random exploration 难以形成持续、有方向的探索。}
+{00:15:45--00:16:00}
+
+\framefig{0.86}{figures/fig08_curiosity_hard_exploration.jpg}
+{Curiosity A3C 与 vanilla A3C 对比：在 hard exploration task 中，intrinsic reward 帮助 agent 找到更有效的探索行为。}
+{00:16:15--00:16:30}
+
+这类方法把 reward shaping 从``人手写规则''推进到``自动产生探索信号''。它不要求设计者提前知道每个中间目标，但仍然隐含了一个假设：探索新奇且可预测的环境结构，会提高未来解决任务的机会。
+
+\subsection{本章小结}
+
+Curiosity-driven exploration 是 reward shaping 的自动化版本：它用 intrinsic reward 鼓励 agent 接触新状态、学习环境动力学。它特别适合外部 reward 极度稀疏或完全缺失的环境，但必须避免把无意义噪声当作探索目标。
+
+% =====================================================================
+\section{Reward Shaping 的风险与使用原则}
+% =====================================================================
+
+Reward shaping 看似简单，但实际常常决定 RL 任务能不能训练起来。它的风险主要有三类。
+
+\begin{enumerate}
+    \item \textbf{目标错位：} shaping reward 鼓励的行为与最终目标不一致，agent 会钻规则空子。
+    \item \textbf{尺度失衡：} shaping reward 太大时，agent 只优化中间分；太小时，又无法缓解 sparse reward。
+    \item \textbf{迁移失效：} 在一个环境中有效的 shaping，在另一个环境中可能误导策略。
+\end{enumerate}
+
+因此设计 reward 时需要区分 training reward 与 evaluation objective。训练时可以加入 shaping 帮助学习，但最终评估应回到真实任务目标。若 shaping 只是辅助，它不应该成为 agent 最终追求的全部。
+
+\begin{warningbox}{Reward hacking 的基本教训}
+    Agent 不会理解设计者的意图，只会优化数值 reward。任何 reward shaping 都是在定义一个可被优化的目标函数；若目标函数有漏洞，agent 可能会稳定地学到漏洞，而不是学到人类期待的行为。
+\end{warningbox}
+
+\subsection{本章小结}
+
+Reward shaping 是强工具，也是一把需要校准的工具。它能显著改善 sparse reward 的学习效率，但必须持续检查 shaping reward 是否与真实目标一致、尺度是否合适、是否引入可利用漏洞。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+本讲的主线是：Actor-Critic 已经告诉我们如何使用 reward，但如果 reward 太稀疏，学习信号本身就不够。Reward shaping 通过额外 reward 把最终目标拆成中间反馈，让 actor 更容易得到有方向的 advantage，让 critic 更容易学到 value。
+
+\begin{importantbox}{本讲最值得带走的观念}
+    RL 不是只靠算法公式就能解决问题；reward 的设计本身就是问题建模的一部分。Sparse reward 会让 agent 缺少学习信号，reward shaping 则是在训练过程中补充结构化反馈。
+\end{importantbox}
+
+手工 shaping 依赖人类专家知识，适合目标结构清楚的任务；curiosity-driven exploration 则用 intrinsic reward 自动鼓励探索，适合外部 reward 稀疏甚至缺失的环境。两者都在做同一件事：让 agent 不必等到极少数最终反馈出现，才能知道自己是否走在有希望的方向上。
+
+下一讲的大纲将继续进入 ``No Reward: Learning from Demonstration''。当环境连 reward 都没有，或者 reward 难以设计时，就需要从示范、模仿或偏好中学习行为目标。
+
+\end{document}

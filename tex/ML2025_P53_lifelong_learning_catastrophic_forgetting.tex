@@ -1,0 +1,328 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+\raggedbottom
+\vfuzz=4pt
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\task}{\mathcal{T}}
+\newcommand{\acc}{\mathrm{Acc}}
+\newcommand{\bwt}{\mathrm{BWT}}
+\newcommand{\fwt}{\mathrm{FWT}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=3.0em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{机器终身学习（一）：灾难性遗忘}
+\newcommand{\notesubtitle}{Life-Long Learning, Sequential Tasks, Catastrophic Forgetting, and Evaluation}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程内容整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 31 分 59 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=53}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{终身学习的目标：让模型越学越多}
+% =====================================================================
+
+本讲进入 Life-Long Learning，也称 continual learning、never-ending learning 或 incremental learning。它关心的不是一次性训练一个固定任务，而是让机器像人一样，在不断出现的新任务中持续学习，并尽量保留过去已经学会的能力。
+
+课程一开始用一个直观想象说明大众对 AI 的期待：模型先学会 task 1，接着学会 task 2，并且仍然会 task 1；再学会 task 3，同时保留前两个任务。若这种能力无限延伸，人们自然会联想到“机器越学越强”的未来图景。
+
+\framefig{0.86}{figures/fig01_people_expect_continual_ai.jpg}
+{人们想象中的连续学习：机器学习 task 1 后会 task 1，继续学习 task 2 后会 task 1 与 task 2，再学习 task 3 后会 task 1、task 2 与 task 3。}
+{00:02:15--00:02:30}
+
+但今天主流监督学习流程通常不是这样。标准做法是先收集一个固定训练集，训练一个模型，然后部署；若未来出现新任务或新分布，往往需要重新训练、微调，或者收集一批新数据再更新。这种流程不天然保证旧任务性能不掉。
+
+\subsection{真实应用中的持续反馈}
+
+现实系统更接近一个闭环：旧任务有 labelled data，新任务从线上环境逐渐出现，系统根据 online feedback 继续更新。比如客服系统可能先学习已有问题，再持续遇到新产品、新政策、新用户表达；推荐系统也会不断面对新商品、新偏好和新行为模式。
+
+\framefig{0.84}{figures/fig02_real_world_lifelong_loop.jpg}
+{真实应用中的 lifelong learning 闭环：旧任务来自 labelled data，新任务从 online 环境产生，反馈再回流到模型更新。}
+{00:03:30--00:03:45}
+
+Life-long learning 因此要同时满足两个目标：
+\begin{itemize}
+    \item \textbf{Plasticity：} 面对新任务时能学会新知识。
+    \item \textbf{Stability：} 学新任务时不要破坏旧任务能力。
+\end{itemize}
+这就是 continual learning 中经典的 stability-plasticity dilemma。若模型太稳定，它学不动新任务；若模型太可塑，它会快速覆盖旧知识。
+
+\begin{importantbox}{终身学习不是单纯 fine-tuning}
+    Fine-tuning 通常只要求新任务表现变好，旧任务是否还能做不一定被关心。Life-long learning 明确要求：学完后续任务后，旧任务仍要尽量保留；更理想时，新旧任务之间还应互相迁移。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Life-long learning 研究的是顺序任务中的持续学习能力。它的核心目标是让模型不断吸收新任务，同时保留旧任务，而不是每次更新都只服务当前任务。
+
+% =====================================================================
+\section{灾难性遗忘：顺序学习时旧能力突然掉落}
+% =====================================================================
+
+课程用一个简单数字任务说明 catastrophic forgetting。模型先学习 task 1，再学习 task 2；两个任务都要求识别数字 ``0''，但数据分布不同。模型结构本身并不小，示例中是 3 层、每层 50 个神经元，因此问题不在于“模型容量完全不够”。
+
+\framefig{0.82}{figures/fig03_two_tasks_digit_example.jpg}
+{灾难性遗忘的玩具设定：task 1 与 task 2 都是识别 ``0''，但输入分布不同；模型有 3 层、每层 50 个神经元。}
+{00:04:45--00:05:00}
+
+如果模型先在 task 1 上训练，task 1 accuracy 可以达到约 90\%。接着训练 task 2 后，task 2 accuracy 很高，但 task 1 accuracy 从 90\% 掉到约 80\%。这就是 catastrophic forgetting：模型学会了新任务，却显著忘掉旧任务。
+
+\framefig{0.86}{figures/fig04_catastrophic_forgetting_toy_result.jpg}
+{顺序训练导致遗忘：先学 task 1 后再学 task 2，task 2 表现很好，但 task 1 表现下降；如果同时学习两个任务，网络容量其实足够学会两者。}
+{00:08:30--00:08:45}
+
+图中还有一个关键对照：若把 task 1 和 task 2 一起训练，模型可以同时达到较好表现。这说明遗忘不一定来自容量不足，而来自训练过程的顺序性。后训练的 task 2 梯度会改变原本服务 task 1 的参数，使旧任务决策边界被破坏。
+
+\begin{knowledgebox}{灾难性遗忘的直觉}
+    神经网络的参数是共享的。学习新任务时，optimizer 只看当前任务 loss，若没有任何机制提醒它旧任务也重要，它就可能沿着降低新任务 loss 的方向更新参数，而这个方向恰好提高旧任务 loss。
+\end{knowledgebox}
+
+\subsection{遗忘与容量的区别}
+
+如果一个模型无论怎么训练都无法同时做好 task 1 与 task 2，那是容量或架构表达力的问题；但课程示例中 simultaneous training 可以做好两个任务，说明模型“可以”表示两者。问题是 sequential training 没有保存旧知识，也没有约束新任务更新不要破坏旧知识。
+
+因此，life-long learning 的难点不是简单地把模型变大。变大可能缓解冲突，但不保证顺序训练不会覆盖旧能力。真正需要的是训练机制：保存代表性旧数据、保护重要参数、为不同任务分配子空间、生成旧任务样本，或在目标函数中显式惩罚遗忘。
+
+\subsection{本章小结}
+
+Catastrophic forgetting 是 continual learning 的核心障碍。模型顺序学习新任务时，旧任务表现可能急剧下降；这不一定是模型容量不足，而是新任务训练破坏了旧任务参数配置。
+
+% =====================================================================
+\section{bAbI QA 实验：顺序学习会把刚学会的东西冲掉}
+% =====================================================================
+
+课程接着用 bAbI corpus 的 QA 任务作为更真实的例子。bAbI 中有 20 个问答任务，每个任务考察不同推理能力，例如 three argument relations、basic deduction 等。模型需要读一段短文，再回答问题。
+
+\framefig{0.86}{figures/fig05_babi_qa_sequence_setup.jpg}
+{bAbI QA 顺序任务设定：给定文档和问题，模型回答文档中的关系；数据集中共有 20 个 QA tasks，课程示例让模型依序学习这些任务。}
+{00:11:00--00:11:15}
+
+如果模型依序学习 20 个任务，它在刚学 task 5 时可以把 task 5 做好，但继续学习后续 task 后，task 5 accuracy 很快掉回接近 0。也就是说，机器不是“没有学会 task 5”，而是“学会后又忘掉了”。
+
+\framefig{0.86}{figures/fig06_babi_sequential_vs_simultaneous.jpg}
+{bAbI 实验结果：顺序学习时，task 5 accuracy 在学习 task 5 后短暂升高，随后随着后续任务训练迅速下降；同时学习 20 个任务时整体 accuracy 可以维持较高水平。}
+{00:13:30--00:13:45}
+
+右侧同时训练的曲线说明：若训练时能同时看到所有任务，模型对 20 个任务都可维持较好表现。这再次支持一个判断：catastrophic forgetting 不是因为任务天然不可学，而是因为顺序训练缺乏保留机制。
+
+\framefig{0.82}{figures/fig07_catastrophic_forgetting_title.jpg}
+{课程用 ``Catastrophic Forgetting'' 概括这一现象：新知识像水一样不断灌入，却可能冲掉旧知识。}
+{00:14:45--00:15:00}
+
+\begin{warningbox}{不要把低最终准确率误读为“模型从未学会”}
+    在顺序任务曲线中，一个任务的准确率可能先升高再下降。若只看最后一刻的低准确率，会误以为模型没有学过该任务；但中间峰值显示它曾经学会，只是在后续训练中遗忘。
+\end{warningbox}
+
+\subsection{本章小结}
+
+bAbI QA 例子说明，灾难性遗忘不仅出现在玩具数字任务，也会出现在涉及语言和推理的顺序任务中。顺序学习与同时学习之间的差距，正是 continual learning 要解决的问题。
+
+% =====================================================================
+\section{两个看似简单的解法及其局限}
+% =====================================================================
+
+面对 catastrophic forgetting，最直接的反应是：既然 simultaneous training 能避免遗忘，那就把所有任务的数据都留着，每次训练都用全部数据。课程称这种 multi-task training 可以看成 life-long learning 的上界，因为它拥有最理想的信息条件。
+
+\framefig{0.86}{figures/fig08_multitask_training_upper_bound.jpg}
+{Multi-task training 可以缓解遗忘，但需要始终保留所有任务数据，并在训练时使用全部数据；这带来 storage issue 与 computation issue，因此可视为 LLL 的上界而非常规可行方案。}
+{00:18:30--00:18:45}
+
+Multi-task training 的局限很实际：
+\begin{itemize}
+    \item \textbf{存储问题：} 如果任务不断增加，保存 task 1 到 task 1000 的全部数据会越来越昂贵，也可能受隐私或合规限制。
+    \item \textbf{计算问题：} 每次新任务到来都用所有旧数据重新训练，计算成本会随任务数增长。
+    \item \textbf{在线性不足：} 真实系统常需要快速增量更新，而不是等所有任务凑齐后统一训练。
+\end{itemize}
+
+第二个看似简单的办法是：每个任务训练一个独立模型。这样 task 1 的模型不会被 task 2 的训练破坏，自然不会遗忘。
+
+\framefig{0.84}{figures/fig09_one_model_per_task_problem.jpg}
+{每个任务训练一个模型可以避免单模型内部的遗忘，但模型数量会不断增长，最终难以存储；不同任务之间也无法共享和迁移知识。}
+{00:19:45--00:20:00}
+
+但每任务一个模型也不是 life-long learning 的理想解。一方面，任务数量无限增长时模型存储不可控；另一方面，task 2 不能利用 task 1 学到的知识，task 3 也不能继承前面任务的经验。它避免了遗忘，但放弃了持续学习最有价值的部分：跨任务知识积累。
+
+\subsection{Life-long Learning 与 Transfer Learning}
+
+课程特别区分 transfer learning 和 life-long learning。Transfer learning 关心的是：我学过 task 1，所以可以更快或更好地学 task 2；但它不一定关心学完 task 2 后是否还会 task 1。Life-long learning 则要求：即使已经学了 task 2，也不要忘掉 task 1。
+
+\framefig{0.86}{figures/fig10_lifelong_vs_transfer.jpg}
+{Transfer learning 只要求 task 1 帮助 task 2；life-long learning 还要求学完 task 2 后不忘 task 1。}
+{00:22:15--00:22:30}
+
+这一区分很重要。很多 fine-tuning 成功案例本质上是 transfer learning：旧任务提供初始化，新任务得到提升，但旧任务性能可能被牺牲。Continual learning 要求更强，它同时追求 forward transfer 与 backward retention。
+
+\subsection{本章小结}
+
+Multi-task training 是理想上界，但依赖全部旧数据与大量计算；每任务一个模型避免遗忘，却无法扩展，也不能迁移知识。Life-long learning 要在更现实的条件下同时做到：学新任务、保旧任务、尽量跨任务迁移。
+
+% =====================================================================
+\section{如何评价 Life-Long Learning}
+% =====================================================================
+
+要评价 continual learning，首先需要一串任务。课程使用的例子包括 permuted MNIST 或 split MNIST：前者给同一数字识别任务施加不同像素排列，后者把数字类别拆成多个二分类任务。关键不是具体数据集，而是评测过程：任务按顺序出现，模型学完每个任务后都要测试多个任务。
+
+\framefig{0.86}{figures/fig11_evaluation_task_sequence.jpg}
+{Life-long learning 评测需要一个 task sequence：例如 permuted MNIST 的多个排列任务，或 split MNIST 中按类别拆分的一系列任务。}
+{00:23:30--00:23:45}
+
+\subsection{Performance Matrix：Rij}
+
+课程用 $R_{i,j}$ 记 after training task $i$ 之后，模型在 task $j$ 上的表现。所有 $R_{i,j}$ 组成一个 performance matrix：行表示训练进度，列表示测试任务。初始随机模型在 task $j$ 上的表现记为 $R_{0,j}$。
+
+\framefig{0.86}{figures/fig12_evaluation_rij_matrix.jpg}
+{Performance matrix 的定义：$R_{i,j}$ 表示训练完 task $i$ 后在 task $j$ 上的性能；当 $i>j$ 时可观察旧任务是否被忘记。}
+{00:27:15--00:27:30}
+
+这个矩阵把 continual learning 的几个问题统一起来：
+\begin{itemize}
+    \item \textbf{当前任务学习：} 对角线 $R_{i,i}$ 表示刚学完 task $i$ 后在该任务上的表现。
+    \item \textbf{遗忘：} 若 $i>j$，比较 $R_{i,j}$ 和 $R_{j,j}$，可看后续训练是否让 task $j$ 表现下降。
+    \item \textbf{迁移：} 若 $i<j$，比较 $R_{i,j}$ 和 $R_{0,j}$，可看前面任务是否让尚未训练的 task $j$ 变好。
+\end{itemize}
+
+\subsection{Accuracy、Backward Transfer 与 Forward Transfer}
+
+最终平均 accuracy 通常看最后一行：
+\[
+    \acc = \frac{1}{T}\sum_{i=1}^{T} R_{T,i}.
+\]
+它回答的是：学完整个任务序列后，模型平均还能做好多少任务。这个指标直观，但不能区分“没学好”还是“学好后忘了”。
+
+Backward Transfer 衡量后续任务训练对旧任务的影响：
+\[
+    \bwt
+    =
+    \frac{1}{T-1}\sum_{i=1}^{T-1}\left(R_{T,i}-R_{i,i}\right).
+\]
+若 $\bwt<0$，表示最终表现低于刚学完旧任务时的表现，通常代表遗忘；若 $\bwt>0$，则表示后续任务反而帮助旧任务变好，这是一种正向 backward transfer。
+
+Forward Transfer 衡量前面任务是否帮助未来任务：
+\[
+    \fwt
+    =
+    \frac{1}{T-1}\sum_{i=2}^{T}\left(R_{i-1,i}-R_{0,i}\right).
+\]
+它比较的是：在还没训练 task $i$ 前，模型因学过前面任务而在 task $i$ 上比随机初始化好多少。若 $\fwt>0$，说明前面任务带来了可迁移知识。
+
+\framefig{0.86}{figures/fig13_accuracy_bwt_fwt_metrics.jpg}
+{常见 continual learning 指标：final accuracy 看最终平均表现，backward transfer 衡量旧任务被后续任务影响的程度，forward transfer 衡量旧任务对未来任务的预帮助。}
+{00:31:00--00:31:15}
+
+\begin{importantbox}{只看 final accuracy 不够}
+    两个模型 final accuracy 相同，可能一个是从未学好某些任务，另一个是学好后被遗忘。Performance matrix 与 BWT/FWT 能把学习、遗忘、迁移拆开看，更适合分析 continual learning 方法。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Life-long learning 的评价核心是 task sequence 与 performance matrix。$R_{i,j}$ 记录训练进度与测试任务的交叉表现；accuracy 看最终总体能力，BWT 看是否遗忘旧任务，FWT 看是否对未来任务有帮助。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P53 的核心是提出 continual learning 的问题定义，而不是立刻给出完整解法。课程通过数字任务和 bAbI QA 任务说明：模型顺序学习时常会学新忘旧，这种 catastrophic forgetting 不是因为任务不可学，而是因为训练流程没有保护旧知识。
+
+可以把本讲的逻辑压缩成三句话：
+\begin{itemize}
+    \item \textbf{目标：} 机器要不断学习新任务，并保留旧任务能力。
+    \item \textbf{困难：} 顺序训练会让新任务梯度覆盖旧任务知识，造成 catastrophic forgetting。
+    \item \textbf{评价：} 需要用 task sequence 和 $R_{i,j}$ 矩阵同时衡量最终能力、遗忘和迁移。
+\end{itemize}
+
+这也解释了标题中的问题：今天的 AI 难以成为“不断自我成长”的系统，并不是因为单次任务能力不足，而是因为持续学习机制还不稳。一个模型可以在固定 benchmark 上很强，却仍可能在新任务微调后忘掉旧任务。真正的 life-long learning 需要在数据、优化、模型结构和记忆机制之间取得平衡。
+
+\begin{knowledgebox}{后续方法的方向}
+    常见 continual learning 方法大致包括 replay-based methods（保存或生成旧任务样本）、regularization-based methods（保护旧任务重要参数）、parameter-isolation methods（为不同任务分配不同参数子空间）与 dynamic architecture methods（随任务扩展或路由模型）。P53 先建立问题与评测，后续课程通常会再讨论解决策略。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+Life-long learning 要求模型在任务流中持续积累能力。Catastrophic forgetting 暴露出普通顺序训练的短板；multi-task training 和每任务一个模型又不够现实。评价时不能只看最终准确率，而要同时看遗忘和迁移。
+
+\end{document}

@@ -1,0 +1,493 @@
+\documentclass[a4paper]{article}
+
+\usepackage[fontset=fandol]{ctex}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage[margin=2.45cm]{geometry}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\linespread{1.06}
+\sloppy
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\setlist[itemize]{leftmargin=2.2em,itemsep=0.22em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.4em,itemsep=0.22em,topsep=0.25em}
+\setlist[description]{leftmargin=2.7em,itemsep=0.18em,topsep=0.25em}
+
+\newtcolorbox{knowledgebox}[1]{
+    enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1},
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxrule=1pt, sharp corners
+}
+
+\newtcolorbox{importantbox}[1]{
+    enhanced, colback=yellow!10!white, colframe=yellow!80!black, colbacktitle=yellow!80!black,
+    coltitle=black, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newtcolorbox{warningbox}[1]{
+    enhanced, colback=red!5!white, colframe=red!75!black, colbacktitle=red!75!black,
+    coltitle=white, fonttitle=\bfseries, title={#1}, sharp corners
+}
+
+\newcommand{\notetitle}{机器学习的可解释性（上）：为什么神经网络可以正确分辨宝可梦和数码宝贝}
+\newcommand{\notesubtitle}{Explainable Machine Learning: Local Explanation, Saliency Map, and Shortcut Learning}
+\newcommand{\noteauthors}{基于李宏毅老师《机器学习 2025》课程整理}
+\newcommand{\notedate}{\today}
+\newcommand{\videochannel}{李宏毅深度学习课堂（Bilibili）}
+\newcommand{\videoduration}{约 49 分 08 秒}
+\newcommand{\videourl}{https://www.bilibili.com/video/BV1TAtwzTE1S?p=36}
+
+\newcommand{\framefig}[4]{%
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#1\textwidth]{#2}
+    \caption{#3\protect\footnotemark}
+\end{figure}
+\footnotetext{视频画面时间区间：#4。}
+}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    \vspace*{1.0cm}
+    {\Huge\bfseries \notetitle\par}
+    \vspace{0.35cm}
+    {\LARGE \notesubtitle\par}
+    \vspace{0.75cm}
+    \includegraphics[width=0.62\textwidth]{video.jpg}\par
+    \vspace{0.75cm}
+    {\large \noteauthors\par}
+    {\large \notedate\par}
+    \vspace{0.75cm}
+    \begin{tcolorbox}[width=0.86\textwidth,center,sharp corners,
+                      colback=black!3!white,colframe=black!50!white]
+        \centering
+        \textbf{视频信息}\\[3pt]
+        频道：\videochannel \\
+        时长：\videoduration \\
+        链接：\href{\videourl}{\videourl}
+    \end{tcolorbox}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+\pagestyle{plain}
+
+% =====================================================================
+\section{为什么需要可解释的机器学习}
+% =====================================================================
+
+本讲进入第九节：机器学习的可解释性。课程一开始就点出一个容易被忽略的问题：模型答对，不等于模型真的理解。一个分类器可以在测试集上表现很好，却可能只是抓到了训练资料里的捷径、背景、格式或标注习惯。只有当我们追问“模型为什么这么判断”时，才有机会知道它是不是用到了真正可靠的依据。
+
+\framefig{0.92}{figures/fig01_why_need_explainable_ml.jpg}
+{可解释性需求的几个典型场景：贷款、医疗、司法、自驾车等系统不能只给出决策结果，还要能说明原因。}
+{00:03:45--00:04:00}
+
+\subsection{正确答案不等于智能}
+
+在一般的机器学习任务中，我们常用 accuracy、loss、AUC 等指标衡量模型。但这些指标只能告诉我们模型在某个资料分布上是否答对，不能告诉我们模型答对的理由。若模型的理由错误，它在新的环境中就可能突然失效。
+
+例如影像分类器可能把“病灶”判断成某个类别，其实依据的是医院影像左下角的文字标记；动物分类器可能看起来会认马，其实只是抓住资料集图片中经常出现的边框或背景。只看最终答案时，这些问题会被高准确率掩盖；看解释时，才可能露出模型实际依赖的线索。
+
+\begin{importantbox}{可解释性要回答的问题}
+    可解释机器学习不是单纯把模型内部所有参数列出来，而是要回答人真正关心的问题：模型为什么给出这个输出？它依赖了哪些输入成分？这个理由是否合理？如果理由不合理，模型还能不能被信任？
+\end{importantbox}
+
+\subsection{高风险应用中的责任问题}
+
+课程列出多个现实场景来说明可解释性的重要性。贷款系统若拒绝某人申请，法律和业务上都可能要求说明拒绝原因；医疗诊断模型若影响人的生命，不能只是一个黑盒分数；司法场景中，模型必须避免歧视性行为；自驾车突然急刹、导致乘客受伤时，也需要追查系统为何做出该动作。
+
+这些场景共同说明，模型输出不仅是技术结果，也是现实决策的一部分。越是高风险场景，越不能只问“模型准不准”，还要问“模型用什么理由准”。如果理由不能被审查，部署者、用户和受影响的人都很难判断系统是否可靠。
+
+\subsection{解释也能改进模型}
+
+可解释性的另一个作用，是帮助开发者修正模型。课程用漫画说明：如果我们知道模型答案错在哪里，就可以有针对性地修改资料、特征、模型结构或训练方法；如果完全不知道模型内部发生什么，就只能盲目调参。
+
+\framefig{0.84}{figures/fig02_explanation_improves_model.jpg}
+{解释不仅服务于使用者，也服务于模型开发：知道模型错因，才可能修正它。}
+{00:05:00--00:05:15}
+
+这和调试程序很像。程序输出错了，如果有日志、堆栈和中间变量，我们能定位问题；如果程序只给一个最终结果，调试会困难得多。深度学习模型虽然不是传统程序，但解释方法可以起到类似“调试窗口”的作用，让我们看到模型在输入中抓到了什么、在隐藏层中保留了什么、在输出前依赖了什么。
+
+\subsection{本章小结}
+
+可解释性的重要性来自三件事：第一，正确答案不保证模型用了正确理由；第二，高风险决策需要责任、审查和信任；第三，解释能帮助开发者发现资料偏差和模型捷径。换句话说，可解释性不是装饰性的报告，而是检查模型是否真的可靠的一组工具。
+
+% =====================================================================
+\section{可解释性与模型能力之间的张力}
+% =====================================================================
+
+接着，课程讨论一个常见观点：既然深度网络难解释，是否应该只用简单、可解释的模型？李宏毅老师的态度比较明确：不能因为模型是黑盒，就放弃更强的模型；合理目标应该是让强大的模型变得可解释，而不是为了可解释性刻意使用能力不足的模型。
+
+\framefig{0.92}{figures/fig03_interpretable_vs_powerful.jpg}
+{线性模型等方法较易解释，但通常不够强；深度网络难解释，却可能更有能力。课程提醒不要因为黑盒问题就回避强模型。}
+{00:07:15--00:07:30}
+
+\subsection{简单模型未必足够强}
+
+线性模型有天然的可解释性：从权重大小可以看出每个特征对输出的影响。如果输入特征本身有清楚语义，这种解释非常直接。例如贷款模型中，收入、负债比例、信用记录等特征的权重可以说明模型如何做判断。
+
+但简单模型的表达能力有限。许多真实问题并不是几个线性权重就能描述的，影像、语音、语言这类复杂资料尤其如此。若为了可解释性强行使用过弱模型，可能会得到一个容易解释但效果不好的系统。课程把这种做法比喻为“削足适履”：为了适应解释的鞋子，把模型能力的脚削掉。
+
+\subsection{决策树的例子：可解释也可能变复杂}
+
+决策树常被拿来当作可解释模型的代表。每个节点问一个问题，例如某个特征是否大于阈值；输入一路向左或向右，最后落到叶节点得到预测。单棵小树确实容易解释，因为它像一组 if-else 规则。
+
+但真实使用时，单棵决策树通常并不够强。实践中更常用 random forest，也就是大量决策树组成的集合。此时单棵树的解释性被集成模型的复杂性削弱了：我们不再只看一条清楚路径，而是要理解许多树共同投票的结果。
+
+\framefig{0.88}{figures/fig04_decision_tree_random_forest.jpg}
+{决策树看似解释性强，但实践中常使用 random forest；一旦模型变成许多树的集合，解释性也会下降。}
+{00:11:30--00:11:45}
+
+\begin{warningbox}{“可解释模型”不是绝对标签}
+    一个模型是否可解释，取决于模型规模、输入特征语义、使用方式和解释对象。小型线性模型很容易解释，大型集成树模型就未必；神经网络很难直接解释，但可以通过专门方法观察输入重要性、隐藏层表示和决策行为。
+\end{warningbox}
+
+\subsection{解释的目标不是完全理解一切}
+
+课程随后把目标说得更实际：我们并不一定要“完全知道模型如何工作”。人类大脑本身也不是完全可解释的，但我们仍然信任很多人类决策。可解释机器学习的目标，是给出足够有用、足够让人安心、足够能帮助调试和审查的理由。
+
+\framefig{0.92}{figures/fig05_goal_copy_machine_study.jpg}
+{Copy Machine Study 被用来说明：人在很多情境下并不要求完整因果机制，只需要一个可接受的理由。}
+{00:14:45--00:15:00}
+
+课程引用 Copy Machine Study：有人排队使用影印机时，如果请求“我只有五页，可以先用吗”，接受率约为 60\%；如果加上一个看似理由的句子“因为我赶时间”，接受率会上升。重点不是这个实验本身，而是它揭示了一种人机互动现实：解释常常服务于人的接受、信任和沟通。
+
+\begin{knowledgebox}{解释的“够用性”}
+    好解释未必是完整机制证明。对用户而言，解释可能是让人理解、让人安心、让人知道如何申诉或修正；对工程师而言，解释可能是暴露模型捷径、资料偏差或隐藏层行为。不同对象需要不同粒度的解释。
+\end{knowledgebox}
+
+\subsection{本章小结}
+
+可解释性和模型能力之间存在张力，但不是非此即彼。简单模型更容易解释，却可能能力不足；复杂模型更强，却需要额外解释方法。课程的主张是：不要因为黑盒而放弃强模型，而要发展方法，让强模型的行为能被局部检查、整体理解和实际调试。
+
+% =====================================================================
+\section{Local Explanation 与 Global Explanation}
+% =====================================================================
+
+可解释机器学习可以分成两大类：local explanation 和 global explanation。前者解释某个特定输入的某次预测，后者解释模型整体学到的规律。本讲前半段主要聚焦 local explanation，也就是“为什么模型认为这张图片是猫”“它看的是图片中的哪一块”。
+
+\framefig{0.88}{figures/fig06_local_global_explanation.jpg}
+{可解释性分成 local explanation 与 global explanation：前者解释单个输入的决策，后者解释模型整体规则或概念。}
+{00:17:15--00:17:30}
+
+\subsection{Local explanation：解释单次决策}
+
+Local explanation 的问题形式是：给定一个输入 $x$ 和模型输出 $y$，模型为什么在这一次做出这个判断？例如输入一张猫的照片，分类器输出“cat”，我们追问的是这张图里哪些像素、区域或局部结构促成了“cat”这个答案。
+
+这种解释非常适合调试模型。例如模型把一张狗图判断为狗，如果解释显示它关注的是狗脸、耳朵、身体轮廓，开发者会比较安心；如果解释显示它关注的是图片角落的水印，就说明模型可能学到了错误捷径。
+
+\subsection{Global explanation：解释整体概念}
+
+Global explanation 的问题更抽象：模型心中的“猫”长什么样？模型整体使用了哪些概念区分类别？哪些 neuron、filter 或 hidden representation 对应到哪些可理解的语义？这不针对某一张特定图片，而是试图理解模型总体上学到的表示。
+
+本讲标题问“为什么神经网络可以正确分辨宝可梦和数码宝贝”，主要是 local explanation 的案例；下一讲“机器心中的猫长什么样子”更接近 global explanation。
+
+\subsection{输入成分的重要性}
+
+为了做 local explanation，一个直观方法是问：输入中哪个 component 对决策最关键？在影像中，component 可以是像素、patch、segment 或物件区域；在文字中，component 可以是词或 token；在语音中，component 可以是某段时间频谱。
+
+\framefig{0.82}{figures/fig07_critical_component_occlusion.jpg}
+{用输入成分重要性解释图片分类：如果遮住某个区域后模型信心大幅下降，该区域可能是关键依据。}
+{00:18:30--00:18:45}
+
+最朴素的做法是遮挡或修改输入局部，然后观察模型输出变化。例如把灰色方块放到图片不同位置，如果遮住狗脸时模型不再认为图中有狗，而遮住背景时输出变化很小，就说明狗脸区域对这次决策更重要。
+
+\subsection{本章小结}
+
+Local explanation 问“这个输入为什么得到这个输出”，global explanation 问“模型整体学到了什么规则或概念”。本讲后面的 saliency map、遮挡实验和宝可梦案例，都属于 local explanation：它们试图指出某次预测中哪些输入区域真正影响了模型。
+
+% =====================================================================
+\section{Saliency Map：用局部变化衡量重要性}
+% =====================================================================
+
+Local explanation 的代表方法之一是 saliency map。它把输入中每个位置的重要性可视化出来：越亮、越显著的位置，表示模型输出对该位置越敏感。课程先从遮挡法讲起，再进一步介绍用 gradient 得到 saliency map。
+
+\framefig{0.86}{figures/fig08_occlusion_heatmap_example.jpg}
+{遮挡不同位置并观察输出变化，可以得到一张类似热力图的解释：模型真正依赖的区域会更亮。}
+{00:20:30--00:20:45}
+
+\subsection{遮挡法的直觉}
+
+遮挡法的逻辑很直接。假设模型看到一张图后认为它是博美狗。我们在图片上依次放置灰色方块，遮住不同区域，然后重新计算模型对“博美狗”的信心。如果遮住某个区域后信心大幅下降，说明该区域对判断很重要；如果遮住后几乎没有变化，说明该区域不是关键依据。
+
+这种方法的优点是直观，几乎不需要理解模型内部结构；缺点是计算成本高，因为要对许多遮挡版本重复前向传播。遮挡粒度也会影响解释结果：方块太大，解释粗糙；方块太小，噪声可能变多。
+
+\subsection{Gradient saliency}
+
+更常见的方法是用 gradient。设模型对目标类别 $c$ 的输出分数为 $e_c(x)$，输入图像是
+\[
+x=(x_1,x_2,\ldots,x_N),
+\]
+其中每个 $x_i$ 可以代表某个像素或像素通道。把第 $i$ 个输入成分微小改变 $\Delta x_i$ 后，输出变化近似为
+\[
+\Delta e_c \approx \frac{\partial e_c(x)}{\partial x_i}\Delta x_i.
+\]
+符号含义如下：
+\begin{description}
+    \item[$e_c(x)$] 模型对类别 $c$ 的输出分数，可以是 logit 或其他未归一化分数。
+    \item[$x_i$] 输入的第 $i$ 个成分，例如某个像素值。
+    \item[$\frac{\partial e_c}{\partial x_i}$] 输出分数对该输入成分的敏感度。
+    \item[$\Delta e_c$] 输入微小改变后，目标类别分数的近似变化。
+\end{description}
+
+因此可以把 saliency score 写成
+\[
+S_i=\left|\frac{\partial e_c(x)}{\partial x_i}\right|.
+\]
+符号含义如下：
+\begin{description}
+    \item[$S_i$] 第 $i$ 个输入成分的重要性分数。
+    \item[$|\cdot|$] 取绝对值，表示无论提高还是降低目标分数，只要影响大就重要。
+\end{description}
+
+\framefig{0.92}{figures/fig09_gradient_saliency_map.jpg}
+{Gradient saliency 使用输出对输入像素的偏导数衡量重要性，白亮区域表示模型输出对该位置更敏感。}
+{00:24:45--00:25:00}
+
+\subsection{Saliency map 要解释的是模型，不一定解释世界}
+
+Saliency map 画出来的不是“客观上哪里重要”，而是“这个模型在这次预测中对哪里敏感”。两者可能一致，也可能不一致。若一张狗图中 saliency map 亮在狗脸上，解释看起来合理；若亮在背景水印上，说明模型确实依赖了水印，而不是说水印真的定义了狗。
+
+\begin{importantbox}{Saliency map 的正确读法}
+    Saliency map 不是把模型变成真理裁判，而是把模型的依赖关系暴露出来。它告诉我们模型在看什么，不保证模型看得对。
+\end{importantbox}
+
+\subsection{本章小结}
+
+Saliency map 的核心思想是衡量输入局部对输出的影响。遮挡法通过反复修改输入观察输出变化；gradient 法通过偏导数估计每个输入成分的敏感度。它们都属于 local explanation，目的不是证明模型一定合理，而是检查模型实际依赖的线索。
+
+% =====================================================================
+\section{案例：宝可梦与数码宝贝分类器}
+% =====================================================================
+
+课程中最有趣的案例，是训练一个神经网络区分宝可梦和数码宝贝。这个任务看似玩笑，但非常适合作为可解释性案例：模型可以得到很高正确率，但 saliency map 显示它学到的东西并不一定是我们以为的“角色形状”或“画风差异”。
+
+\framefig{0.88}{figures/fig10_pokemon_digimon_case.jpg}
+{案例主题：训练模型区分 Pokémon 与 Digimon，并追问模型到底凭什么分对。}
+{00:25:30--00:25:45}
+
+\subsection{任务设定}
+
+资料来源是网络上的宝可梦图片和数码宝贝图片。训练时，模型看到两类角色图像；测试时，给模型新的角色图像，要求它判断属于宝可梦还是数码宝贝。这个设定表面上是二分类问题，输入是图片，输出是两个类别之一。
+
+\framefig{0.88}{figures/fig11_pokemon_digimon_task.jpg}
+{任务输入包含宝可梦与数码宝贝图片；模型需要对测试图片做二分类。}
+{00:26:30--00:26:45}
+
+如果只看任务形式，我们很容易想象模型学到的是角色设计差异：宝可梦可能更圆润、更简洁，数码宝贝可能更复杂、更机械。但这只是人的猜测。模型到底学到什么，需要解释方法来检查。
+
+\subsection{高准确率本身并不说明理由正确}
+
+课程中随便搭了一个卷积网络，训练结果非常好：training accuracy 约为 $98.9\%$，testing accuracy 约为 $98.4\%$。如果只看准确率，这个模型似乎已经解决了问题。
+
+\framefig{0.82}{figures/fig12_experimental_results.jpg}
+{宝可梦/数码宝贝分类器取得很高训练与测试准确率，但高准确率还不能说明模型用了合理特征。}
+{00:28:00--00:28:15}
+
+然而，可解释性的重点正是在这里出现：当模型高准确率时，我们更应该问它为什么答对。因为高准确率可能来自真正语义，也可能来自资料收集过程中的偏差。如果模型只是抓住偏差，它在换一个资料来源后就可能崩掉。
+
+\subsection{Saliency map 暴露模型捷径}
+
+为了知道模型依据什么区分两类，课程画出 saliency map。直觉上，如果模型真的学会了角色特征，亮点应该集中在角色的眼睛、身体、翅膀、机械结构等位置。但画面显示，模型关注的区域和预期并不完全一致。
+
+\framefig{0.92}{figures/fig13_pokemon_digimon_saliency.jpg}
+{宝可梦/数码宝贝分类器的 saliency map：解释结果显示模型关注点可能并不是角色语义本身。}
+{00:28:45--00:29:00}
+
+随后课程揭示原因：很多宝可梦图片是 PNG，带透明背景；很多数码宝贝图片是 JPEG，没有透明背景。当 PNG 被载入或转换时，透明背景可能变成黑色或特定颜色。模型就可以利用背景格式差异区分类别，而不需要真正理解角色长什么样。
+
+\framefig{0.88}{figures/fig14_background_artifact.jpg}
+{真正的捷径：宝可梦图片多为透明背景 PNG，数码宝贝图片多为 JPEG；模型可能根据背景颜色或格式痕迹分类。}
+{00:29:45--00:30:00}
+
+这就是典型的 shortcut learning。模型没有违反训练目标，因为它确实找到了能降低训练误差的特征；问题在于这个特征不是我们希望模型使用的语义。若未来输入来自重新处理过的图片，背景差异消失，模型性能可能大幅下降。
+
+\begin{warningbox}{高准确率可能来自资料捷径}
+    监督学习优化的是训练目标，而不是人的意图。只要某个背景、格式、水印或资料收集习惯能帮助降低 loss，模型就可能使用它。可解释性方法的价值之一，就是把这种捷径找出来。
+\end{warningbox}
+
+\subsection{现实资料集也会出现类似问题}
+
+课程进一步举出 PASCAL VOC 2007 的例子。某些马的图片下方带有相似文字或边框，模型可能借此判断“这是马”，而不是学习马的身体形状。这说明 shortcut learning 不是玩具资料集才有的问题，真实 benchmark 也可能包含资料偏差。
+
+\framefig{0.88}{figures/fig15_pascal_voc_context_bias.jpg}
+{PASCAL VOC 示例：模型可能把图片中的背景或文字痕迹当作类别线索，而不是学到物件本身。}
+{00:30:30--00:30:45}
+
+这对资料集建设很重要。若训练集和测试集来自同一来源，捷径可能在测试集上仍然有效，模型分数看起来很好；但部署环境一变，捷径失效，模型就会暴露问题。因此，解释方法也可以反过来帮助我们审查资料集。
+
+\subsection{本章小结}
+
+宝可梦/数码宝贝案例说明：模型可以用非常高的准确率“答对”，但理由却不符合人的期待。Saliency map 暴露了模型可能依赖背景格式差异，而不是角色语义。这正是可解释性最有价值的地方：它让我们看到模型实际学到的 shortcut，并提醒我们重新检查资料、任务设定和评估方式。
+
+% =====================================================================
+\section{Saliency Map 的限制}
+% =====================================================================
+
+Saliency map 有用，但不是万能解释。课程接着讲两个常见限制：noisy gradient 和 gradient saturation。它们说明 gradient-based explanation 本身也可能不稳定或误导，需要谨慎解读。
+
+\subsection{Noisy Gradient 与 SmoothGrad}
+
+普通 gradient saliency 有时非常噪。图像中会出现很多散乱亮点，让人难以判断真正重要区域。这不一定意味着模型真的同时依赖所有这些点，也可能是梯度在局部过于敏感、受到噪声影响。
+
+\framefig{0.88}{figures/fig16_smoothgrad.jpg}
+{Noisy gradient 的问题：普通 saliency map 可能很噪；SmoothGrad 通过对加噪图片求平均，使显著区域更稳定。}
+{00:32:15--00:32:30}
+
+SmoothGrad 的想法是：给同一张输入图片加入多次随机噪声，分别计算 saliency map，再把这些 map 平均。若某个区域是真正稳定的重要线索，它在多次扰动后仍然会显著；若某些亮点只是局部噪声，平均后会被削弱。
+
+可以把它写成
+\[
+\bar{S}(x)=\frac{1}{M}\sum_{m=1}^{M} S(x+\epsilon_m),
+\quad \epsilon_m\sim \mathcal{N}(0,\sigma^2I).
+\]
+符号含义如下：
+\begin{description}
+    \item[$S(\cdot)$] 对某个输入计算出的 saliency map。
+    \item[$\epsilon_m$] 第 $m$ 次加入的随机噪声。
+    \item[$M$] 采样次数。
+    \item[$\bar{S}(x)$] 多次 saliency map 平均后的解释结果。
+\end{description}
+
+\subsection{Gradient Saturation}
+
+第二个限制是 gradient saturation。课程用“大象鼻子长度”举例：如果模型对“大象”类别的分数已经在某一区域饱和，继续改变鼻子长度时，输出变化可能很小，因此梯度接近零。此时 saliency map 会显示鼻子不重要，但这并不代表鼻子真的不是判断大象的重要线索。
+
+\framefig{0.88}{figures/fig17_gradient_saturation.jpg}
+{Gradient saturation：当输出分数进入饱和区，梯度可能接近零，从而低估真正重要的输入因素。}
+{00:34:15--00:34:30}
+
+这个问题说明，梯度衡量的是“在当前点附近微小变化的局部敏感度”，而不是“这个因素在整体决策中是否重要”。如果模型已经非常确信输入是大象，局部再改变一点鼻子长度可能不会改变分数，但鼻子仍可能是模型形成判断的重要条件。
+
+一种改进方向是 integrated gradients。它不是只看当前点的局部梯度，而是从一个 baseline 输入一路积分到当前输入，累积沿途梯度：
+\[
+\mathrm{IG}_i(x)=(x_i-x_i')\int_{0}^{1}
+\frac{\partial F(x'+\alpha(x-x'))}{\partial x_i}\,d\alpha.
+\]
+符号含义如下：
+\begin{description}
+    \item[$x$] 当前输入。
+    \item[$x'$] baseline 输入，例如全黑图或零向量。
+    \item[$F(\cdot)$] 模型输出分数。
+    \item[$\alpha$] 从 baseline 到当前输入的插值比例。
+    \item[$\mathrm{IG}_i(x)$] 第 $i$ 个输入成分的 integrated gradient 重要性。
+\end{description}
+
+\subsection{本章小结}
+
+Saliency map 是观察模型决策的重要工具，但它也会受噪声、局部梯度和饱和效应影响。解释方法本身也需要被理解和验证。一个成熟的可解释性分析，不应该只看一张漂亮热力图，而要结合多种解释方法、资料检查和任务知识。
+
+% =====================================================================
+\section{神经网络如何处理输入资料}
+% =====================================================================
+
+课程后半段从“解释单次预测”扩展到“观察网络内部”。我们可以把神经网络看成一层层处理输入的系统：每一层都把资料转成新的表示。可解释性的一个方向，就是观察这些隐藏表示中保留了什么信息、丢掉了什么信息、形成了什么结构。
+
+\framefig{0.88}{figures/fig18_layer_visualization_pipeline.jpg}
+{观察隐藏层的一种流程：把每层高维输出降维到二维，再用可视化方法看表示是否产生结构。}
+{00:36:00--00:36:15}
+
+\subsection{隐藏层可视化}
+
+以语音模型为例，输入可以是 acoustic feature，例如 MFCC。第一层、第二层到更高层都会输出一组隐藏向量。若每层有 100 个 neuron，每个时间片就对应一个 100 维向量。为了画在二维平面上，可以使用 PCA 或 t-SNE 把这些高维向量降到二维。
+
+这样做的目的不是得到一个严格证明，而是观察表示是否更有结构。例如原始声学特征可能受说话人、音量、录音环境影响很大；经过模型隐藏层后，表示可能更接近语音内容或音素结构，而不是只反映原始声波差异。
+
+\framefig{0.92}{figures/fig19_hidden_layer_speaker_clusters.jpg}
+{语音模型隐藏层可视化示例：输入声学特征与第八层隐藏表示在二维降维图中的结构不同。}
+{00:39:00--00:39:15}
+
+\subsection{Attention 可视化不等于完整解释}
+
+Transformer 之后，attention weight 常被拿来画图解释模型：某个 token attend 到哪些 token，看起来像模型“关注”了哪里。但课程提醒，attention visualization 不能直接等同于 explanation。Attention 是模型计算过程中的一部分，却不一定完整代表因果贡献。
+
+\framefig{0.86}{figures/fig20_attention_not_explanation.jpg}
+{Attention 权重可以被可视化，但 attention 本身不必然等于解释；它只是模型内部机制的一种观察窗口。}
+{00:39:45--00:40:00}
+
+原因在于，模型输出还经过后续层、非线性、残差连接、归一化和其他参数。一个位置的 attention 权重大，不代表最终决策一定主要由它决定；权重小，也不代表没有影响。因此，attention 图可以提供线索，但不能单独作为模型解释的全部证据。
+
+\subsection{Probing：用探针测试隐藏表示}
+
+除了肉眼看图，还可以用 probing。Probing 的做法是：取模型某一层的 hidden representation，接一个简单分类器，测试这个表示中是否包含某种信息。例如在 BERT 的某层表示上训练 POS classifier，看看它是否能预测词性；训练 NER classifier，看看是否能识别地点、人名等实体。
+
+\framefig{0.88}{figures/fig21_probing_bert.jpg}
+{Probing 方法：在模型隐藏层上接小分类器，检查 hidden representation 是否包含词性、实体等信息。}
+{00:41:15--00:41:30}
+
+如果探针很容易从某层表示中预测出词性，说明该层表示很可能编码了词性相关信息。但这里也有陷阱：探针分类器本身不能太强。如果探针太复杂，它可能自己学会任务，而不是证明原本的 hidden representation 已经清楚包含该信息。
+
+\begin{warningbox}{Probing 的常见误读}
+    Probing 只能说明某种信息“可被读出”，不一定说明模型原本在最终决策中“使用了”这种信息。探针强度、资料设定和对照实验都会影响结论。
+\end{warningbox}
+
+\subsection{语音合成中的 probing 示例}
+
+课程最后用 text-to-speech 的例子说明 probing。输入是一段语音或文字，模型内部有多层 representation。我们可以把每一层的表示拿出来，接上不同探针，测试它们是否包含 speaker information、phoneme information、word identity 或其他属性。
+
+\framefig{0.86}{figures/fig22_tts_probing.jpg}
+{TTS 或语音模型中的 probing：把不同层的表示拿出来，测试其中是否保留说话人、内容或语音结构信息。}
+{00:43:45--00:44:00}
+
+这类分析可以回答“信息在网络中怎样流动”。例如低层可能更接近声学细节，高层可能更接近文字内容或语义；某些层可能保留说话人信息，某些层则更倾向于去除说话人差异。对模型压缩、迁移学习、可控生成和错误分析都很有帮助。
+
+\framefig{0.92}{figures/fig23_hidden_representation_analysis.jpg}
+{隐藏表示分析示例：比较不同层、不同输入条件下的信息保留与变化，观察模型内部表示如何重组。}
+{00:46:15--00:46:30}
+
+\subsection{本章小结}
+
+解释神经网络不仅可以看输入哪一块重要，也可以看隐藏层如何表示资料。可视化方法把高维表示降到二维，帮助观察结构；attention 图提供模型内部连接线索，但不能直接等同解释；probing 用小分类器测试 hidden representation 中是否包含特定信息。它们共同说明，可解释性是一组工具，而不是单一方法。
+
+% =====================================================================
+\section{总结与延伸}
+% =====================================================================
+
+P36 的核心主线可以压缩成一句话：模型答对并不够，我们还要知道它为什么答对。可解释机器学习就是为这个问题准备的一套方法。
+
+从现实需求看，可解释性服务于信任、责任和调试。贷款、医疗、司法、自驾车等场景不能只给一个结果；开发者也需要解释来发现资料偏差和模型捷径。从模型选择看，简单模型较易解释但未必强，复杂模型更强但需要解释工具。合理目标不是为了可解释性放弃强模型，而是让强模型有可检查的行为。
+
+从方法看，本讲主要介绍 local explanation。遮挡法和 saliency map 都在回答“输入中哪个成分影响了这次决策”。Gradient saliency 用输出对输入的偏导数衡量局部敏感度；SmoothGrad 通过加噪平均降低噪声；integrated gradients 试图缓解局部饱和导致的误判。它们有用，但都需要谨慎解读。
+
+宝可梦与数码宝贝案例是本讲最关键的警示：模型可以在训练集和测试集上都接近满分，却只是抓住 PNG 透明背景与 JPEG 背景这类格式差异。这个例子把“高准确率不等于正确理由”讲得非常具体。可解释性不是锦上添花，而是在模型看起来表现很好时，帮我们问出更深一层的问题。
+
+最后，课程把解释扩展到网络内部。隐藏层可视化、attention visualization 和 probing 都可以观察模型怎样处理输入资料。但这些方法也不是最终答案：attention 不一定是解释，probing 只能说明信息可被读出，二维可视化也可能受降维方法影响。可解释性分析最可靠的做法，是把多种证据放在一起看，并始终结合任务背景和资料来源。
+
+\begin{importantbox}{本讲带走的判断原则}
+    当模型表现很好时，不要马上问“能不能上线”，先问三个问题：它看了什么？它为什么这样判断？如果资料来源或环境改变，这个理由还成立吗？这三个问题，是可解释机器学习最朴素也最实用的价值。
+\end{importantbox}
+
+\subsection{拓展阅读}
+
+本讲涉及的几个方向可以继续深入：
+\begin{itemize}
+    \item \textbf{Saliency Map 与 SmoothGrad}：关注输入局部敏感度，以及如何降低梯度解释的噪声。
+    \item \textbf{Integrated Gradients}：用路径积分缓解 gradient saturation，让解释不只依赖当前点的局部梯度。
+    \item \textbf{Attention is not Explanation}：理解为什么 attention 权重不能直接等同于因果解释。
+    \item \textbf{Probing Classifier}：研究 hidden representation 中可读出的语言、语音或语义信息，同时注意探针本身带来的偏差。
+\end{itemize}
+
+\end{document}
