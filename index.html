@@ -4,194 +4,559 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>李宏毅《机器学习 2025》课程笔记</title>
-  <meta name="description" content="李宏毅《机器学习 2025》课程笔记 PDF 在线预览，P01-P58。">
+  <meta name="description" content="李宏毅《机器学习 2025》课程笔记 PDF.js 在线预览，P01-P58。">
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 28px 18px 48px;
+      margin: 0;
       color: #1f2933;
-      background: #fafafa;
+      background: #f6f7f9;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
         "Microsoft YaHei", sans-serif;
-      line-height: 1.65;
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: 30px;
-      line-height: 1.25;
-    }
-
-    p {
-      margin: 8px 0;
-      color: #52616f;
-    }
-
-    .note {
-      margin: 18px 0 22px;
-      padding: 12px 14px;
-      border: 1px solid #d8dee4;
-      border-radius: 6px;
-      background: #fff;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-      border: 1px solid #d8dee4;
-    }
-
-    th,
-    td {
-      padding: 10px 12px;
-      border-bottom: 1px solid #e5e7eb;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      background: #f0f3f6;
-      font-weight: 700;
-    }
-
-    tr:last-child td {
-      border-bottom: 0;
-    }
-
-    .part {
-      width: 72px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .open {
-      width: 110px;
-      white-space: nowrap;
+      line-height: 1.55;
     }
 
     a {
       color: #0969da;
-      text-decoration: none;
       font-weight: 600;
+      text-decoration: none;
     }
 
     a:hover {
       text-decoration: underline;
     }
 
+    header {
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid #d8dee4;
+      background: #fff;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.25;
+    }
+
+    header p {
+      margin: 4px 0;
+      color: #57606a;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px;
+      min-height: calc(100vh - 120px);
+    }
+
+    .toc,
+    .viewer {
+      border: 1px solid #d8dee4;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .toc {
+      max-height: calc(100vh - 152px);
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .toc h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    details {
+      border-top: 1px solid #e5e7eb;
+      padding: 10px 0;
+    }
+
+    details:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .lecture {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      gap: 8px 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid #eef1f4;
+    }
+
+    .lecture:last-child {
+      border-bottom: 0;
+    }
+
+    .part {
+      font-weight: 700;
+      color: #57606a;
+    }
+
+    .title {
+      min-width: 0;
+    }
+
+    .actions {
+      grid-column: 2;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 3px;
+    }
+
+    button,
+    .pdf-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #f6f8fa;
+      color: #24292f;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 4px 9px;
+      cursor: pointer;
+    }
+
+    button:hover,
+    .pdf-link:hover {
+      border-color: #0969da;
+      color: #0969da;
+      text-decoration: none;
+    }
+
+    button.active {
+      border-color: #0969da;
+      background: #0969da;
+      color: #fff;
+    }
+
+    .viewer {
+      display: grid;
+      grid-template-rows: auto auto minmax(360px, 1fr);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .viewer-title {
+      padding: 13px 14px;
+      border-bottom: 1px solid #d8dee4;
+    }
+
+    .viewer-title strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .viewer-title span {
+      display: block;
+      color: #57606a;
+      font-size: 14px;
+      margin-top: 2px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      border-bottom: 1px solid #d8dee4;
+      background: #f6f8fa;
+    }
+
+    .toolbar input,
+    .toolbar select {
+      min-height: 30px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #fff;
+      color: #1f2933;
+      font: inherit;
+      padding: 3px 8px;
+    }
+
+    .toolbar input {
+      width: 72px;
+    }
+
+    .toolbar .spacer {
+      flex: 1;
+    }
+
+    .status {
+      color: #57606a;
+      font-size: 14px;
+    }
+
+    .canvas-wrap {
+      overflow: auto;
+      padding: 18px;
+      background: #dfe4ea;
+      text-align: center;
+    }
+
+    canvas {
+      max-width: 100%;
+      height: auto;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(31, 41, 51, 0.18);
+    }
+
+    .fallback {
+      max-width: 720px;
+      margin: 28px auto;
+      padding: 16px;
+      border: 1px solid #d8dee4;
+      border-radius: 8px;
+      background: #fff;
+      color: #57606a;
+      text-align: left;
+    }
+
     footer {
-      margin-top: 24px;
+      padding: 0 24px 24px;
       color: #6b7280;
       font-size: 14px;
     }
 
-    @media (max-width: 640px) {
-      body {
-        padding: 22px 12px 36px;
+    @media (max-width: 920px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        max-height: none;
+      }
+
+      .viewer {
+        min-height: 72vh;
+      }
+    }
+
+    @media (max-width: 560px) {
+      header {
+        padding: 18px 14px 14px;
       }
 
       h1 {
-        font-size: 24px;
+        font-size: 23px;
       }
 
-      th,
-      td {
-        padding: 9px 8px;
+      .layout {
+        padding: 10px;
       }
 
-      .part {
-        width: 54px;
+      .toolbar {
+        align-items: stretch;
       }
 
-      .open {
-        width: 76px;
+      .toolbar button,
+      .toolbar .pdf-link,
+      .toolbar select {
+        flex: 1 1 auto;
+      }
+
+      .toolbar .spacer {
+        display: none;
       }
     }
   </style>
 </head>
 <body>
-  <h1>李宏毅《机器学习 2025》课程笔记</h1>
-  <p>共 58 讲，包含整理后的 PDF 笔记。点击“打开 PDF”即可在浏览器中预览。</p>
+  <header>
+    <h1>李宏毅《机器学习 2025》课程笔记</h1>
+    <p>共 58 讲。点击“预览”会在右侧用 PDF.js 打开，点击“打开 PDF”会用浏览器原生 PDF 预览。</p>
+  </header>
 
-  <div class="note">
-    <strong>打开方式：</strong>
-    直接点击每一讲右侧的“打开 PDF”。如果浏览器没有自动预览，可以右键链接选择“在新标签页中打开”。
-  </div>
+  <main class="layout">
+    <nav class="toc" aria-label="课程目录">
+      <h2>课程目录</h2>
 
-  <table>
-    <thead>
-      <tr>
-        <th class="part">讲次</th>
-        <th>主题</th>
-        <th class="open">PDF</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr><td class="part">P01</td><td>课程导论</td><td class="open"><a href="pdf/ML2025_P01_intro.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P02</td><td>深度学习简介</td><td class="open"><a href="pdf/ML2025_P02_deep_intro.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P03</td><td>机器学习任务攻略</td><td class="open"><a href="pdf/ML2025_P03_task_guide.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P04</td><td>局部最小值与鞍点</td><td class="open"><a href="pdf/ML2025_P04_local_minima.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P05</td><td>Batch 与 Momentum</td><td class="open"><a href="pdf/ML2025_P05_batch_momentum.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P06</td><td>自适应学习率</td><td class="open"><a href="pdf/ML2025_P06_adaptive_lr.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P07</td><td>分类与损失函数</td><td class="open"><a href="pdf/ML2025_P07_loss_function.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P08</td><td>宝可梦分类实战</td><td class="open"><a href="pdf/ML2025_P08_pokemon_classifier.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P09</td><td>卷积神经网络（CNN）</td><td class="open"><a href="pdf/ML2025_P09_cnn.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P10</td><td>验证集与过拟合</td><td class="open"><a href="pdf/ML2025_P10_validation_overfitting.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P11</td><td>鱼与熊掌：深度的意义</td><td class="open"><a href="pdf/ML2025_P11_fish_bear_ml.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P12</td><td>自注意力机制（上）</td><td class="open"><a href="pdf/ML2025_P12_self_attention_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P13</td><td>自注意力机制（下）</td><td class="open"><a href="pdf/ML2025_P13_self_attention_part2.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P14</td><td>批次标准化（Batch Normalization）</td><td class="open"><a href="pdf/ML2025_P14_batch_normalization.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P15</td><td>Transformer（上）</td><td class="open"><a href="pdf/ML2025_P15_transformer_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P16</td><td>Transformer（下）</td><td class="open"><a href="pdf/ML2025_P16_transformer_part2.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P17</td><td>自注意力机制的各种变体</td><td class="open"><a href="pdf/ML2025_P17_self_attention_variants.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P18</td><td>GAN（一）：基本概念</td><td class="open"><a href="pdf/ML2025_P18_gan_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P19</td><td>GAN（二）：理论与 WGAN</td><td class="open"><a href="pdf/ML2025_P19_gan_part2_theory_wgan.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P20</td><td>GAN（三）：评估与条件生成</td><td class="open"><a href="pdf/ML2025_P20_gan_part3_eval_conditional.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P21</td><td>GAN（四）：非成对生成与 CycleGAN</td><td class="open"><a href="pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P22</td><td>自监督学习简介</td><td class="open"><a href="pdf/ML2025_P22_self_supervised_intro.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P23</td><td>BERT 简介</td><td class="open"><a href="pdf/ML2025_P23_bert_intro.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P24</td><td>BERT 的奇闻轶事</td><td class="open"><a href="pdf/ML2025_P24_bert_anecdotes.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P25</td><td>GPT 的野望</td><td class="open"><a href="pdf/ML2025_P25_gpt_wild.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P26</td><td>高效参数微调（Efficient Tuning）</td><td class="open"><a href="pdf/ML2025_P26_efficient_tuning.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P27</td><td>语音与影像的自监督学习</td><td class="open"><a href="pdf/ML2025_P27_speech_vision_ssl.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P28</td><td>自编码器（Auto-encoder）基础</td><td class="open"><a href="pdf/ML2025_P28_autoencoder_basic.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P29</td><td>异常检测（一）</td><td class="open"><a href="pdf/ML2025_P29_anomaly_detection_1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P30</td><td>异常检测（二）</td><td class="open"><a href="pdf/ML2025_P30_anomaly_detection_2.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P31</td><td>异常检测（三）</td><td class="open"><a href="pdf/ML2025_P31_anomaly_detection_3.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P32</td><td>异常检测（四）</td><td class="open"><a href="pdf/ML2025_P32_anomaly_detection_4.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P33</td><td>异常检测（五）</td><td class="open"><a href="pdf/ML2025_P33_anomaly_detection_5.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P34</td><td>异常检测（六）：最大似然与高斯密度</td><td class="open"><a href="pdf/ML2025_P34_anomaly_detection_6.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P35</td><td>异常检测（七）：多特征与重建误差</td><td class="open"><a href="pdf/ML2025_P35_anomaly_detection_7.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P36</td><td>可解释性（上）：宝可梦与数码宝贝</td><td class="open"><a href="pdf/ML2025_P36_interpretability_pokemon_digimon.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P37</td><td>可解释性（下）：机器心中的猫</td><td class="open"><a href="pdf/ML2025_P37_interpretability_cat_inside_machine.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P38</td><td>NLP 对抗式攻击（一）：文本扰动</td><td class="open"><a href="pdf/ML2025_P38_nlp_adversarial_attack_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P39</td><td>来自人类的恶意攻击（上）：基本概念</td><td class="open"><a href="pdf/ML2025_P39_adversarial_attack_basics.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P40</td><td>来自人类的恶意攻击（下）：黑箱攻击与防御</td><td class="open"><a href="pdf/ML2025_P40_adversarial_attack_human_malice.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P41</td><td>NLP 对抗式攻击（二）：约束、搜索与触发器</td><td class="open"><a href="pdf/ML2025_P41_nlp_adversarial_attack_part2.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P42</td><td>NLP 对抗式攻击（三）：生成式攻击与防御</td><td class="open"><a href="pdf/ML2025_P42_nlp_adversarial_attack_part3.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P43</td><td>NLP 上的模仿攻击与后门攻击</td><td class="open"><a href="pdf/ML2025_P43_nlp_imitation_backdoor_attack.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P44</td><td>领域自适应概述</td><td class="open"><a href="pdf/ML2025_P44_domain_adaptation_overview.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P45</td><td>BERT 的三个故事：自监督模型的多功能性</td><td class="open"><a href="pdf/ML2025_P45_bert_three_stories_self_supervised.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P46</td><td>强化学习（一）：RL 也是机器学习三步骤</td><td class="open"><a href="pdf/ML2025_P46_reinforcement_learning_intro_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P47</td><td>强化学习（二）：Policy Gradient</td><td class="open"><a href="pdf/ML2025_P47_policy_gradient_mood.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P48</td><td>强化学习（三）：Actor-Critic</td><td class="open"><a href="pdf/ML2025_P48_actor_critic.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P49</td><td>强化学习（四）：Reward Shaping</td><td class="open"><a href="pdf/ML2025_P49_reward_shaping.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P50</td><td>强化学习（五）：Learning from Demonstration</td><td class="open"><a href="pdf/ML2025_P50_learning_from_demonstration.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P51</td><td>网络压缩（一）：Network Pruning</td><td class="open"><a href="pdf/ML2025_P51_network_compression_pruning.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P52</td><td>网络压缩（二）：多视角压缩方法</td><td class="open"><a href="pdf/ML2025_P52_network_compression_methods.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P53</td><td>终身学习（一）：灾难性遗忘</td><td class="open"><a href="pdf/ML2025_P53_lifelong_learning_catastrophic_forgetting.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P54</td><td>终身学习（二）：缓解灾难性遗忘</td><td class="open"><a href="pdf/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P55</td><td>元学习（一）：Learning to Learn</td><td class="open"><a href="pdf/ML2025_P55_meta_learning_part1.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P56</td><td>元学习（二）：万物皆可 Meta</td><td class="open"><a href="pdf/ML2025_P56_meta_learning_part2_everything_can_be_meta.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P57</td><td>元学习（三）：各种非常规用法</td><td class="open"><a href="pdf/ML2025_P57_meta_learning_unusual_applications.pdf">打开 PDF</a></td></tr>
-      <tr><td class="part">P58</td><td>课程结语：深度学习的一学期游</td><td class="open"><a href="pdf/ML2025_P58_course_conclusion.pdf">打开 PDF</a></td></tr>
-    </tbody>
-  </table>
+      <details open>
+        <summary>一、深度学习与训练基础（P01-P11）</summary>
+        <div class="lecture"><span class="part">P01</span><span class="title">课程导论</span><div class="actions"><button type="button" data-part="P01" data-title="课程导论" data-pdf="pdf/ML2025_P01_intro.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P01_intro.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P02</span><span class="title">深度学习简介</span><div class="actions"><button type="button" data-part="P02" data-title="深度学习简介" data-pdf="pdf/ML2025_P02_deep_intro.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P02_deep_intro.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P03</span><span class="title">机器学习任务攻略</span><div class="actions"><button type="button" data-part="P03" data-title="机器学习任务攻略" data-pdf="pdf/ML2025_P03_task_guide.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P03_task_guide.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P04</span><span class="title">局部最小值与鞍点</span><div class="actions"><button type="button" data-part="P04" data-title="局部最小值与鞍点" data-pdf="pdf/ML2025_P04_local_minima.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P04_local_minima.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P05</span><span class="title">Batch 与 Momentum</span><div class="actions"><button type="button" data-part="P05" data-title="Batch 与 Momentum" data-pdf="pdf/ML2025_P05_batch_momentum.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P05_batch_momentum.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P06</span><span class="title">自适应学习率</span><div class="actions"><button type="button" data-part="P06" data-title="自适应学习率" data-pdf="pdf/ML2025_P06_adaptive_lr.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P06_adaptive_lr.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P07</span><span class="title">分类与损失函数</span><div class="actions"><button type="button" data-part="P07" data-title="分类与损失函数" data-pdf="pdf/ML2025_P07_loss_function.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P07_loss_function.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P08</span><span class="title">宝可梦分类实战</span><div class="actions"><button type="button" data-part="P08" data-title="宝可梦分类实战" data-pdf="pdf/ML2025_P08_pokemon_classifier.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P08_pokemon_classifier.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P09</span><span class="title">卷积神经网络（CNN）</span><div class="actions"><button type="button" data-part="P09" data-title="卷积神经网络（CNN）" data-pdf="pdf/ML2025_P09_cnn.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P09_cnn.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P10</span><span class="title">验证集与过拟合</span><div class="actions"><button type="button" data-part="P10" data-title="验证集与过拟合" data-pdf="pdf/ML2025_P10_validation_overfitting.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P10_validation_overfitting.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P11</span><span class="title">鱼与熊掌：深度的意义</span><div class="actions"><button type="button" data-part="P11" data-title="鱼与熊掌：深度的意义" data-pdf="pdf/ML2025_P11_fish_bear_ml.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P11_fish_bear_ml.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>二、自注意力机制与 Transformer（P12-P17）</summary>
+        <div class="lecture"><span class="part">P12</span><span class="title">自注意力机制（上）</span><div class="actions"><button type="button" data-part="P12" data-title="自注意力机制（上）" data-pdf="pdf/ML2025_P12_self_attention_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P12_self_attention_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P13</span><span class="title">自注意力机制（下）</span><div class="actions"><button type="button" data-part="P13" data-title="自注意力机制（下）" data-pdf="pdf/ML2025_P13_self_attention_part2.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P13_self_attention_part2.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P14</span><span class="title">批次标准化（Batch Normalization）</span><div class="actions"><button type="button" data-part="P14" data-title="批次标准化（Batch Normalization）" data-pdf="pdf/ML2025_P14_batch_normalization.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P14_batch_normalization.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P15</span><span class="title">Transformer（上）</span><div class="actions"><button type="button" data-part="P15" data-title="Transformer（上）" data-pdf="pdf/ML2025_P15_transformer_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P15_transformer_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P16</span><span class="title">Transformer（下）</span><div class="actions"><button type="button" data-part="P16" data-title="Transformer（下）" data-pdf="pdf/ML2025_P16_transformer_part2.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P16_transformer_part2.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P17</span><span class="title">自注意力机制的各种变体</span><div class="actions"><button type="button" data-part="P17" data-title="自注意力机制的各种变体" data-pdf="pdf/ML2025_P17_self_attention_variants.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P17_self_attention_variants.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>三、生成对抗网络（GAN）（P18-P21）</summary>
+        <div class="lecture"><span class="part">P18</span><span class="title">GAN（一）：基本概念</span><div class="actions"><button type="button" data-part="P18" data-title="GAN（一）：基本概念" data-pdf="pdf/ML2025_P18_gan_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P18_gan_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P19</span><span class="title">GAN（二）：理论与 WGAN</span><div class="actions"><button type="button" data-part="P19" data-title="GAN（二）：理论与 WGAN" data-pdf="pdf/ML2025_P19_gan_part2_theory_wgan.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P19_gan_part2_theory_wgan.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P20</span><span class="title">GAN（三）：评估与条件生成</span><div class="actions"><button type="button" data-part="P20" data-title="GAN（三）：评估与条件生成" data-pdf="pdf/ML2025_P20_gan_part3_eval_conditional.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P20_gan_part3_eval_conditional.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P21</span><span class="title">GAN（四）：非成对生成与 CycleGAN</span><div class="actions"><button type="button" data-part="P21" data-title="GAN（四）：非成对生成与 CycleGAN" data-pdf="pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P21_gan_part4_unpaired_cyclegan.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>四、自监督学习与预训练模型（P22-P27）</summary>
+        <div class="lecture"><span class="part">P22</span><span class="title">自监督学习简介</span><div class="actions"><button type="button" data-part="P22" data-title="自监督学习简介" data-pdf="pdf/ML2025_P22_self_supervised_intro.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P22_self_supervised_intro.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P23</span><span class="title">BERT 简介</span><div class="actions"><button type="button" data-part="P23" data-title="BERT 简介" data-pdf="pdf/ML2025_P23_bert_intro.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P23_bert_intro.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P24</span><span class="title">BERT 的奇闻轶事</span><div class="actions"><button type="button" data-part="P24" data-title="BERT 的奇闻轶事" data-pdf="pdf/ML2025_P24_bert_anecdotes.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P24_bert_anecdotes.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P25</span><span class="title">GPT 的野望</span><div class="actions"><button type="button" data-part="P25" data-title="GPT 的野望" data-pdf="pdf/ML2025_P25_gpt_wild.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P25_gpt_wild.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P26</span><span class="title">高效参数微调（Efficient Tuning）</span><div class="actions"><button type="button" data-part="P26" data-title="高效参数微调（Efficient Tuning）" data-pdf="pdf/ML2025_P26_efficient_tuning.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P26_efficient_tuning.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P27</span><span class="title">语音与影像的自监督学习</span><div class="actions"><button type="button" data-part="P27" data-title="语音与影像的自监督学习" data-pdf="pdf/ML2025_P27_speech_vision_ssl.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P27_speech_vision_ssl.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>五、自编码器与异常检测（P28-P35）</summary>
+        <div class="lecture"><span class="part">P28</span><span class="title">自编码器（Auto-encoder）基础</span><div class="actions"><button type="button" data-part="P28" data-title="自编码器（Auto-encoder）基础" data-pdf="pdf/ML2025_P28_autoencoder_basic.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P28_autoencoder_basic.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P29</span><span class="title">异常检测（一）</span><div class="actions"><button type="button" data-part="P29" data-title="异常检测（一）" data-pdf="pdf/ML2025_P29_anomaly_detection_1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P29_anomaly_detection_1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P30</span><span class="title">异常检测（二）</span><div class="actions"><button type="button" data-part="P30" data-title="异常检测（二）" data-pdf="pdf/ML2025_P30_anomaly_detection_2.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P30_anomaly_detection_2.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P31</span><span class="title">异常检测（三）</span><div class="actions"><button type="button" data-part="P31" data-title="异常检测（三）" data-pdf="pdf/ML2025_P31_anomaly_detection_3.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P31_anomaly_detection_3.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P32</span><span class="title">异常检测（四）</span><div class="actions"><button type="button" data-part="P32" data-title="异常检测（四）" data-pdf="pdf/ML2025_P32_anomaly_detection_4.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P32_anomaly_detection_4.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P33</span><span class="title">异常检测（五）</span><div class="actions"><button type="button" data-part="P33" data-title="异常检测（五）" data-pdf="pdf/ML2025_P33_anomaly_detection_5.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P33_anomaly_detection_5.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P34</span><span class="title">异常检测（六）：最大似然与高斯密度</span><div class="actions"><button type="button" data-part="P34" data-title="异常检测（六）：最大似然与高斯密度" data-pdf="pdf/ML2025_P34_anomaly_detection_6.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P34_anomaly_detection_6.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P35</span><span class="title">异常检测（七）：多特征与重建误差</span><div class="actions"><button type="button" data-part="P35" data-title="异常检测（七）：多特征与重建误差" data-pdf="pdf/ML2025_P35_anomaly_detection_7.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P35_anomaly_detection_7.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>六、机器学习的可解释性（P36-P37）</summary>
+        <div class="lecture"><span class="part">P36</span><span class="title">可解释性（上）：宝可梦与数码宝贝</span><div class="actions"><button type="button" data-part="P36" data-title="可解释性（上）：宝可梦与数码宝贝" data-pdf="pdf/ML2025_P36_interpretability_pokemon_digimon.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P36_interpretability_pokemon_digimon.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P37</span><span class="title">可解释性（下）：机器心中的猫</span><div class="actions"><button type="button" data-part="P37" data-title="可解释性（下）：机器心中的猫" data-pdf="pdf/ML2025_P37_interpretability_cat_inside_machine.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P37_interpretability_cat_inside_machine.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>七、对抗式攻击与防御（P38-P43）</summary>
+        <div class="lecture"><span class="part">P38</span><span class="title">NLP 对抗式攻击（一）：文本扰动</span><div class="actions"><button type="button" data-part="P38" data-title="NLP 对抗式攻击（一）：文本扰动" data-pdf="pdf/ML2025_P38_nlp_adversarial_attack_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P38_nlp_adversarial_attack_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P39</span><span class="title">来自人类的恶意攻击（上）：基本概念</span><div class="actions"><button type="button" data-part="P39" data-title="来自人类的恶意攻击（上）：基本概念" data-pdf="pdf/ML2025_P39_adversarial_attack_basics.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P39_adversarial_attack_basics.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P40</span><span class="title">来自人类的恶意攻击（下）：黑箱攻击与防御</span><div class="actions"><button type="button" data-part="P40" data-title="来自人类的恶意攻击（下）：黑箱攻击与防御" data-pdf="pdf/ML2025_P40_adversarial_attack_human_malice.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P40_adversarial_attack_human_malice.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P41</span><span class="title">NLP 对抗式攻击（二）：约束、搜索与触发器</span><div class="actions"><button type="button" data-part="P41" data-title="NLP 对抗式攻击（二）：约束、搜索与触发器" data-pdf="pdf/ML2025_P41_nlp_adversarial_attack_part2.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P41_nlp_adversarial_attack_part2.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P42</span><span class="title">NLP 对抗式攻击（三）：生成式攻击与防御</span><div class="actions"><button type="button" data-part="P42" data-title="NLP 对抗式攻击（三）：生成式攻击与防御" data-pdf="pdf/ML2025_P42_nlp_adversarial_attack_part3.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P42_nlp_adversarial_attack_part3.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P43</span><span class="title">NLP 上的模仿攻击与后门攻击</span><div class="actions"><button type="button" data-part="P43" data-title="NLP 上的模仿攻击与后门攻击" data-pdf="pdf/ML2025_P43_nlp_imitation_backdoor_attack.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P43_nlp_imitation_backdoor_attack.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>八、领域自适应与自监督模型（P44-P45）</summary>
+        <div class="lecture"><span class="part">P44</span><span class="title">领域自适应概述</span><div class="actions"><button type="button" data-part="P44" data-title="领域自适应概述" data-pdf="pdf/ML2025_P44_domain_adaptation_overview.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P44_domain_adaptation_overview.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P45</span><span class="title">BERT 的三个故事：自监督模型的多功能性</span><div class="actions"><button type="button" data-part="P45" data-title="BERT 的三个故事：自监督模型的多功能性" data-pdf="pdf/ML2025_P45_bert_three_stories_self_supervised.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P45_bert_three_stories_self_supervised.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>九、强化学习（P46-P50）</summary>
+        <div class="lecture"><span class="part">P46</span><span class="title">强化学习（一）：RL 也是机器学习三步骤</span><div class="actions"><button type="button" data-part="P46" data-title="强化学习（一）：RL 也是机器学习三步骤" data-pdf="pdf/ML2025_P46_reinforcement_learning_intro_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P46_reinforcement_learning_intro_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P47</span><span class="title">强化学习（二）：Policy Gradient</span><div class="actions"><button type="button" data-part="P47" data-title="强化学习（二）：Policy Gradient" data-pdf="pdf/ML2025_P47_policy_gradient_mood.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P47_policy_gradient_mood.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P48</span><span class="title">强化学习（三）：Actor-Critic</span><div class="actions"><button type="button" data-part="P48" data-title="强化学习（三）：Actor-Critic" data-pdf="pdf/ML2025_P48_actor_critic.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P48_actor_critic.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P49</span><span class="title">强化学习（四）：Reward Shaping</span><div class="actions"><button type="button" data-part="P49" data-title="强化学习（四）：Reward Shaping" data-pdf="pdf/ML2025_P49_reward_shaping.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P49_reward_shaping.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P50</span><span class="title">强化学习（五）：Learning from Demonstration</span><div class="actions"><button type="button" data-part="P50" data-title="强化学习（五）：Learning from Demonstration" data-pdf="pdf/ML2025_P50_learning_from_demonstration.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P50_learning_from_demonstration.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>十、网络压缩（P51-P52）</summary>
+        <div class="lecture"><span class="part">P51</span><span class="title">网络压缩（一）：Network Pruning</span><div class="actions"><button type="button" data-part="P51" data-title="网络压缩（一）：Network Pruning" data-pdf="pdf/ML2025_P51_network_compression_pruning.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P51_network_compression_pruning.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P52</span><span class="title">网络压缩（二）：多视角压缩方法</span><div class="actions"><button type="button" data-part="P52" data-title="网络压缩（二）：多视角压缩方法" data-pdf="pdf/ML2025_P52_network_compression_methods.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P52_network_compression_methods.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>十一、终身学习（P53-P54）</summary>
+        <div class="lecture"><span class="part">P53</span><span class="title">终身学习（一）：灾难性遗忘</span><div class="actions"><button type="button" data-part="P53" data-title="终身学习（一）：灾难性遗忘" data-pdf="pdf/ML2025_P53_lifelong_learning_catastrophic_forgetting.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P53_lifelong_learning_catastrophic_forgetting.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P54</span><span class="title">终身学习（二）：缓解灾难性遗忘</span><div class="actions"><button type="button" data-part="P54" data-title="终身学习（二）：缓解灾难性遗忘" data-pdf="pdf/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P54_lifelong_learning_catastrophic_forgetting_2.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>十二、元学习（P55-P57）</summary>
+        <div class="lecture"><span class="part">P55</span><span class="title">元学习（一）：Learning to Learn</span><div class="actions"><button type="button" data-part="P55" data-title="元学习（一）：Learning to Learn" data-pdf="pdf/ML2025_P55_meta_learning_part1.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P55_meta_learning_part1.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P56</span><span class="title">元学习（二）：万物皆可 Meta</span><div class="actions"><button type="button" data-part="P56" data-title="元学习（二）：万物皆可 Meta" data-pdf="pdf/ML2025_P56_meta_learning_part2_everything_can_be_meta.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P56_meta_learning_part2_everything_can_be_meta.pdf">打开 PDF</a></div></div>
+        <div class="lecture"><span class="part">P57</span><span class="title">元学习（三）：各种非常规用法</span><div class="actions"><button type="button" data-part="P57" data-title="元学习（三）：各种非常规用法" data-pdf="pdf/ML2025_P57_meta_learning_unusual_applications.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P57_meta_learning_unusual_applications.pdf">打开 PDF</a></div></div>
+      </details>
+
+      <details>
+        <summary>十三、课程总结（P58）</summary>
+        <div class="lecture"><span class="part">P58</span><span class="title">课程结语：深度学习的一学期游</span><div class="actions"><button type="button" data-part="P58" data-title="课程结语：深度学习的一学期游" data-pdf="pdf/ML2025_P58_course_conclusion.pdf">预览</button><a class="pdf-link" href="pdf/ML2025_P58_course_conclusion.pdf">打开 PDF</a></div></div>
+      </details>
+    </nav>
+
+    <section class="viewer" aria-label="PDF.js 阅读器">
+      <div class="viewer-title">
+        <strong id="doc-title">P01 课程导论</strong>
+        <span id="doc-path">pdf/ML2025_P01_intro.pdf</span>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="prev">上一页</button>
+        <button type="button" id="next">下一页</button>
+        <span class="status">第 <input id="page-num" type="number" min="1" value="1"> / <span id="page-count">-</span> 页</span>
+        <select id="zoom" aria-label="缩放">
+          <option value="0.8">80%</option>
+          <option value="1" selected>100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+        </select>
+        <span class="spacer"></span>
+        <a id="open-pdf" class="pdf-link" href="pdf/ML2025_P01_intro.pdf">打开 PDF</a>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="pdf-canvas"></canvas>
+        <div id="fallback" class="fallback" hidden>
+          PDF.js 加载失败。可以直接点击上方“打开 PDF”用浏览器预览。
+        </div>
+      </div>
+    </section>
+  </main>
 
   <footer>
     笔记仅供学习交流使用；课程截图、图表与课程内容版权归原课程作者所有。
   </footer>
+
+  <script type="module">
+    import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
+
+    const canvas = document.querySelector("#pdf-canvas");
+    const context = canvas.getContext("2d");
+    const titleNode = document.querySelector("#doc-title");
+    const pathNode = document.querySelector("#doc-path");
+    const pageNumInput = document.querySelector("#page-num");
+    const pageCountNode = document.querySelector("#page-count");
+    const openPdf = document.querySelector("#open-pdf");
+    const fallback = document.querySelector("#fallback");
+    const zoom = document.querySelector("#zoom");
+    const buttons = Array.from(document.querySelectorAll("button[data-pdf]"));
+
+    let pdfDoc = null;
+    let pageNum = 1;
+    let rendering = false;
+    let pendingPage = null;
+    let currentRenderTask = null;
+
+    function setActive(pdfPath) {
+      for (const button of buttons) {
+        button.classList.toggle("active", button.dataset.pdf === pdfPath);
+      }
+    }
+
+    async function renderPage(num) {
+      if (!pdfDoc) return;
+      if (rendering) {
+        pendingPage = num;
+        return;
+      }
+
+      rendering = true;
+      fallback.hidden = true;
+
+      try {
+        if (currentRenderTask) {
+          currentRenderTask.cancel();
+        }
+
+        const page = await pdfDoc.getPage(num);
+        const viewport = page.getViewport({ scale: Number(zoom.value) });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        currentRenderTask = page.render({
+          canvasContext: context,
+          viewport
+        });
+
+        await currentRenderTask.promise;
+        pageNum = num;
+        pageNumInput.value = String(pageNum);
+      } catch (error) {
+        if (error?.name !== "RenderingCancelledException") {
+          console.error(error);
+          fallback.hidden = false;
+        }
+      } finally {
+        rendering = false;
+        currentRenderTask = null;
+        if (pendingPage !== null) {
+          const nextPage = pendingPage;
+          pendingPage = null;
+          renderPage(nextPage);
+        }
+      }
+    }
+
+    async function loadPdf(pdfPath, part, title) {
+      titleNode.textContent = `${part} ${title}`;
+      pathNode.textContent = pdfPath;
+      openPdf.href = pdfPath;
+      setActive(pdfPath);
+      pageNum = 1;
+      pageNumInput.value = "1";
+      pageCountNode.textContent = "-";
+      history.replaceState(null, "", `#${part}`);
+
+      try {
+        fallback.hidden = true;
+        pdfDoc = await pdfjsLib.getDocument(pdfPath).promise;
+        pageCountNode.textContent = String(pdfDoc.numPages);
+        pageNumInput.max = String(pdfDoc.numPages);
+        await renderPage(pageNum);
+      } catch (error) {
+        console.error(error);
+        fallback.hidden = false;
+      }
+    }
+
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        loadPdf(button.dataset.pdf, button.dataset.part, button.dataset.title);
+      });
+    }
+
+    document.querySelector("#prev").addEventListener("click", () => {
+      if (pageNum <= 1) return;
+      renderPage(pageNum - 1);
+    });
+
+    document.querySelector("#next").addEventListener("click", () => {
+      if (!pdfDoc || pageNum >= pdfDoc.numPages) return;
+      renderPage(pageNum + 1);
+    });
+
+    pageNumInput.addEventListener("change", () => {
+      if (!pdfDoc) return;
+      const requested = Math.min(
+        Math.max(Number(pageNumInput.value) || 1, 1),
+        pdfDoc.numPages
+      );
+      renderPage(requested);
+    });
+
+    zoom.addEventListener("change", () => renderPage(pageNum));
+
+    const initialPart = decodeURIComponent(location.hash.replace("#", "") || "P01");
+    const initialButton = buttons.find((button) => button.dataset.part === initialPart) || buttons[0];
+    loadPdf(initialButton.dataset.pdf, initialButton.dataset.part, initialButton.dataset.title);
+  </script>
 </body>
 </html>
