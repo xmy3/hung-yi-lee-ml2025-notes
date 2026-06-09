@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>李宏毅《机器学习 2025》课程笔记</title>
   <meta name="description" content="李宏毅《机器学习 2025》课程笔记 PDF.js 在线预览，P01-P58。">
+  <link rel="icon" href="data:,">
   <style>
     * {
       box-sizing: border-box;
@@ -432,12 +433,8 @@
     笔记仅供学习交流使用；课程截图、图表与课程内容版权归原课程作者所有。
   </footer>
 
-  <script type="module">
-    import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
     const canvas = document.querySelector("#pdf-canvas");
     const context = canvas.getContext("2d");
     const titleNode = document.querySelector("#doc-title");
@@ -448,12 +445,18 @@
     const fallback = document.querySelector("#fallback");
     const zoom = document.querySelector("#zoom");
     const buttons = Array.from(document.querySelectorAll("button[data-pdf]"));
+    const pdfjs = window.pdfjsLib;
 
     let pdfDoc = null;
     let pageNum = 1;
     let rendering = false;
     let pendingPage = null;
     let currentRenderTask = null;
+
+    if (pdfjs) {
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
 
     function setActive(pdfPath) {
       for (const button of buttons) {
@@ -517,7 +520,16 @@
 
       try {
         fallback.hidden = true;
-        pdfDoc = await pdfjsLib.getDocument(pdfPath).promise;
+        if (!pdfjs) {
+          throw new Error("PDF.js failed to load");
+        }
+
+        pdfDoc = await pdfjs.getDocument({
+          url: pdfPath,
+          cMapUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/"
+        }).promise;
         pageCountNode.textContent = String(pdfDoc.numPages);
         pageNumInput.max = String(pdfDoc.numPages);
         await renderPage(pageNum);
